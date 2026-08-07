@@ -1,0 +1,10 @@
+(executable
+ (name playground)
+ (modes wasm)
+ (libraries sce js_of_ocaml)
+ (preprocess
+  (pps js_of_ocaml-ppx)))
+
+(alias
+ (name default)
+ (deps index.html playground.bc.wasm.js))
