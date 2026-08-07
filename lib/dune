@@ -1,0 +1,9 @@
+(library
+ (name sce)
+ (libraries menhirLib))
+
+(menhir
+ (modules parser)
+ (flags --table --explain))
+
+(ocamllex lexer)
