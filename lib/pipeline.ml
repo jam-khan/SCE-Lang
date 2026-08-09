@@ -65,3 +65,22 @@ let render ~src (e : error) =
 let type_string (o : outcome) = Sce_core.Pretty.typ_to_string o.sce_typ
 let value_string (o : outcome) = Core_lambdae.Pretty.exp_to_string o.value
 let core_string (o : outcome) = Core_lambdae.Pretty.exp_to_string o.core_exp
+
+(* The elaborated λE term, without evaluating it — what the wasm backend
+   compiles. Elaboration is re-run rather than reusing `run`, so a program that
+   diverges at runtime can still be compiled. *)
+let run_to_core (src : string) : (C.exp, error) result =
+  match Driver.parse src with
+  | Error e -> Error { stage = "parse"; message = e.message; line = e.line; col = e.col }
+  | Ok named -> (
+    try
+      let indexed = Debruijn.resolve named in
+      let _, sce_exp = Sugar.desugar_program indexed in
+      let _, core_exp = Sce_core.Elab.elab S.TTop sce_exp in
+      ignore (Core_lambdae.Check.typecheck core_exp);
+      Ok core_exp
+    with
+    | Debruijn.Error (m, loc) -> Error (at "scope" loc m)
+    | Sugar.Error (m, loc) -> Error (at "desugar" loc m)
+    | Sce_core.Elab.Elab_error m -> Error (whole "elaborate" m)
+    | Core_lambdae.Check.Type_error m -> Error (whole "typecheck" m))

@@ -113,11 +113,30 @@ out of the module rather than demanding an exact match.
 **Both branches of `case` and `if` must have the same type**, and `Cat`/`Eq`
 and friends are the only primitives: the core has no other operations.
 
+## Compiling to WebAssembly
+
+[wasm/](wasm/) is a real backend for λE, not another interpreter:
+
+```console
+$ dune exec bin/main.exe -- --wasm out.wasm examples/modules.sce
+$ node wasm/run.js out.wasm
+{ started = 11; doubled = 20; next = 11; secret = 42 }
+```
+
+Because λE has no variables there is no closure-conversion pass to write — the
+calculus arrives pre-converted. A function becomes a lifted wasm function
+`(self, arg) -> result` that rebuilds its own environment, so `App` is a
+`call_indirect` with no dispatch; and since the program is typed and a merge
+value's shape mirrors its type's shape, `Proj` and `Rproj` are resolved at
+compile time into fixed chains of loads. See [wasm/README.md](wasm/README.md)
+for the scheme and the value layout.
+
 ## Layout
 
 | path | role |
 |---|---|
 | [lib/core/](lib/core/) | λE: AST, typechecker, big- and small-step evaluators, printer |
+| [wasm/](wasm/) | the WebAssembly backend: IR, binary emitter, WAT printer, node host |
 | [lib/sce/](lib/sce/) | λSCE: AST, evaluators, and the elaboration to λE |
 | [lib/source/](lib/source/) | lexer, parser, `frames`, `debruijn`, `sugar`, `driver` |
 | [lib/pipeline.ml](lib/pipeline.ml) | the five stages behind one `run` and one error type |
@@ -125,4 +144,7 @@ and friends are the only primitives: the core has no other operations.
 | [test/](test/) | parser, scope-resolution, end-to-end, differential and failure tests |
 
 The test suite includes a differential check that λSCE evaluation agrees with λE
-evaluation of its elaboration, and that big-step agrees with small-step in both.
+evaluation of its elaboration, that big-step agrees with small-step in both, and
+that every program **compiled to WebAssembly and run under node** produces the
+same value as the interpreter. The wasm tests skip themselves if `node` is not
+installed.
