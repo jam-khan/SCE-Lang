@@ -2,6 +2,8 @@
 
 type typ =
   | TInt
+  | TBool
+  | TString
   | TTop
   | TArr of typ * typ
   | TAnd of typ * typ
@@ -19,6 +21,8 @@ and modtyp =
 (* subst_typ d s t replaces TVar d by s in t (s is closed, so no shifting) *)
 let rec subst_typ d s = function
   | TInt        -> TInt
+  | TBool       -> TBool
+  | TString     -> TString
   | TTop        -> TTop
   | TArr (a, b) -> TArr (subst_typ d s a, subst_typ d s b)
   | TAnd (a, b) -> TAnd (subst_typ d s a, subst_typ d s b)
@@ -41,6 +45,13 @@ type lit =
   | Bool   of bool
   | String of string
 
+(* primitive operators; surface `&&`, `||`, `not` and unary `-` desugar away *)
+type binop =
+  | Add | Sub | Mul | Div | Mod   (* Int -> Int -> Int *)
+  | Lt  | Le  | Gt  | Ge          (* Int -> Int -> Bool *)
+  | Eq  | Ne                      (* A -> A -> Bool, A primitive *)
+  | Cat                           (* String -> String -> String *)
+
 type exp =
   | Query
   | Proj  of exp * int
@@ -53,6 +64,9 @@ type exp =
   | Mrg   of exp * exp
   | Lrec  of string * exp
   | Rproj of exp * string
+  (* primitives *)
+  | Binop of binop * exp * exp
+  | If    of exp * exp * exp
   (* to be elaborated *)
   | Mstruct  of sandbox * exp
   | Mfunctor of sandbox * typ * exp

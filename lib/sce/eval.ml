@@ -31,6 +31,38 @@ let rec selpkg (v : exp) (d : typ) : exp =
   | TAnd (d', TRcd (l, _)) -> Mrg (selpkg v d', Lrec (l, sel v l))
   | _ -> failwith "Error: import interface must be a record or intersection of records."
 
+(* Prim: apply a primitive operator to two literal operands. *)
+let prim (op : binop) (l1 : lit) (l2 : lit) : lit =
+  let nonzero n =
+    if n = 0 then failwith "Error: division by zero" else n
+  in
+  match op, l1, l2 with
+  | Add, Int a, Int b -> Int (a + b)
+  | Sub, Int a, Int b -> Int (a - b)
+  | Mul, Int a, Int b -> Int (a * b)
+  | Div, Int a, Int b -> Int (a / nonzero b)
+  | Mod, Int a, Int b -> Int (a mod nonzero b)
+  | Lt,  Int a, Int b -> Bool (a < b)
+  | Le,  Int a, Int b -> Bool (a <= b)
+  | Gt,  Int a, Int b -> Bool (a > b)
+  | Ge,  Int a, Int b -> Bool (a >= b)
+  | Cat, String a, String b -> String (a ^ b)
+  | Eq, _, _ -> Bool (l1 = l2)
+  | Ne, _, _ -> Bool (l1 <> l2)
+  | _ -> failwith "Error: primitive operator applied to ill-typed operands."
+
+(* Both operands of a primitive reduce to literals; anything else is ill-typed. *)
+let prim_exp (op : binop) (v1 : exp) (v2 : exp) : exp =
+  match v1, v2 with
+  | Lit l1, Lit l2 -> Lit (prim op l1 l2)
+  | _ -> failwith "Error: primitive operator applied to non-literals."
+
+let branch (v : exp) (e2 : exp) (e3 : exp) : exp =
+  match v with
+  | Lit (Bool true)  -> e2
+  | Lit (Bool false) -> e3
+  | _ -> failwith "Error: if condition must evaluate to a boolean."
+
 (* Interpreter based on big-step semantics. *)
 let rec eval (env : exp) (e : exp) : exp =
   match e with
@@ -66,6 +98,8 @@ let rec eval (env : exp) (e : exp) : exp =
   | Proj (e1, i) -> lookup (eval env e1) i
   | Lrec (l, e1) -> Lrec (l, eval env e1)
   | Rproj (e1, l) -> sel (eval env e1) l
+  | Binop (op, e1, e2) -> prim_exp op (eval env e1) (eval env e2)
+  | If (e1, e2, e3) -> eval env (branch (eval env e1) e2 e3)
   | Letb (e1, _ty, e2) ->
     let v1 = eval env e1 in
     eval (Mrg (env, v1)) e2
@@ -149,6 +183,12 @@ let rec step (env : exp) (e : exp) : exp =
   | Lrec (l, e1) -> Lrec (l, step env e1)
   | Rproj (e1, l) ->
     if is_value e1 then sel e1 l else Rproj (step env e1, l)
+  | Binop (op, e1, e2) ->
+    if not (is_value e1) then Binop (op, step env e1, e2)
+    else if not (is_value e2) then Binop (op, e1, step env e2)
+    else prim_exp op e1 e2
+  | If (e1, e2, e3) ->
+    if is_value e1 then branch e1 e2 e3 else If (step env e1, e2, e3)
   | Letb (e1, ty, e2) ->
     if is_value e1 then Box (Mrg (env, e1), e2)
     else Letb (step env e1, ty, e2)

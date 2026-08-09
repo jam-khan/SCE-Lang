@@ -54,6 +54,8 @@ let rec link_ok (g1 : typ) (d : typ) : bool =
 
 let rec elab_typ : typ -> C.typ = function
   | TInt        -> C.TInt
+  | TBool       -> C.TBool
+  | TString     -> C.TString
   | TTop        -> C.TTop
   | TArr (a, b) -> C.TArr (elab_typ a, elab_typ b)
   | TAnd (a, b) -> C.TAnd (elab_typ a, elab_typ b)
@@ -74,8 +76,27 @@ let elab_lit : lit -> C.lit = function
 
 let typ_of_lit : lit -> typ = function
   | Int _     -> TInt
-  | Bool _    -> TTop
-  | String _  -> TTop
+  | Bool _    -> TBool
+  | String _  -> TString
+
+let elab_binop : binop -> C.binop = function
+  | Add -> C.Add | Sub -> C.Sub | Mul -> C.Mul | Div -> C.Div | Mod -> C.Mod
+  | Lt  -> C.Lt  | Le  -> C.Le  | Gt  -> C.Gt  | Ge  -> C.Ge
+  | Eq  -> C.Eq  | Ne  -> C.Ne  | Cat -> C.Cat
+
+(* Operand and result types of each primitive operator. *)
+let typ_of_binop (op : binop) (a : typ) (b : typ) : typ =
+  let expect ta tb tr =
+    if a = ta && b = tb then tr
+    else elab_error "operand type mismatch in primitive operation"
+  in
+  match op with
+  | Add | Sub | Mul | Div | Mod -> expect TInt TInt TInt
+  | Lt | Le | Gt | Ge -> expect TInt TInt TBool
+  | Cat -> expect TString TString TString
+  | Eq | Ne ->
+    if a = b && (a = TInt || a = TBool || a = TString) then TBool
+    else elab_error "equality expects two operands of the same primitive type"
 
 (* elaboration utilities *)
 
@@ -161,6 +182,17 @@ let rec elab (ctx : typ) (e : exp) : typ * C.exp =
   | Rproj (e1, l) ->
     let b, ce = elab ctx e1 in
     (srlookup b l, C.Rproj (ce, l))
+  | Binop (op, e1, e2) ->
+    let a, ce1 = elab ctx e1 in
+    let b, ce2 = elab ctx e2 in
+    (typ_of_binop op a b, C.Binop (elab_binop op, ce1, ce2))
+  | If (e1, e2, e3) ->
+    let c, ce1 = elab ctx e1 in
+    if c <> TBool then elab_error "if condition is not a boolean";
+    let a, ce2 = elab ctx e2 in
+    let b, ce3 = elab ctx e3 in
+    if a = b then (a, C.If (ce1, ce2, ce3))
+    else elab_error "if branches have different types"
   | Letb (e1, ann, e2) ->
     let a, ce1 = elab ctx e1 in
     if a <> ann then

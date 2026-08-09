@@ -1,3 +1,5 @@
 (test
  (name test_sce)
- (libraries sce))
+ (libraries sce source sce_core core_lambdae)
+ (deps
+  (glob_files %{project_root}/examples/*.sce)))

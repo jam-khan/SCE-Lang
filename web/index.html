@@ -22,6 +22,10 @@
       --syn-number: #0550ae;
       --syn-operator: #cf5c16;
       --syn-bracket: #57606a;
+      --syn-keyword: #8250df;
+      --syn-type: #116329;
+      --syn-string: #0a3069;
+      --syn-comment: #a8a29e;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -153,6 +157,10 @@
     .syn-number   { color: var(--syn-number); }
     .syn-operator { color: var(--syn-operator); }
     .syn-bracket  { color: var(--syn-bracket); }
+    .syn-keyword  { color: var(--syn-keyword); font-weight: 600; }
+    .syn-type     { color: var(--syn-type); }
+    .syn-string   { color: var(--syn-string); }
+    .syn-comment  { color: var(--syn-comment); font-style: italic; }
 
     /* ── Output ────────────────────────────────────────── */
     .output-panel {
@@ -258,7 +266,7 @@
         <span class="panel-label">Output</span>
       </div>
       <div class="output-content" id="output">
-        <div class="empty-state">Type an expression — it is parsed live.</div>
+        <div class="empty-state">Write a program — it is parsed, desugared, elaborated and run live.</div>
       </div>
       <div class="status-bar">
         <div class="status-indicator">
@@ -273,10 +281,75 @@
 <script src="playground.bc.wasm.js"></script>
 <script>
   const examples = [
-    { id: "e1", label: "Addition",      code: "1 + 1" },
-    { id: "e2", label: "Precedence",    code: "1 + 2 * 3" },
-    { id: "e3", label: "Parentheses",   code: "(1 + 2) * (10 - 4) / 2" },
+    { id: "e1", label: "Basics", code:
+`let rec fact (n : Int) : Int =
+  if n <= 1 then 1 else n * fact (n - 1)
+
+;; fact 5` },
+    { id: "e2", label: "Records", code:
+`type Point = { x : Int; y : Int }
+
+let move (p : Point) (dx : Int) : Point =
+  { x = p.x + dx; y = p.y }
+
+;; move { x = 1; y = 2 } 10` },
+    { id: "e3", label: "Merges", code:
+`(* ,, is non-dependent; ,,, lets the right side see the left *)
+let plain = { a = 1 } ,, { b = 2 }
+let dependent = { a = 1 } ,,, { b = a + 1 }
+
+;; { p = plain.b; d = dependent.b }` },
+    { id: "e4", label: "Unions", code:
+`type Tagged = Int | String
+
+let render (v : Tagged) : String =
+  case v of
+    | inl n -> "a number"
+    | inr s -> s
+  end
+
+;; render (inr "hello" : Tagged)` },
+    { id: "e5", label: "Recursive types", code:
+`type Nat = mu a. Top | a
+
+let zero : Nat = (fold (inl () : Top | Nat) : mu a. Top | a)
+let succ (n : Nat) : Nat = (fold (inr n : Top | Nat) : mu a. Top | a)
+
+;; case unfold (succ zero) of
+     | inl u -> "zero"
+     | inr m -> "nonzero"
+   end` },
+    { id: "e6", label: "Modules", code:
+`module Counter = struct
+  let start : Int = 10
+  let bump (n : Int) : Int = n + 1
+  let started : Int = bump start
+end
+
+(* a sandboxed structure cannot see the enclosing context *)
+module Secret = sandbox struct
+  let key : Int = 42
+end
+
+;; { s = Counter.started; k = Secret.key }` },
+    { id: "e7", label: "Functors & linking", code:
+`module Counter = struct
+  let start : Int = 1
+end
+
+(* linking looks the imports up in a module that may be wider *)
+module Linked =
+  link Counter with functor (X : { start : Int }) -> struct
+    let next : Int = X.start + 1
+  end
+
+;; Linked.next` },
   ];
+
+  const KEYWORDS = new Set(["let","rec","in","fun","if","then","else","case","of",
+    "inl","inr","end","fold","unfold","mu","struct","sandbox","functor","module",
+    "open","type","with","link","linkall","box","mod","not","true","false"]);
+  const TYPE_NAMES = new Set(["Int","Bool","String","Top"]);
 
   const editor = document.getElementById('editor');
   const highlight = document.getElementById('highlight-layer');
@@ -291,11 +364,18 @@
   // Single pass: each token is classified once, so the markup injected for
   // one token is never rescanned by a later rule.
   function highlightSrc(code) {
-    return code.replace(/[&<>]|\d+|[+\-*/]|[()]/g, m => {
-      if (m === '&' || m === '<' || m === '>') return escapeHtml(m);
-      if (/^\d/.test(m)) return `<span class="syn-number">${m}</span>`;
-      if (m === '(' || m === ')') return `<span class="syn-bracket">${m}</span>`;
-      return `<span class="syn-operator">${m}</span>`;
+    // Comments and strings come first in the alternation so their contents are
+    // never rescanned as operators.
+    const re = /\(\*[\s\S]*?\*\)|"(?:[^"\\]|\\.)*"|[A-Za-z_][A-Za-z0-9_']*|\d+|,,,|,,|->|=>|<=|>=|<>|&&|\|\||[+\-*/^=<>|&?.:;]|[(){}\[\]]/g;
+    return code.replace(re, m => {
+      if (m.startsWith('(*')) return `<span class="syn-comment">${escapeHtml(m)}</span>`;
+      if (m.startsWith('"'))  return `<span class="syn-string">${escapeHtml(m)}</span>`;
+      if (KEYWORDS.has(m))    return `<span class="syn-keyword">${m}</span>`;
+      if (TYPE_NAMES.has(m))  return `<span class="syn-type">${m}</span>`;
+      if (/^\d/.test(m))      return `<span class="syn-number">${m}</span>`;
+      if (/^[A-Za-z_]/.test(m)) return m;
+      if (/^[(){}\[\]]$/.test(m)) return `<span class="syn-bracket">${escapeHtml(m)}</span>`;
+      return `<span class="syn-operator">${escapeHtml(m)}</span>`;
     });
   }
 
@@ -317,14 +397,18 @@
     if (!window.sce) return;
     const src = editor.value;
     if (src.trim() === "") {
-      output.innerHTML = '<div class="empty-state">Type an expression — it is parsed live.</div>';
+      output.innerHTML = '<div class="empty-state">Write a program — it is parsed, desugared, elaborated and run live.</div>';
       return;
     }
     const r = window.sce.run(src);
     let html = "";
-    if (r.ast) html += entry("AST", r.ast, "");
-    if (r.ok) html += entry("Result", r.value, "success");
-    else html += entry("Error", r.error, "error");
+    if (r.ok) {
+      html += entry("Type", r.typ, "");
+      html += entry("Result", r.value, "success");
+      html += entry("Elaborated λE", r.core, "");
+    } else {
+      html += entry("Error", r.error, "error");
+    }
     output.innerHTML = html;
   }
 
@@ -360,8 +444,8 @@
     if (window.sce) {
       dot.className = 'status-dot ready';
       txt.textContent = 'Ready';
-      editor.value = examples[1].code;
-      select.value = examples[1].id;
+      editor.value = examples[0].code;
+      select.value = examples[0].id;
       refresh();
     } else {
       setTimeout(ready, 30);

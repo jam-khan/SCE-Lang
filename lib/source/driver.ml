@@ -11,7 +11,13 @@ type error = {
 
 let line_col (pos : Lexing.position) = (pos.pos_lnum, pos.pos_cnum - pos.pos_bol)
 
-let parse (src : string) : (Ast.expr, error) result =
+(* Every later stage reports positions the same way, so they can all be
+   rendered by `render` below. *)
+let error_at (loc : Ast.loc) (message : string) : error =
+  let line, col = line_col loc.start_p in
+  { message; line; col }
+
+let parse (src : string) : (Ast.named, error) result =
   let lexbuf = Lexing.from_string src in
   let supplier = I.lexer_lexbuf_to_supplier Lexer.token lexbuf in
   let checkpoint = Parser.Incremental.program lexbuf.lex_curr_p in
