@@ -33,7 +33,7 @@ let tag_fold = 10
    $Bytes  = array (mut i8)                     string payload
    $Str    = struct { tag, bytes }
    $Pair   = struct { tag, left, right }        Mrg
-   $Lrec   = struct { tag, label id, value }
+   $Lrec   = struct { tag, name bytes, value }  label carried in the value
    $Fn     = func (self, arg) -> value
    $Clos   = struct { tag, fn, env }            Clos and Fclos
    $Wrap   = struct { tag, value }              Inl, Inr, Fold *)
@@ -67,7 +67,7 @@ let typedefs : subtype list =
     { super = Some ty_val; sfinal = true;
       comp = CStruct [ f_i32; f_ref ty_val; f_ref ty_val ] };
     { super = Some ty_val; sfinal = true;
-      comp = CStruct [ f_i32; f_i32; f_ref ty_val ] };
+      comp = CStruct [ f_i32; f_ref ty_bytes; f_ref ty_val ] };
     { super = None; sfinal = true;
       comp = CFunc { params = [ vref ty_val; vref ty_val ]; results = [ vref ty_val ] } };
     { super = Some ty_val; sfinal = true;
@@ -101,28 +101,24 @@ let fn_str_len = 4
 let fn_str_byte = 5
 let fn_pair_a = 6
 let fn_pair_b = 7
-let fn_lrec_label = 8
-let fn_lrec_val = 9
-let fn_wrap_val = 10
-let fn_main = 11
-let runtime_count = 12
+let fn_lrec_name_len = 8
+let fn_lrec_name_byte = 9
+let fn_lrec_val = 10
+let fn_wrap_val = 11
+let fn_main = 12
+let runtime_count = 13
 
 let exports =
   [
     ("main", fn_main); ("tag", fn_tag); ("num", fn_num);
     ("strLen", fn_str_len); ("strByte", fn_str_byte);
     ("pairA", fn_pair_a); ("pairB", fn_pair_b);
-    ("lrecLabel", fn_lrec_label); ("lrecVal", fn_lrec_val);
-    ("wrapVal", fn_wrap_val);
+    ("lrecNameLen", fn_lrec_name_len); ("lrecNameByte", fn_lrec_name_byte);
+    ("lrecVal", fn_lrec_val); ("wrapVal", fn_wrap_val);
   ]
 
 (* Globals. *)
 let gl_unit = 0
 
-(* Every string literal lives in this one passive data segment. *)
+(* Every string literal and label name lives in this one passive segment. *)
 let strings_data = 0
-
-(* The label id -> name mapping travels in a custom section the host reads
-   with WebAssembly.Module.customSections: count, then (length, bytes) per
-   label, all little-endian u32. *)
-let labels_section = "sce.labels"

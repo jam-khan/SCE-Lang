@@ -6,8 +6,8 @@
 // exports accessor functions (tag, pairA, lrecVal, ...) and this walks the
 // result through them, rendering in exactly the format of lib/core/pretty.ml.
 // That is what lets the compiled output be diffed against the OCaml
-// interpreter. The label id -> name table travels in the "sce.labels" custom
-// section rather than in the module's state.
+// interpreter. Record labels ride inside the values themselves, so results
+// assembled from separately compiled modules render with no shared metadata.
 
 const fs = require('fs');
 
@@ -33,23 +33,6 @@ function ocamlStringLit(bytes) {
   return out + '"';
 }
 
-// count:u32le, then per label: length:u32le + bytes
-function parseLabels(mod) {
-  const sections = WebAssembly.Module.customSections(mod, 'sce.labels');
-  if (sections.length === 0) return [];
-  const dv = new DataView(sections[0]);
-  const u8 = new Uint8Array(sections[0]);
-  const labels = [];
-  let p = 4;
-  const count = dv.getUint32(0, true);
-  for (let i = 0; i < count; i++) {
-    const len = dv.getUint32(p, true);
-    labels.push(Buffer.from(u8.subarray(p + 4, p + 4 + len)).toString('latin1'));
-    p += 4 + len;
-  }
-  return labels;
-}
-
 function main() {
   const path = process.argv[2];
   if (!path) {
@@ -58,16 +41,13 @@ function main() {
   }
   const bytes = fs.readFileSync(path);
 
-  let mod, x;
+  let x;
   try {
-    mod = new WebAssembly.Module(bytes);
-    x = new WebAssembly.Instance(mod, {}).exports;
+    x = new WebAssembly.Instance(new WebAssembly.Module(bytes), {}).exports;
   } catch (e) {
     console.log('invalid: ' + e.message);
     process.exit(2);
   }
-  const labels = parseLabels(mod);
-
   let result;
   try {
     result = x.main();
@@ -85,12 +65,19 @@ function main() {
     return out;
   }
 
+  function lrecName(v) {
+    const len = x.lrecNameLen(v);
+    let out = '';
+    for (let i = 0; i < len; i++) out += String.fromCharCode(x.lrecNameByte(v, i));
+    return out;
+  }
+
   // A merge whose whole spine is labelled prints as a record, matching the
   // rule in pretty.ml.
   function recordFields(v) {
     switch (x.tag(v)) {
       case TAG.LREC:
-        return [[labels[x.lrecLabel(v)], x.lrecVal(v)]];
+        return [[lrecName(v), x.lrecVal(v)]];
       case TAG.MRG: {
         const l = recordFields(x.pairA(v));
         if (!l) return null;
@@ -113,7 +100,7 @@ function main() {
       case TAG.STR: return ocamlStringLit(str(v));
       case TAG.UNIT: return '()';
       case TAG.MRG: return `(${render(x.pairA(v))} ,, ${render(x.pairB(v))})`;
-      case TAG.LREC: return `{ ${labels[x.lrecLabel(v)]} = ${render(x.lrecVal(v))} }`;
+      case TAG.LREC: return `{ ${lrecName(v)} = ${render(x.lrecVal(v))} }`;
       case TAG.CLOS: return '<fun>';
       case TAG.FCLOS: return '<rec fun>';
       case TAG.INL: return `inl ${render(x.wrapVal(v))}`;

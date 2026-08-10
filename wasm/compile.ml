@@ -34,13 +34,11 @@ let err fmt = Printf.ksprintf (fun s -> raise (Error s)) fmt
 
 type state = {
   strings : Buffer.t; (* the one passive data segment *)
-  mutable string_offs : (string * (int * int)) list; (* literal -> (off, len) *)
-  mutable labels : string list; (* id = position, first interned first *)
+  mutable string_offs : (string * (int * int)) list; (* bytes -> (off, len) *)
   mutable lifted : func list; (* in function-index order *)
 }
 
-let new_state () =
-  { strings = Buffer.create 64; string_offs = []; labels = []; lifted = [] }
+let new_state () = { strings = Buffer.create 64; string_offs = []; lifted = [] }
 
 let string_slice st s =
   match List.assoc_opt s st.string_offs with
@@ -51,15 +49,6 @@ let string_slice st s =
     let ol = (off, String.length s) in
     st.string_offs <- (s, ol) :: st.string_offs;
     ol
-
-let label_id st l =
-  let rec find i = function
-    | [] ->
-      st.labels <- st.labels @ [ l ];
-      i
-    | l' :: rest -> if String.equal l l' then i else find (i + 1) rest
-  in
-  find 0 st.labels
 
 (* ---------------- per-function locals ----------------
 
@@ -135,9 +124,14 @@ let rec comp st fb ~env ~ctx (e : C.exp) : instr list * C.typ =
         @ [ RefCast ty_lrec; StructGet (ty_lrec, p_b) ],
         t ))
   | C.Lrec (l, e1) ->
-    let id = label_id st l in
+    (* the label name rides in the value, so separately compiled modules agree
+       on rendering without any shared table *)
+    let off, len = string_slice st l in
     let is1, t1 = comp st fb ~env ~ctx e1 in
-    ([ Const tag_lrec; Const id ] @ is1 @ [ StructNew ty_lrec ], C.TRcd (l, t1))
+    ( [ Const tag_lrec; Const off; Const len;
+        ArrayNewData (ty_bytes, strings_data) ]
+      @ is1 @ [ StructNew ty_lrec ],
+      C.TRcd (l, t1) )
   | C.Mrg (e1, e2) ->
     (* the right operand is checked, and evaluated, under ctx & typeof e1 *)
     let is1, a = comp st fb ~env ~ctx e1 in
@@ -321,10 +315,6 @@ let program (e : C.exp) : Ir.modul =
       fn_body = [ Global_get gl_unit; Local_set env ] @ body;
     }
   in
-  let labels_blob =
-    word (List.length st.labels)
-    ^ String.concat "" (List.map (fun l -> word (String.length l) ^ l) st.labels)
-  in
   {
     m_types = typedefs;
     m_funcs = Runtime.funcs @ [ main ] @ st.lifted;
@@ -335,7 +325,7 @@ let program (e : C.exp) : Ir.modul =
     m_declared = List.mapi (fun i _ -> runtime_count + i) st.lifted;
     m_datas =
       (if Buffer.length st.strings = 0 then [] else [ Buffer.contents st.strings ]);
-    m_customs = [ (labels_section, labels_blob) ];
+    m_customs = [];
   }
 
 let to_binary (e : C.exp) : string = Emit.modul (program e)

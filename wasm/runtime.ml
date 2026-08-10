@@ -83,11 +83,17 @@ let str_byte =
   fn "strByte" ty_vi2i [] (str_bytes 0 @ [ Local_get 1; ArrayGetU ty_bytes ])
 let pair_a = getter "pairA" ty_v2v ty_pair p_a
 let pair_b = getter "pairB" ty_v2v ty_pair p_b
-let lrec_label = getter "lrecLabel" ty_v2i ty_lrec p_a
+
+(* the label name of an $Lrec, carried in the value itself so results from
+   separately compiled modules render without shared metadata *)
+let lrec_name local = [ Local_get local; RefCast ty_lrec; StructGet (ty_lrec, p_a) ]
+let lrec_name_len = fn "lrecNameLen" ty_v2i [] (lrec_name 0 @ [ ArrayLen ])
+let lrec_name_byte =
+  fn "lrecNameByte" ty_vi2i [] (lrec_name 0 @ [ Local_get 1; ArrayGetU ty_bytes ])
 let lrec_val = getter "lrecVal" ty_v2v ty_lrec p_b
 let wrap_val = getter "wrapVal" ty_v2v ty_wrap p_a
 
 (* In the order Abi's fixed indices promise. *)
 let funcs =
   [ strcat; streq; tag_f; num_f; str_len; str_byte;
-    pair_a; pair_b; lrec_label; lrec_val; wrap_val ]
+    pair_a; pair_b; lrec_name_len; lrec_name_byte; lrec_val; wrap_val ]
