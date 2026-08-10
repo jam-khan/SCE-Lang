@@ -77,6 +77,7 @@ let rec instr ~nimp buf = function
   | ArrayNewDefault t -> byte buf 0xfb; u32 buf 0x07; u32 buf t
   | ArrayNewData (t, d) -> byte buf 0xfb; u32 buf 0x09; u32 buf t; u32 buf d
   | ArrayGetU t -> byte buf 0xfb; u32 buf 0x0d; u32 buf t
+  | ArraySet t -> byte buf 0xfb; u32 buf 0x0e; u32 buf t
   | ArrayLen -> byte buf 0xfb; u32 buf 0x0f
   | ArrayCopy (td, ts) -> byte buf 0xfb; u32 buf 0x11; u32 buf td; u32 buf ts
   | If (bt, thn, els) ->

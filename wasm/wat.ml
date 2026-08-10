@@ -55,6 +55,7 @@ let rec instr buf indent i =
   | ArrayNewDefault t -> line (Printf.sprintf "array.new_default $t%d" t)
   | ArrayNewData (t, d) -> line (Printf.sprintf "array.new_data $t%d %d" t d)
   | ArrayGetU t -> line (Printf.sprintf "array.get_u $t%d" t)
+  | ArraySet t -> line (Printf.sprintf "array.set $t%d" t)
   | ArrayLen -> line "array.len"
   | ArrayCopy (td, ts) -> line (Printf.sprintf "array.copy $t%d $t%d" td ts)
   | Br l -> line (Printf.sprintf "br %d" l)

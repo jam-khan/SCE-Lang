@@ -36,9 +36,13 @@ type state = {
   strings : Buffer.t; (* the one passive data segment *)
   mutable string_offs : (string * (int * int)) list; (* bytes -> (off, len) *)
   mutable lifted : func list; (* in function-index order *)
+  nimports : int; (* unit imports precede host imports in the index space *)
+  mutable hosts : (string * (int * int)) list; (* name -> import idx, trampoline *)
 }
 
-let new_state () = { strings = Buffer.create 64; string_offs = []; lifted = [] }
+let new_state ~nimports =
+  { strings = Buffer.create 64; string_offs = []; lifted = [];
+    nimports; hosts = [] }
 
 let string_slice st s =
   match List.assoc_opt s st.string_offs with
@@ -87,6 +91,23 @@ let step_instrs = function
 
 (* unbox the i32 payload of an Int or Bool *)
 let unbox = [ RefCast ty_i32box; StructGet (ty_i32box, p_a) ]
+
+(* A host capability becomes an ordinary $Clos whose funcref is a trampoline
+   into an imported `host.<name>` function, so App treats it like any other
+   closure. One import and one trampoline per distinct name. *)
+let host_trampoline st name =
+  match List.assoc_opt name st.hosts with
+  | Some (_, fi) -> fi
+  | None ->
+    let idx = st.nimports + List.length st.hosts in
+    let f =
+      { fn_name = "host_" ^ name; fn_type = ty_fn; fn_locals = [];
+        fn_body = [ Local_get 1; CallImport idx ] }
+    in
+    st.lifted <- st.lifted @ [ f ];
+    let fi = runtime_count + List.length st.lifted - 1 in
+    st.hosts <- st.hosts @ [ (name, (idx, fi)) ];
+    fi
 
 (* ---------------- the compilation scheme ----------------
 
@@ -222,8 +243,10 @@ let rec comp st fb ~env ~ctx (e : C.exp) : instr list * C.typ =
     | _ -> err "unfold applied to a non-recursive type")
   | C.Clos _ | C.Fclos _ ->
     err "closure values cannot appear in a compiled program"
-  | C.Hostfn (name, _, _) ->
-    err "host capability %s cannot be compiled to wasm yet" name
+  | C.Hostfn (name, a, b) ->
+    let fi = host_trampoline st name in
+    ( [ Const tag_clos; RefFunc fi; Global_get gl_unit; StructNew ty_clos ],
+      C.TArr (a, b) )
 
 and binop op t1 is1 is2 =
   (* unbox both operands, apply `i`, and rebox the i32 result under `tag` *)
@@ -301,9 +324,10 @@ let word n =
   Bytes.to_string b
 
 let assemble st ~imports ~customs (main : func) : Ir.modul =
+  let host_imports = List.map (fun (n, _) -> ("host", n, ty_v2v)) st.hosts in
   {
     m_types = typedefs;
-    m_imports = imports;
+    m_imports = imports @ host_imports;
     m_funcs = Runtime.funcs @ [ main ] @ st.lifted;
     m_globals =
       [ { gl_name = "unit"; gl_type = Ref ty_val; gl_mut = false;
@@ -318,7 +342,7 @@ let assemble st ~imports ~customs (main : func) : Ir.modul =
 (* Compile `e` as the body of `main`. `prologue env` seeds the environment
    local before the body runs. *)
 let build ~imports ~customs ~prologue ~ctx (e : C.exp) : Ir.modul =
-  let st = new_state () in
+  let st = new_state ~nimports:(List.length imports) in
   let fb = { nparams = 0; nlocals = 0 } in
   let env = fresh fb in
   let body, _ = comp st fb ~env ~ctx e in
@@ -333,9 +357,11 @@ let build ~imports ~customs ~prologue ~ctx (e : C.exp) : Ir.modul =
   assemble st ~imports ~customs main
 
 (* The top-level environment is Unit — the same environment
-   `Eval.eval C.Unit` starts from. *)
-let program (e : C.exp) : Ir.modul =
-  build ~imports:[] ~customs:[] ~ctx:C.TTop
+   `Eval.eval C.Unit` starts from. `customs` lets a caller attach metadata —
+   the toolchain stores a unit's printed slot type under "sce.slot" so the
+   host's loader can interface-check it at run time. *)
+let program ?(customs = []) (e : C.exp) : Ir.modul =
+  build ~imports:[] ~customs ~ctx:C.TTop
     ~prologue:(fun env -> [ Global_get gl_unit; Local_set env ])
     e
 
@@ -370,7 +396,7 @@ let link_module ~(names : string list) ~(unit_types : C.typ list)
     ~ctx:(List.fold_left (fun acc t -> C.TAnd (acc, t)) C.TTop unit_types)
     ~prologue body
 
-let to_binary (e : C.exp) : string = Emit.modul (program e)
-let to_wat (e : C.exp) : string = Wat.modul (program e)
+let to_binary ?customs (e : C.exp) : string = Emit.modul (program ?customs e)
+let to_wat ?customs (e : C.exp) : string = Wat.modul (program ?customs e)
 let link_binary ~names ~unit_types body = Emit.modul (link_module ~names ~unit_types body)
 let link_wat ~names ~unit_types body = Wat.modul (link_module ~names ~unit_types body)

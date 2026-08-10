@@ -53,6 +53,8 @@ let ty_v2i = 10 (* (val) -> i32        *)
 let ty_vi2i = 11 (* (val, i32) -> i32   *)
 let ty_0v = 12 (* () -> val           *)
 let ty_vv2i = 13 (* (val, val) -> i32   *)
+let ty_i2v = 14 (* (i32) -> val        *)
+let ty_vii2n = 15 (* (val, i32, i32) -> () *)
 
 let f_i32 = { fld = St_i32; fmut = false }
 let f_ref t = { fld = St_ref t; fmut = false }
@@ -82,6 +84,9 @@ let typedefs : subtype list =
     { super = None; sfinal = true; comp = CFunc { params = []; results = [ vref ty_val ] } };
     { super = None; sfinal = true;
       comp = CFunc { params = [ vref ty_val; vref ty_val ]; results = [ I32 ] } };
+    { super = None; sfinal = true; comp = CFunc { params = [ I32 ]; results = [ vref ty_val ] } };
+    { super = None; sfinal = true;
+      comp = CFunc { params = [ vref ty_val; I32; I32 ]; results = [] } };
   ]
 
 (* Field positions (field 0 is always the tag). *)
@@ -90,8 +95,10 @@ let p_b = 2 (* $Pair.right, $Lrec.value, $Clos.env *)
 
 (* ---------------- fixed function indices ----------------
 
-   The runtime and accessors occupy the first slots so the compiler can call
-   them by constant; lifted λE functions follow. *)
+   The runtime, accessors and constructors occupy the first slots so the
+   compiler can call them by constant; lifted λE functions follow. The
+   constructors exist for the host: JavaScript cannot build GC structs, and
+   host capabilities (readfile, load) must hand values back in. *)
 
 let fn_strcat = 0
 let fn_streq = 1
@@ -105,8 +112,14 @@ let fn_lrec_name_len = 8
 let fn_lrec_name_byte = 9
 let fn_lrec_val = 10
 let fn_wrap_val = 11
-let fn_main = 12
-let runtime_count = 13
+let fn_unitval = 12
+let fn_new_str = 13
+let fn_set_str_byte = 14
+let fn_inl = 15
+let fn_inr = 16
+let fn_lrec = 17
+let fn_main = 18
+let runtime_count = 19
 
 let exports =
   [
@@ -115,6 +128,9 @@ let exports =
     ("pairA", fn_pair_a); ("pairB", fn_pair_b);
     ("lrecNameLen", fn_lrec_name_len); ("lrecNameByte", fn_lrec_name_byte);
     ("lrecVal", fn_lrec_val); ("wrapVal", fn_wrap_val);
+    ("unitval", fn_unitval); ("newStr", fn_new_str);
+    ("setStrByte", fn_set_str_byte);
+    ("inl", fn_inl); ("inr", fn_inr); ("lrec", fn_lrec);
   ]
 
 (* Globals. *)

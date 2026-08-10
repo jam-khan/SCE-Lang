@@ -129,16 +129,22 @@ let wasm_of_artifact ~out ?wat path =
   Printf.printf "wrote %s\n" out
 
 (* One unit as its own wasm module: main returns the unit value — a closure
-   for a functor unit. Nothing beyond the ordinary compiler. *)
-let unit_wasm ~out path =
-  let art = Sce.Sepcomp.load_artifact path in
-  write_file out (Wasm_backend.Compile.to_binary art.Sce.Sepcomp.a_core);
+   for a functor unit. The printed slot type rides in an `sce.slot` custom
+   section so the host's runtime loader can interface-check the module.
+   `sys`/`loader` work here too; the loader needs the importing artifact as a
+   trailing helper argument to read its declared interface. *)
+let unit_wasm ~out paths =
+  let art = List.hd (resolve_units paths) in
+  let customs =
+    [ ("sce.slot", Sce.Sepcomp.print_typ (Sce.Sepcomp.slot_typ art)) ]
+  in
+  write_file out (Wasm_backend.Compile.to_binary ~customs art.Sce.Sepcomp.a_core);
   Printf.printf "wrote %s (%s)\n" out art.Sce.Sepcomp.a_name
 
 (* The wasm-level link: the linkers' shared composition, compiled with units
    installed through imports. *)
 let link_wasm ~out ?wat paths =
-  let arts = List.map Sce.Sepcomp.load_artifact paths in
+  let arts = resolve_units paths in
   let names, unit_types, body = Sce.Sepcomp.wasm_link_parts arts in
   write_file out (Wasm_backend.Compile.link_binary ~names ~unit_types body);
   (match wat with
@@ -165,7 +171,7 @@ let () =
       let paths, out = split_link rest in
       link_artifacts paths ~out
     | _ :: "--run" :: path :: [] -> run_artifact path
-    | _ :: "--unit-wasm" :: out :: path :: [] -> unit_wasm ~out path
+    | _ :: "--unit-wasm" :: out :: (_ :: _ as paths) -> unit_wasm ~out paths
     | _ :: "--link-wasm" :: out :: rest ->
       let wat, paths =
         match rest with "--wat" :: f :: ps -> (Some f, ps) | ps -> (None, ps)

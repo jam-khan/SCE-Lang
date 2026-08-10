@@ -188,6 +188,116 @@ let () =
   check "the loader rejects a mismatched interface"
     (contains (run ()) "no skin:")
 
+(* ---------------- the same case studies, through wasm ----------------
+
+   Trace differential: a capability-bearing program compiled to wasm and run
+   under node must print the same lines in the same order and render the same
+   value as the interpreter. Runtime loads name .sceo artifacts; at the wasm
+   level the host loads the .wasm sibling, so paths inside values are mapped
+   before comparing. *)
+
+let have cmd = Sys.command (Printf.sprintf "%s >/dev/null 2>&1" cmd) = 0
+
+let run_js = Filename.concat (Sys.getcwd ()) "../wasm/run.js"
+
+let node_run ~dir args =
+  let out = Filename.temp_file "runtime" ".out" in
+  let st =
+    Sys.command
+      (Printf.sprintf "cd %s && node %s %s > %s 2>&1" dir run_js args out)
+  in
+  let text = String.trim (read_file out) in
+  Sys.remove out;
+  (st, text)
+
+(* replace every ".sceo" with ".wasm" *)
+let wasmify s =
+  let b = Buffer.create (String.length s) in
+  let n = String.length s in
+  let i = ref 0 in
+  while !i < n do
+    if !i + 5 <= n && String.sub s !i 5 = ".sceo" then begin
+      Buffer.add_string b ".wasm";
+      i := !i + 5
+    end
+    else begin
+      Buffer.add_char b s.[!i];
+      incr i
+    end
+  done;
+  Buffer.contents b
+
+let write_unit_wasm dir (a : Sce.Sepcomp.artifact) =
+  let customs = [ ("sce.slot", Sce.Sepcomp.print_typ (Sce.Sepcomp.slot_typ a)) ] in
+  write_file
+    (Filename.concat dir (a.a_name ^ ".wasm"))
+    (Wasm_backend.Compile.to_binary ~customs a.a_core)
+
+(* Interpreter reference vs node output: same trace, then the same value. *)
+let agree name ~dir linked ~units =
+  let _, v, trace = run_traced dir linked in
+  List.iter (write_unit_wasm dir) units;
+  let _, term = Sce.Sepcomp.runnable linked in
+  write_file (Filename.concat dir "prog.wasm")
+    (Wasm_backend.Compile.to_binary term);
+  let st, text = node_run ~dir "prog.wasm" in
+  let expected = String.concat "\n" (trace @ [ wasmify v ]) in
+  if st = 0 && text = expected then check name true
+  else (
+    check name false;
+    Printf.printf "        interpreter:\n%s\n        wasm:\n%s\n" expected text)
+
+let () =
+  if not (have "node --version") then
+    print_endline "\nwasm trace differential skipped: node is not installed"
+  else begin
+    print_endline "\n-- wasm trace differential --";
+    (* effects, compiled whole *)
+    let dir = fixture "effects" in
+    let app = compile_exn dir "app.sce" in
+    agree "effects: wasm trace = interpreter trace" ~dir
+      (link_exn [ sys; app ]) ~units:[];
+    (* effects again, with sys as its own wasm module behind the link module *)
+    let names, unit_types, body = Sce.Sepcomp.wasm_link_parts [ sys; app ] in
+    List.iter (write_unit_wasm dir) [ sys; app ];
+    write_file (Filename.concat dir "linked.wasm")
+      (Wasm_backend.Compile.link_binary ~names ~unit_types body);
+    let st, text = node_run ~dir "linked.wasm sys.wasm app.wasm" in
+    check "effects: sys as a wasm module behind the link module"
+      (st = 0
+      && text
+         = "[app] greeting world\n[app] greeting again\n\
+            \"hello, world / hello, again\"");
+    (* the plugin manager: runtime loads happen inside the wasm host *)
+    let dir = fixture "plugins" in
+    let shout = compile_exn dir "shout.sce" in
+    let quiet = compile_exn dir "quiet.sce" in
+    let manager = compile_exn dir "manager.sce" in
+    Sce.Sepcomp.save_artifact (Filename.concat dir "shout.sceo") shout;
+    Sce.Sepcomp.save_artifact (Filename.concat dir "quiet.sceo") quiet;
+    agree "plugins: wasm loads and traces agree with the interpreter" ~dir
+      (link_exn [ sys; Sce.Sepcomp.loader_artifact [ manager ]; manager ])
+      ~units:[ shout; quiet ];
+    (* config-driven loading, including the mismatch message *)
+    let dir = fixture "dynconfig" in
+    let plain = compile_exn dir "plain.sce" in
+    let fancy = compile_exn dir "fancy.sce" in
+    let chooser = compile_exn dir "chooser.sce" in
+    List.iter
+      (fun a -> Sce.Sepcomp.save_artifact
+          (Filename.concat dir (a.Sce.Sepcomp.a_name ^ ".sceo")) a)
+      [ plain; fancy; chooser ];
+    let linked =
+      link_exn [ sys; Sce.Sepcomp.loader_artifact [ chooser ]; chooser ]
+    in
+    List.iter
+      (fun skin ->
+        write_file (Filename.concat dir "skin.txt") skin;
+        agree ("dynconfig: wasm agrees on skin = " ^ skin) ~dir linked
+          ~units:[ plain; fancy; chooser ])
+      [ "fancy.sceo"; "plain.sceo"; "chooser.sceo" ]
+  end
+
 let () =
   print_newline ();
   if !failures = 0 then print_endline "all runtime tests passed"

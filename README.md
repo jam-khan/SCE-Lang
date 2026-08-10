@@ -195,9 +195,16 @@ returns a union the program cases on. Elaboration was linearized for this
 in source order). Case studies: [examples/effects/](examples/effects/),
 [examples/plugins/](examples/plugins/) (a plugin manager with attenuated
 per-plugin capabilities), [examples/dynconfig/](examples/dynconfig/)
-(config-driven implementation swapping). The wasm backend rejects
-capability-bearing programs for now; pushing `sys` and the loader down to
-wasm imports is the next step.
+(config-driven implementation swapping).
+
+All of it reaches wasm. A `Hostfn` compiles to an ordinary `$Clos` over a
+`host.*` import; `--unit-wasm` stores the unit's printed interface in an
+`sce.slot` custom section, and the host's loader checks it by *string
+equality* — `print_typ` is canonical, so equal texts are equal types. Runtime
+loads name `.sceo` artifacts and the wasm host loads the `.wasm` sibling: the
+same config file drives both levels. The runtime test suite diffs *effect
+traces*, not just values, between the interpreter and node — including the
+plugin manager loading plugin modules inside a running wasm instance.
 
 ## Layout
 

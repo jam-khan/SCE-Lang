@@ -135,6 +135,23 @@ it. Interface checking happens in the toolchain against the artifacts' stored
 λSCE types — wasm's own type system sees only `() -> (ref null $Val)` imports,
 with runtime casts backing what the calculus already proved.
 
+## Host capabilities and the runtime loader (experimental)
+
+A `Hostfn` value compiles to an ordinary `$Clos` whose funcref is a
+trampoline into an imported `host.<name>` function, so `App` needs no new
+case. `run.js` supplies the host object: `print` and `readfile` read string
+payloads through the accessors, and build result values through the
+constructor exports (`unitval`, `newStr`/`setStrByte`, `inl`, `inr`, `lrec`)
+— JavaScript cannot construct GC structs itself.
+
+The runtime loader's import *name* carries the expected interface
+(`load:<printed type>`), and `--unit-wasm` stores each unit's printed slot
+type in an `sce.slot` custom section. The check is string equality of the two
+texts: `print_typ` is canonical, so equal texts are exactly structural type
+equality — the static linker's check, made at instantiation time. Runtime
+loads name `.sceo` artifacts; the host loads the `.wasm` sibling, so the same
+program and the same config files drive both levels.
+
 ## Limitations
 
 - Recursion depth is the wasm stack, so very deep recursion traps rather than

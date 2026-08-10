@@ -93,7 +93,31 @@ let lrec_name_byte =
 let lrec_val = getter "lrecVal" ty_v2v ty_lrec p_b
 let wrap_val = getter "wrapVal" ty_v2v ty_wrap p_a
 
+(* ---------------- host constructors ----------------
+
+   JavaScript cannot build GC structs, so host capabilities that hand values
+   back in (readfile, load) construct them through these exports. *)
+
+let unitval = fn "unitval" ty_0v [] [ Global_get gl_unit ]
+
+let new_str =
+  fn "newStr" ty_i2v []
+    [ Const tag_str; Local_get 0; ArrayNewDefault ty_bytes; StructNew ty_str ]
+
+let set_str_byte =
+  fn "setStrByte" ty_vii2n []
+    (str_bytes 0 @ [ Local_get 1; Local_get 2; ArraySet ty_bytes ])
+
+let inl_v = fn "inl" ty_v2v [] [ Const tag_inl; Local_get 0; StructNew ty_wrap ]
+let inr_v = fn "inr" ty_v2v [] [ Const tag_inr; Local_get 0; StructNew ty_wrap ]
+
+(* lrec (name : $Str) (v) — the label bytes come from a host-built string *)
+let lrec_v =
+  fn "lrec" ty_fn []
+    ([ Const tag_lrec ] @ str_bytes 0 @ [ Local_get 1; StructNew ty_lrec ])
+
 (* In the order Abi's fixed indices promise. *)
 let funcs =
   [ strcat; streq; tag_f; num_f; str_len; str_byte;
-    pair_a; pair_b; lrec_name_len; lrec_name_byte; lrec_val; wrap_val ]
+    pair_a; pair_b; lrec_name_len; lrec_name_byte; lrec_val; wrap_val;
+    unitval; new_str; set_str_byte; inl_v; inr_v; lrec_v ]

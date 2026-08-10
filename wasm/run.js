@@ -55,6 +55,84 @@ function unitManifest(mod) {
   return names;
 }
 
+// the unit's printed slot type, stored by --unit-wasm for the runtime loader
+function slotType(mod) {
+  const sections = WebAssembly.Module.customSections(mod, 'sce.slot');
+  if (sections.length === 0) return null;
+  return Buffer.from(new Uint8Array(sections[0])).toString('latin1').trim();
+}
+
+// Host capabilities. `x` (the main instance's exports) is bound after
+// instantiation but only used once main() runs — accessors and constructors
+// are structural, so they work on values from any instance.
+function makeHost(getX) {
+  const readStr = v => {
+    const x = getX();
+    const len = x.strLen(v);
+    const out = Buffer.alloc(len);
+    for (let i = 0; i < len; i++) out[i] = x.strByte(v, i);
+    return out.toString('latin1');
+  };
+  const mkStr = s => {
+    const x = getX();
+    const b = Buffer.from(s, 'latin1');
+    const v = x.newStr(b.length);
+    for (let i = 0; i < b.length; i++) x.setStrByte(v, i, b[i]);
+    return v;
+  };
+  const mkErr = msg => {
+    const x = getX();
+    return x.inr(x.lrec(mkStr('err'), mkStr(msg)));
+  };
+  const host = {
+    print: v => {
+      process.stdout.write(readStr(v) + '\n');
+      return getX().unitval();
+    },
+    readfile: v => {
+      try {
+        return getX().inl(mkStr(fs.readFileSync(readStr(v)).toString('latin1')));
+      } catch (e) {
+        return mkErr(e.message);
+      }
+    },
+  };
+  // load:<sig> — the import *name* carries the expected interface; the loaded
+  // module's sce.slot section must print the same, which (print_typ being
+  // canonical) is exactly structural type equality. Artifact paths written
+  // for the interpreter (.sceo) name the .wasm sibling at this level.
+  const loader = want => v => {
+    const path = readStr(v).replace(/\.sceo$/, '.wasm');
+    let bytes;
+    try {
+      bytes = fs.readFileSync(path);
+    } catch (e) {
+      return mkErr(e.code === 'ENOENT'
+        ? `cannot open artifact: ${path}: No such file or directory`
+        : `cannot open artifact: ${e.message}`);
+    }
+    try {
+      const mod = new WebAssembly.Module(bytes);
+      const slot = slotType(mod);
+      if (slot === null) return mkErr(`${path} is not a unit module (no sce.slot)`);
+      if (slot !== want)
+        return mkErr(`${path} : ${slot} does not match the expected ${want}`);
+      const inst = new WebAssembly.Instance(mod, { host: hostProxy });
+      return getX().inl(inst.exports.main());
+    } catch (e) {
+      return mkErr(`cannot load ${path}: ${e.message}`);
+    }
+  };
+  // Serve plain names directly and manufacture load:<sig> entries on demand.
+  const hostProxy = new Proxy(host, {
+    get: (t, name) =>
+      typeof name === 'string' && name.startsWith('load:')
+        ? loader(name.slice(5))
+        : t[name],
+  });
+  return hostProxy;
+}
+
 function main() {
   const path = process.argv[2];
   if (!path) {
@@ -64,11 +142,12 @@ function main() {
   const bytes = fs.readFileSync(path);
 
   let x;
+  const host = makeHost(() => x);
   try {
     const mod = new WebAssembly.Module(bytes);
     const manifest = unitManifest(mod);
     const unitPaths = process.argv.slice(3);
-    const importObj = {};
+    const importObj = { host };
     if (manifest && manifest.length > 0) {
       if (unitPaths.length !== manifest.length) {
         console.error(`this module links ${manifest.length} unit(s): ${manifest.join(', ')}`);
@@ -81,7 +160,7 @@ function main() {
           process.exit(64);
         }
         const inst = new WebAssembly.Instance(
-          new WebAssembly.Module(fs.readFileSync(unitPaths[k])), {});
+          new WebAssembly.Module(fs.readFileSync(unitPaths[k])), { host });
         importObj[`u${k}`] = { main: inst.exports.main };
       });
     }

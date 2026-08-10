@@ -46,6 +46,7 @@ type instr =
   | ArrayNewDefault of int
   | ArrayNewData of int * int  (* type, data segment *)
   | ArrayGetU of int
+  | ArraySet of int
   | ArrayLen
   | ArrayCopy of int * int     (* dst type, src type *)
   | If of valtype list * instr list * instr list
