@@ -492,7 +492,21 @@ let test_examples () =
           check ("runs: " ^ f) false;
           print_endline (Sce.Pipeline.render ~src e)
       end)
-    files
+    files;
+  (* recursive linking as a derived form: the knot must close, with the value
+     the mechanization's Theorem 31 predicts *)
+  let path = Filename.concat dir "linkrec/parity.sce" in
+  let ic = open_in_bin path in
+  let src = really_input_string ic (in_channel_length ic) in
+  close_in ic;
+  (match Sce.Pipeline.run src with
+   | Ok o ->
+     check "runs: linkrec/parity.sce"
+       (Sce.Pipeline.value_string o
+        = "{ even10 = true; odd10 = false; even7 = false }")
+   | Error e ->
+     check "runs: linkrec/parity.sce" false;
+     print_endline (Sce.Pipeline.render ~src e))
 
 let () =
   test_parsing ();

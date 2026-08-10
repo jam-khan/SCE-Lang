@@ -1,0 +1,124 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "SCE",
+  "scopeName": "source.sce",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#string" },
+    { "include": "#declaration" },
+    { "include": "#keyword" },
+    { "include": "#constant" },
+    { "include": "#type" },
+    { "include": "#operator" },
+    { "include": "#number" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "comment": {
+      "name": "comment.block.sce",
+      "begin": "\\(\\*",
+      "end": "\\*\\)",
+      "patterns": [{ "include": "#comment" }]
+    },
+    "string": {
+      "name": "string.quoted.double.sce",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        { "name": "constant.character.escape.sce", "match": "\\\\[nt\"\\\\]" }
+      ]
+    },
+    "declaration": {
+      "patterns": [
+        {
+          "match": "\\b(let)\\s+(rec)\\s+([a-z_][a-zA-Z0-9_']*)",
+          "captures": {
+            "1": { "name": "keyword.declaration.sce" },
+            "2": { "name": "keyword.declaration.sce" },
+            "3": { "name": "entity.name.function.sce" }
+          }
+        },
+        {
+          "match": "\\b(let)\\s+([a-z_][a-zA-Z0-9_']*)",
+          "captures": {
+            "1": { "name": "keyword.declaration.sce" },
+            "2": { "name": "entity.name.function.sce" }
+          }
+        },
+        {
+          "match": "\\b(module|type|import)\\s+([A-Z][a-zA-Z0-9_']*)",
+          "captures": {
+            "1": { "name": "keyword.declaration.sce" },
+            "2": { "name": "entity.name.type.sce" }
+          }
+        },
+        {
+          "match": "\\b(functor)\\s*\\(\\s*([A-Z][a-zA-Z0-9_']*)",
+          "captures": {
+            "1": { "name": "keyword.declaration.sce" },
+            "2": { "name": "variable.parameter.sce" }
+          }
+        }
+      ]
+    },
+    "keyword": {
+      "patterns": [
+        {
+          "name": "keyword.control.sce",
+          "match": "\\b(if|then|else|case|of|end)\\b"
+        },
+        {
+          "name": "keyword.declaration.sce",
+          "match": "\\b(let|rec|module|type|import|fun|functor|struct|sandbox)\\b"
+        },
+        {
+          "name": "keyword.other.sce",
+          "match": "\\b(in|open|box|link|linkall|with|mu|fold|unfold|inl|inr)\\b"
+        },
+        {
+          "name": "keyword.operator.word.sce",
+          "match": "\\b(not|mod)\\b"
+        }
+      ]
+    },
+    "constant": {
+      "patterns": [
+        { "name": "constant.language.boolean.sce", "match": "\\b(true|false)\\b" },
+        { "name": "constant.language.unit.sce", "match": "\\(\\)" }
+      ]
+    },
+    "type": {
+      "patterns": [
+        {
+          "name": "support.type.primitive.sce",
+          "match": "\\b(Int|Bool|String|Top)\\b"
+        },
+        {
+          "name": "entity.name.type.sce",
+          "match": "\\b[A-Z][a-zA-Z0-9_']*\\b"
+        }
+      ]
+    },
+    "operator": {
+      "patterns": [
+        { "name": "keyword.operator.merge.sce", "match": ",,,|,," },
+        { "name": "keyword.control.toplevel.sce", "match": ";;" },
+        { "name": "keyword.operator.arrow.sce", "match": "->|=>" },
+        { "name": "keyword.operator.comparison.sce", "match": "<=|>=|<>|<|>|=" },
+        { "name": "keyword.operator.logical.sce", "match": "&&|\\|\\||&|\\|" },
+        { "name": "keyword.operator.arithmetic.sce", "match": "[+*/^-]" },
+        { "name": "keyword.operator.query.sce", "match": "\\?" }
+      ]
+    },
+    "number": {
+      "name": "constant.numeric.integer.sce",
+      "match": "\\b[0-9]+\\b"
+    },
+    "punctuation": {
+      "patterns": [
+        { "name": "punctuation.separator.sce", "match": "[:;,]" },
+        { "name": "punctuation.accessor.sce", "match": "\\." }
+      ]
+    }
+  }
+}

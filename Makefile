@@ -30,7 +30,7 @@ wasm:
 sepcomp:
 	dune build
 	rm -rf /tmp/sce-sepcomp && mkdir -p /tmp/sce-sepcomp
-	cp examples/units/*.sce /tmp/sce-sepcomp/
+	cp examples/units/hello/*.sce /tmp/sce-sepcomp/
 	dune exec --no-build bin/main.exe -- -c /tmp/sce-sepcomp/counter.sce -o /tmp/sce-sepcomp/counter.sceo
 	dune exec --no-build bin/main.exe -- -c /tmp/sce-sepcomp/fmt.sce -o /tmp/sce-sepcomp/fmt.sceo
 	dune exec --no-build bin/main.exe -- -c /tmp/sce-sepcomp/app.sce -o /tmp/sce-sepcomp/app.sceo

@@ -67,6 +67,12 @@ let sets =
     ("geometry", [ "vec"; "shapes"; "report" ], None);
     ("peano", [ "nat"; "arith"; "demo" ], None);
     ("textlib", [ "show"; "csv"; "summary" ], None);
+    ( "diamond",
+      [ "lib"; "left"; "right"; "top" ],
+      Some [ "lib"; "right"; "left"; "top" ] );
+    ( "interp",
+      [ "ast"; "eval"; "show"; "main" ],
+      Some [ "show"; "eval"; "ast"; "main" ] );
   ]
 
 let compile_units dir units =

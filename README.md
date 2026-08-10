@@ -215,8 +215,10 @@ plugin manager loading plugin modules inside a running wasm instance.
 | [lib/sce/](lib/sce/) | λSCE: AST, evaluators, and the elaboration to λE |
 | [lib/source/](lib/source/) | lexer, parser, `frames`, `debruijn`, `sugar`, `driver` |
 | [lib/pipeline.ml](lib/pipeline.ml) | the five stages behind one `run` and one error type |
+| [Design.md](Design.md) | the design decisions, why each was made, and the example + test that demonstrates it |
 | [examples/](examples/) | runnable programs; separate-compilation case studies under `units/` |
 | [test/](test/) | parser, scope-resolution, end-to-end, differential, failure and linking-commutation tests |
+| [editors/vscode/sce/](editors/vscode/sce/) | VS Code syntax highlighting for `.sce`/`.scei` — see its README to install |
 
 The test suite includes a differential check that λSCE evaluation agrees with λE
 evaluation of its elaboration, that big-step agrees with small-step in both, and

@@ -200,7 +200,9 @@ let test_examples () =
     (fun f ->
       if Filename.check_suffix f ".sce" then
         agree ("example: " ^ f) (read_file (Filename.concat examples_dir f)))
-    files
+    files;
+  agree "example: linkrec/parity.sce"
+    (read_file (Filename.concat examples_dir "linkrec/parity.sce"))
 
 (* Binaryen is an independent check that a module our own emitter is happy with
    is genuinely well-formed. Skipped when it is not installed. *)

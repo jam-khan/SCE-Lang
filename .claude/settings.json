@@ -1,7 +1,24 @@
 {
   "permissions": {
     "allow": [
-      "Bash(dune test *)"
+      "Bash(dune test *)",
+      "Read(//Users/jamkabeeralikhan/Documents/Programming/lambda-sce/**)",
+      "Read(//Users/jamkabeeralikhan/Documents/Programming/lambda-sce/LeanSce/**)",
+      "Read(//Users/jamkabeeralikhan/Documents/Programming/LambdaSCE/**)",
+      "Read(//Users/jamkabeeralikhan/Documents/Programming/SCE/**)",
+      "Read(//Users/jamkabeeralikhan/Documents/Programming/lambda-sce/LeanSce/Core/**)",
+      "Read(//Users/jamkabeeralikhan/Documents/Programming/lambda-sce/LeanSce/SCE/**)",
+      "Bash(awk -F: '{print $1\": \"$3}')",
+      "Read(//Users/jamkabeeralikhan/Documents/Programming/SCE/paper/**)",
+      "Bash(cd /Users/jamkabeeralikhan/Documents/Programming/lambda-sce && grep -rn \"^theorem \\\\|^lemma \\\\|^def \\\\|^inductive \\\\|^abbrev \\\\|^example \\\\|^mutual\\\\|^instance \" LeanSce/)",
+      "Bash(cd /Users/jamkabeeralikhan/Documents/Programming/SCE && ls -la paper/ && find . -name \"*.lean\" -not -path \"./.git/*\" | head -20 && ls -la .. | head -40)",
+      "Read(//Users/jamkabeeralikhan/Documents/Programming/**)",
+      "Bash(grep -vn \"^\\\\s*$\" paper/4-elaboration.tex)",
+      "Bash(grep -v \"inferrule\\\\|mathpar\\\\|and$\\\\|\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\|^\\\\s*{\")",
+      "Bash(cd /Users/jamkabeeralikhan/Documents/Programming/SCE && grep -c \"Citation\" main.log; grep -o \"Citation '[^']*' undefined\" main.log | sort -u; echo \"=== SCE-Lang ===\"; ls /Users/jamkabeeralikhan/Documents/Programming/SCE-Lang; echo \"=== lambda-sce ===\"; ls /Users/jamkabeeralikhan/Documents/Programming/lambda-sce)",
+      "Bash(cd /Users/jamkabeeralikhan/Documents/Programming/lambda-sce && ls LeanSce && echo \"=== sorry count ===\" && grep -rn \"sorry\" LeanSce *.lean 2>/dev/null | wc -l && echo \"=== sizes ===\" && wc -l LeanSce/*.lean 2>/dev/null | tail -30)",
+      "Bash(cd /Users/jamkabeeralikhan/Documents/Programming/lambda-sce && echo \"=== SCE SStep constructors ===\" && grep -n \"^  | \" LeanSce/SCE/SmallStep.lean && echo \"=== Core Step constructors ===\" && grep -n \"^  | \" LeanSce/Core/SmallStep.lean | head -80)",
+      "Bash(cd /Users/jamkabeeralikhan/Documents/Programming/lambda-sce && echo \"=== subtyping/disjoint/coercion ===\" && grep -rni \"subtyp\\\\|disjoint\\\\|coerc\\\\|Sub \\\\|<:\\\\|typeof\\\\|infer\" LeanSce/ | head -30; echo \"=== f-ing dir ===\"; ls f-ing | head -20; echo; ls .claude; cat .claude/*/*.md 2>/dev/null | head -40)"
     ]
   }
 }

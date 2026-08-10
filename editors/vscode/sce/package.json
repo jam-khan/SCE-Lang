@@ -1,0 +1,27 @@
+{
+  "name": "sce-lang",
+  "displayName": "SCE-Lang",
+  "description": "Syntax highlighting for SCE source (.sce) and interface (.scei) files",
+  "version": "0.1.0",
+  "publisher": "sce-lang",
+  "license": "MIT",
+  "engines": { "vscode": "^1.75.0" },
+  "categories": ["Programming Languages"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "sce",
+        "aliases": ["SCE", "sce"],
+        "extensions": [".sce", ".scei"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "sce",
+        "scopeName": "source.sce",
+        "path": "./syntaxes/sce.tmLanguage.json"
+      }
+    ]
+  }
+}
