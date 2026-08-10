@@ -93,10 +93,6 @@ let rec instr ~nimp buf = function
   | Loop (bt, body) ->
     byte buf 0x03; blocktype buf bt; List.iter (instr ~nimp buf) body; byte buf 0x0b
   | Br l -> byte buf 0x0c; u32 buf l
-  | Br_if l -> byte buf 0x0d; u32 buf l
-  | Return -> byte buf 0x0f
-  | Drop -> byte buf 0x1a
-  | Unreachable -> byte buf 0x00
 
 (* Consecutive locals of the same type are run-length encoded. *)
 let locals buf ls =

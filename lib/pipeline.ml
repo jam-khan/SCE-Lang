@@ -31,31 +31,39 @@ let at stage (loc : Ast.loc) message =
    the one carried by the surface node that raised. *)
 let whole stage message = { stage; message; line = 1; col = 0 }
 
-let run (src : string) : (outcome, error) result =
+(* The interpreters raise Failure with their own "Error: " prefix. *)
+let strip_error_prefix m =
+  let p = "Error: " in
+  if String.starts_with ~prefix:p m then
+    String.sub m (String.length p) (String.length m - String.length p)
+  else m
+
+(* Parse, then run `k` with every later stage's exception mapped to `error`. *)
+let staged (src : string) (k : Ast.named -> 'a) : ('a, error) result =
   match Driver.parse src with
   | Error e -> Error { stage = "parse"; message = e.message; line = e.line; col = e.col }
   | Ok named -> (
-    try
-      let indexed = Debruijn.resolve named in
-      let sce_typ, sce_exp = Sugar.desugar_program indexed in
-      let _, core_exp = Sce_core.Elab.elab S.TTop sce_exp in
-      let core_typ = Core_lambdae.Check.typecheck core_exp in
-      let value = Core_lambdae.Eval.eval C.Unit core_exp in
-      Ok { sce_typ; sce_exp; core_typ; core_exp; value }
-    with
+    try Ok (k named) with
     | Debruijn.Error (m, loc) -> Error (at "scope" loc m)
     | Sugar.Error (m, loc) -> Error (at "desugar" loc m)
     | Sce_core.Elab.Elab_error m -> Error (whole "elaborate" m)
     | Core_lambdae.Check.Type_error m -> Error (whole "typecheck" m)
-    (* The interpreters raise Failure with their own "Error: " prefix. *)
-    | Failure m ->
-      let m =
-        match String.index_opt m ':' with
-        | Some i when String.starts_with ~prefix:"Error:" m ->
-          String.trim (String.sub m (i + 1) (String.length m - i - 1))
-        | _ -> m
-      in
-      Error (whole "runtime" m))
+    | Sepcomp.Error m -> Error (whole "unit" m)
+    | Failure m -> Error (whole "runtime" (strip_error_prefix m)))
+
+(* resolve -> desugar -> elaborate -> check, shared by every entry point. *)
+let core_stages (named : Ast.named) : S.typ * S.exp * C.typ * C.exp =
+  let indexed = Debruijn.resolve named in
+  let sce_typ, sce_exp = Sugar.desugar_program indexed in
+  let _, core_exp = Sce_core.Elab.elab S.TTop sce_exp in
+  let core_typ = Core_lambdae.Check.typecheck core_exp in
+  (sce_typ, sce_exp, core_typ, core_exp)
+
+let run (src : string) : (outcome, error) result =
+  staged src (fun named ->
+    let sce_typ, sce_exp, core_typ, core_exp = core_stages named in
+    let value = Core_lambdae.Eval.eval C.Unit core_exp in
+    { sce_typ; sce_exp; core_typ; core_exp; value })
 
 let render ~src (e : error) =
   Driver.render ~src
@@ -67,23 +75,11 @@ let value_string (o : outcome) = Core_lambdae.Pretty.exp_to_string o.value
 let core_string (o : outcome) = Core_lambdae.Pretty.exp_to_string o.core_exp
 
 (* The elaborated λE term, without evaluating it — what the wasm backend
-   compiles. Elaboration is re-run rather than reusing `run`, so a program that
-   diverges at runtime can still be compiled. *)
+   compiles, so a program that diverges at runtime can still be compiled. *)
 let run_to_core (src : string) : (C.exp, error) result =
-  match Driver.parse src with
-  | Error e -> Error { stage = "parse"; message = e.message; line = e.line; col = e.col }
-  | Ok named -> (
-    try
-      let indexed = Debruijn.resolve named in
-      let _, sce_exp = Sugar.desugar_program indexed in
-      let _, core_exp = Sce_core.Elab.elab S.TTop sce_exp in
-      ignore (Core_lambdae.Check.typecheck core_exp);
-      Ok core_exp
-    with
-    | Debruijn.Error (m, loc) -> Error (at "scope" loc m)
-    | Sugar.Error (m, loc) -> Error (at "desugar" loc m)
-    | Sce_core.Elab.Elab_error m -> Error (whole "elaborate" m)
-    | Core_lambdae.Check.Type_error m -> Error (whole "typecheck" m))
+  staged src (fun named ->
+    let _, _, _, core_exp = core_stages named in
+    core_exp)
 
 (* ---------------- separate compilation ---------------- *)
 
@@ -93,47 +89,35 @@ let run_to_core (src : string) : (C.exp, error) result =
    returns the generated interface texts, one per exported module. *)
 let compile_unit ~(path : string) (src : string) :
     (Sepcomp.artifact * (string * string) list, error) result =
-  match Driver.parse src with
-  | Error e -> Error { stage = "parse"; message = e.message; line = e.line; col = e.col }
-  | Ok p -> (
-    try
-      (match p.main with
-       | Some m ->
-         raise (Sugar.Error ("a unit cannot end in a ';;' expression", m.loc))
-       | None -> ());
-      let dir = Filename.dirname path in
-      let imports =
-        List.map
-          (fun (b, isrc) ->
-            try (b, Sepcomp.import_typ ~dir b isrc)
-            with Sepcomp.Error m -> raise (Debruijn.Error (m, b.Ast.bd_loc)))
-          p.imports
-      in
-      let indexed = Debruijn.resolve (Sepcomp.unit_wrapper imports p) in
-      let t, sce_exp = Sugar.desugar_program indexed in
-      let _, core = Sce_core.Elab.elab S.TTop sce_exp in
-      ignore (Core_lambdae.Check.typecheck core);
-      let a_imports, a_exports = Sepcomp.unit_info t in
-      let name = Filename.remove_extension (Filename.basename path) in
-      let sceis =
-        List.filter_map
-          (fun d ->
-            match d.Ast.it with
-            | Ast.DModule (b, _) -> (
-              match Sce_core.Elab.srlookup_opt a_exports b.Ast.bd_name with
-              | Some ft ->
-                Some (b.Ast.bd_name ^ ".scei", Sepcomp.print_typ ft ^ "\n")
-              | None -> None)
-            | _ -> None)
-          p.decls
-      in
-      Ok ({ Sepcomp.a_name = name; a_imports; a_exports; a_core = core }, sceis)
-    with
-    | Debruijn.Error (m, loc) -> Error (at "scope" loc m)
-    | Sugar.Error (m, loc) -> Error (at "desugar" loc m)
-    | Sce_core.Elab.Elab_error m -> Error (whole "elaborate" m)
-    | Core_lambdae.Check.Type_error m -> Error (whole "typecheck" m)
-    | Sepcomp.Error m -> Error (whole "unit" m))
+  staged src (fun p ->
+    (match p.main with
+     | Some m ->
+       raise (Sugar.Error ("a unit cannot end in a ';;' expression", m.loc))
+     | None -> ());
+    let dir = Filename.dirname path in
+    let imports =
+      List.map
+        (fun (b, isrc) ->
+          try (b, Sepcomp.import_typ ~dir b isrc)
+          with Sepcomp.Error m -> raise (Debruijn.Error (m, b.Ast.bd_loc)))
+        p.imports
+    in
+    let t, _, _, core = core_stages (Sepcomp.unit_wrapper imports p) in
+    let a_imports, a_exports = Sepcomp.unit_info t in
+    let name = Filename.remove_extension (Filename.basename path) in
+    let sceis =
+      List.filter_map
+        (fun d ->
+          match d.Ast.it with
+          | Ast.DModule (b, _) -> (
+            match Sce_core.Elab.srlookup_opt a_exports b.Ast.bd_name with
+            | Some ft ->
+              Some (b.Ast.bd_name ^ ".scei", Sepcomp.print_typ ft ^ "\n")
+            | None -> None)
+          | _ -> None)
+        p.decls
+    in
+    ({ Sepcomp.a_name = name; a_imports; a_exports; a_core = core }, sceis))
 
 let link_artifacts (arts : Sepcomp.artifact list) :
     (Sepcomp.artifact, error) result =
@@ -147,4 +131,4 @@ let run_artifact (a : Sepcomp.artifact) : (string * string, error) result =
     Ok (Sce_core.Pretty.typ_to_string t, Core_lambdae.Pretty.exp_to_string v)
   with
   | Sepcomp.Error m -> Error (whole "link" m)
-  | Failure m -> Error (whole "runtime" m)
+  | Failure m -> Error (whole "runtime" (strip_error_prefix m))

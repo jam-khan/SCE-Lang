@@ -319,6 +319,12 @@ let wasm_link_parts (arts : artifact list) :
    the result. *)
 
 let runnable (a : artifact) : S.typ * C.exp =
+  (match a.a_imports with
+   | Some d ->
+     err "unit %s still imports %s; link it against its providers first"
+       a.a_name
+       (String.concat ", " (List.map fst (import_fields d)))
+   | None -> ());
   match E.srlookup_opt a.a_exports "main" with
   | Some t -> (t, C.Rproj (a.a_core, "main"))
   | None -> (a.a_exports, a.a_core)

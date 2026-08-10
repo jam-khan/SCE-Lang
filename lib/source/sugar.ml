@@ -88,6 +88,9 @@ let conv_binop = function
 let btrue = S.Lit (S.Bool true)
 let bfalse = S.Lit (S.Bool false)
 
+(* The label an `open` subject is wrapped in, so `Openm` sees a record. *)
+let open_label = "%open"
+
 (* ---------------- expressions ---------------- *)
 
 let rec desugar env (e : (path, int) exp) : S.typ * S.exp =
@@ -209,8 +212,6 @@ let rec desugar env (e : (path, int) exp) : S.typ * S.exp =
     (t, S.Mstruct (conv_sandbox sb, c))
   | EFunctor (sb, ps, body) -> functors env sb ps body
   | ELink (k, m, f) -> link env e.loc k m f
-
-and open_label = "%open"
 
 and conv_sandbox = function Sandboxed -> S.Sandboxed | Open -> S.Open
 

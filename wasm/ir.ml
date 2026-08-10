@@ -52,10 +52,6 @@ type instr =
   | Block of valtype list * instr list
   | Loop of valtype list * instr list
   | Br of int
-  | Br_if of int
-  | Return
-  | Drop
-  | Unreachable
 
 type func = {
   fn_name : string;            (* for readable WAT and error messages *)

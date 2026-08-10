@@ -1,6 +1,7 @@
 (tests
- (names test_sce test_wasm test_sepcomp)
+ (names test_sce test_wasm test_sepcomp test_commute)
  (libraries sce source sce_core core_lambdae wasm_backend)
  (deps
   (glob_files %{project_root}/examples/*.sce)
+  (glob_files_rec %{project_root}/examples/units/*.sce)
   %{project_root}/wasm/run.js))

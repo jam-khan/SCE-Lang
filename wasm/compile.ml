@@ -158,7 +158,7 @@ let rec comp st fb ~env ~ctx (e : C.exp) : instr list * C.typ =
       if a' <> a then err "argument type mismatch";
       let f = fresh fb in
       (* self, then argument, then the funcref call_ref pops last *)
-      ( is1 @ [ Local_set f; Local_get f ] @ is2
+      ( is1 @ [ Local_tee f ] @ is2
         @ [ Local_get f; RefCast ty_clos; StructGet (ty_clos, p_a);
             CallRef ty_fn ],
         b )
@@ -224,22 +224,20 @@ let rec comp st fb ~env ~ctx (e : C.exp) : instr list * C.typ =
     err "closure values cannot appear in a compiled program"
 
 and binop op t1 is1 is2 =
-  let arith i =
-    [ Const tag_int ] @ is1 @ unbox @ is2 @ unbox @ [ i; StructNew ty_i32box ]
-  in
-  let compare i =
-    [ Const tag_bool ] @ is1 @ unbox @ is2 @ unbox @ [ i; StructNew ty_i32box ]
+  (* unbox both operands, apply `i`, and rebox the i32 result under `tag` *)
+  let ibox tag i =
+    (Const tag :: is1) @ unbox @ is2 @ unbox @ [ i; StructNew ty_i32box ]
   in
   match (op : C.binop) with
-  | C.Add -> arith Add
-  | C.Sub -> arith Sub
-  | C.Mul -> arith Mul
-  | C.Div -> arith Div_s
-  | C.Mod -> arith Rem_s
-  | C.Lt -> compare Lt_s
-  | C.Le -> compare Le_s
-  | C.Gt -> compare Gt_s
-  | C.Ge -> compare Ge_s
+  | C.Add -> ibox tag_int Add
+  | C.Sub -> ibox tag_int Sub
+  | C.Mul -> ibox tag_int Mul
+  | C.Div -> ibox tag_int Div_s
+  | C.Mod -> ibox tag_int Rem_s
+  | C.Lt -> ibox tag_bool Lt_s
+  | C.Le -> ibox tag_bool Le_s
+  | C.Gt -> ibox tag_bool Gt_s
+  | C.Ge -> ibox tag_bool Ge_s
   | C.Cat -> is1 @ is2 @ [ Call fn_strcat ]
   | C.Eq | C.Ne ->
     let negate = if op = C.Ne then [ Eqz ] else [] in
@@ -315,22 +313,29 @@ let assemble st ~imports ~customs (main : func) : Ir.modul =
     m_customs = customs;
   }
 
-let program (e : C.exp) : Ir.modul =
+(* Compile `e` as the body of `main`. `prologue env` seeds the environment
+   local before the body runs. *)
+let build ~imports ~customs ~prologue ~ctx (e : C.exp) : Ir.modul =
   let st = new_state () in
   let fb = { nparams = 0; nlocals = 0 } in
-  (* local 0 of `main` holds the top-level environment, which is Unit — the
-     same environment `Eval.eval C.Unit` starts from. *)
   let env = fresh fb in
-  let body, _ = comp st fb ~env ~ctx:C.TTop e in
+  let body, _ = comp st fb ~env ~ctx e in
   let main =
     {
       fn_name = "main";
       fn_type = ty_0v;
       fn_locals = List.init fb.nlocals (fun _ -> Ref ty_val);
-      fn_body = [ Global_get gl_unit; Local_set env ] @ body;
+      fn_body = prologue env @ body;
     }
   in
-  assemble st ~imports:[] ~customs:[] main
+  assemble st ~imports ~customs main
+
+(* The top-level environment is Unit — the same environment
+   `Eval.eval C.Unit` starts from. *)
+let program (e : C.exp) : Ir.modul =
+  build ~imports:[] ~customs:[] ~ctx:C.TTop
+    ~prologue:(fun env -> [ Global_get gl_unit; Local_set env ])
+    e
 
 (* ---------------- the link module ----------------
 
@@ -344,10 +349,7 @@ let program (e : C.exp) : Ir.modul =
 
 let link_module ~(names : string list) ~(unit_types : C.typ list)
     (body : C.exp) : Ir.modul =
-  let st = new_state () in
-  let fb = { nparams = 0; nlocals = 0 } in
-  let env = fresh fb in
-  let prologue =
+  let prologue env =
     [ Global_get gl_unit; Local_set env ]
     @ List.concat
         (List.mapi
@@ -356,22 +358,15 @@ let link_module ~(names : string list) ~(unit_types : C.typ list)
                StructNew ty_pair; Local_set env ])
            names)
   in
-  let ctx = List.fold_left (fun acc t -> C.TAnd (acc, t)) C.TTop unit_types in
-  let body_is, _ = comp st fb ~env ~ctx body in
-  let main =
-    {
-      fn_name = "main";
-      fn_type = ty_0v;
-      fn_locals = List.init fb.nlocals (fun _ -> Ref ty_val);
-      fn_body = prologue @ body_is;
-    }
-  in
   let manifest =
     word (List.length names)
     ^ String.concat "" (List.map (fun n -> word (String.length n) ^ n) names)
   in
-  let imports = List.mapi (fun k _ -> (Printf.sprintf "u%d" k, "main", ty_0v)) names in
-  assemble st ~imports ~customs:[ ("sce.units", manifest) ] main
+  build
+    ~imports:(List.mapi (fun k _ -> (Printf.sprintf "u%d" k, "main", ty_0v)) names)
+    ~customs:[ ("sce.units", manifest) ]
+    ~ctx:(List.fold_left (fun acc t -> C.TAnd (acc, t)) C.TTop unit_types)
+    ~prologue body
 
 let to_binary (e : C.exp) : string = Emit.modul (program e)
 let to_wat (e : C.exp) : string = Wat.modul (program e)

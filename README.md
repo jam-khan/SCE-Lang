@@ -159,7 +159,12 @@ step applies the unit functor to a record of projections wired from the
 providers, and the two linkers share one composition term — the core linker
 splices the closed unit terms in and re-typechecks; the wasm linker compiles
 the *same term* with the units installed through imports, so `Query` in the
-link module *is* the loaded units. See [examples/units/](examples/units/).
+link module *is* the loaded units.
+
+[examples/units/](examples/units/) holds four case studies (functors, `mu`
+values, and both linking levels crossing unit boundaries), each with a
+whole-program twin; the test suite links every set every way — one-shot,
+incrementally, permuted, and at the wasm level — and requires one answer.
 
 ## Layout
 
@@ -170,8 +175,8 @@ link module *is* the loaded units. See [examples/units/](examples/units/).
 | [lib/sce/](lib/sce/) | λSCE: AST, evaluators, and the elaboration to λE |
 | [lib/source/](lib/source/) | lexer, parser, `frames`, `debruijn`, `sugar`, `driver` |
 | [lib/pipeline.ml](lib/pipeline.ml) | the five stages behind one `run` and one error type |
-| [examples/](examples/) | runnable programs (units under `units/`), also test fixtures |
-| [test/](test/) | parser, scope-resolution, end-to-end, differential and failure tests |
+| [examples/](examples/) | runnable programs; separate-compilation case studies under `units/` |
+| [test/](test/) | parser, scope-resolution, end-to-end, differential, failure and linking-commutation tests |
 
 The test suite includes a differential check that λSCE evaluation agrees with λE
 evaluation of its elaboration, that big-step agrees with small-step in both, and

@@ -58,10 +58,6 @@ let rec instr buf indent i =
   | ArrayLen -> line "array.len"
   | ArrayCopy (td, ts) -> line (Printf.sprintf "array.copy $t%d $t%d" td ts)
   | Br l -> line (Printf.sprintf "br %d" l)
-  | Br_if l -> line (Printf.sprintf "br_if %d" l)
-  | Return -> line "return"
-  | Drop -> line "drop"
-  | Unreachable -> line "unreachable"
   | If (bt, thn, els) ->
     line ("if" ^ blocktype_str bt);
     List.iter (instr buf (indent + 2)) thn;

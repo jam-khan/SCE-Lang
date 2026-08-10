@@ -9,6 +9,17 @@
    With no argument, a REPL where each entry is a whole program submitted with
    a blank line. *)
 
+let read_file path =
+  let ic = open_in_bin path in
+  let src = really_input_string ic (in_channel_length ic) in
+  close_in ic;
+  src
+
+let write_file path contents =
+  let oc = open_out_bin path in
+  output_string oc contents;
+  close_out oc
+
 let report src =
   match Sce.Pipeline.run src with
   | Ok o ->
@@ -16,11 +27,7 @@ let report src =
       (Sce.Pipeline.value_string o)
   | Error e -> print_endline (Sce.Pipeline.render ~src e)
 
-let run_file path =
-  let ic = open_in_bin path in
-  let src = really_input_string ic (in_channel_length ic) in
-  close_in ic;
-  report src
+let run_file path = report (read_file path)
 
 let repl () =
   print_endline
@@ -50,31 +57,15 @@ let repl () =
 (* Compile to wasm rather than interpreting. `--wat` writes the text form
    alongside, which is the quickest way to see what the backend emitted. *)
 let compile_file ~out ?wat path =
-  let ic = open_in_bin path in
-  let src = really_input_string ic (in_channel_length ic) in
-  close_in ic;
+  let src = read_file path in
   match Sce.Pipeline.run_to_core src with
   | Error e -> print_endline (Sce.Pipeline.render ~src e); exit 1
   | Ok core ->
-    let write file contents =
-      let oc = open_out_bin file in
-      output_string oc contents;
-      close_out oc
-    in
-    write out (Wasm_backend.Compile.to_binary core);
-    (match wat with Some f -> write f (Wasm_backend.Compile.to_wat core) | None -> ());
+    write_file out (Wasm_backend.Compile.to_binary core);
+    (match wat with
+     | Some f -> write_file f (Wasm_backend.Compile.to_wat core)
+     | None -> ());
     Printf.printf "wrote %s\n" out
-
-let read_file path =
-  let ic = open_in_bin path in
-  let src = really_input_string ic (in_channel_length ic) in
-  close_in ic;
-  src
-
-let write_file path contents =
-  let oc = open_out_bin path in
-  output_string oc contents;
-  close_out oc
 
 let or_die = function
   | Ok v -> v
@@ -169,6 +160,6 @@ let () =
     | _ :: path :: _ -> run_file path
     | _ -> repl ()
   with
-  | Sce.Sepcomp.Error m | Failure m ->
+  | Sce.Sepcomp.Error m | Wasm_backend.Compile.Error m | Failure m ->
     Printf.eprintf "error: %s\n" m;
     exit 1
