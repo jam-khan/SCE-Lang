@@ -98,7 +98,11 @@ let rec eval (env : exp) (e : exp) : exp =
   | Proj (e1, i) -> lookup (eval env e1) i
   | Lrec (l, e1) -> Lrec (l, eval env e1)
   | Rproj (e1, l) -> sel (eval env e1) l
-  | Binop (op, e1, e2) -> prim_exp op (eval env e1) (eval env e2)
+  | Binop (op, e1, e2) ->
+    (* left to right, explicitly: OCaml applies arguments right to left *)
+    let v1 = eval env e1 in
+    let v2 = eval env e2 in
+    prim_exp op v1 v2
   | If (e1, e2, e3) -> eval env (branch (eval env e1) e2 e3)
   | Letb (e1, _ty, e2) ->
     let v1 = eval env e1 in

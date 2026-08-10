@@ -90,8 +90,26 @@ let compile_unit ~out src_path =
        | [] -> ""
        | _ -> " (+ " ^ String.concat ", " (List.map fst sceis) ^ ")")
 
+(* `sys` and `loader` in a link line name host-built provider units; the
+   loader's export type is read off the importing artifact's declaration. *)
+let resolve_units paths =
+  let real =
+    List.filter_map
+      (fun p ->
+        if Sce.Sepcomp.is_host_unit p then None
+        else Some (p, Sce.Sepcomp.load_artifact p))
+      paths
+  in
+  List.map
+    (fun p ->
+      match p with
+      | "sys" -> Sce.Sepcomp.sys_artifact
+      | "loader" -> Sce.Sepcomp.loader_artifact (List.map snd real)
+      | p -> List.assoc p real)
+    paths
+
 let link_artifacts paths ~out =
-  let arts = List.map Sce.Sepcomp.load_artifact paths in
+  let arts = resolve_units paths in
   let linked = or_die (Sce.Pipeline.link_artifacts arts) in
   Sce.Sepcomp.save_artifact out linked;
   Printf.printf "wrote %s (%s)\n" out linked.Sce.Sepcomp.a_name

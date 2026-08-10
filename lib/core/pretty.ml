@@ -67,6 +67,7 @@ let rec exp_to_string e =
     | Inr (_, e1) -> Printf.sprintf "inr %s" (exp_to_string e1)
     | Fold (_, e1) -> Printf.sprintf "fold %s" (exp_to_string e1)
     | Unfold e1 -> Printf.sprintf "unfold %s" (exp_to_string e1)
+    | Hostfn (n, _, _) -> Printf.sprintf "<host %s>" n
     | Lam (a, _) | Clos (_, a, _) -> Printf.sprintf "<fun : %s -> _>" (typ_to_string a)
     | Flam (a, b, _) | Fclos (_, a, b, _) ->
       Printf.sprintf "<rec fun : %s -> %s>" (typ_to_string a) (typ_to_string b)

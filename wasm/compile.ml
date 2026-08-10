@@ -222,6 +222,8 @@ let rec comp st fb ~env ~ctx (e : C.exp) : instr list * C.typ =
     | _ -> err "unfold applied to a non-recursive type")
   | C.Clos _ | C.Fclos _ ->
     err "closure values cannot appear in a compiled program"
+  | C.Hostfn (name, _, _) ->
+    err "host capability %s cannot be compiled to wasm yet" name
 
 and binop op t1 is1 is2 =
   (* unbox both operands, apply `i`, and rebox the i32 result under `tag` *)

@@ -30,7 +30,7 @@ type artifact = {
 
 (* Bump the trailing digits whenever the artifact shape or the ASTs change:
    Marshal gives no compatibility, so the magic is the only guard. *)
-let magic = "SCEOBJ01"
+let magic = "SCEOBJ02"
 
 let save_artifact (path : string) (a : artifact) : unit =
   let oc = open_out_bin path in
@@ -94,6 +94,20 @@ let parse_typ_exn ~what (src : string) : S.typ =
     let named = Debruijn.expand_aliases intf.i_aliases intf.i_typ in
     Sugar.conv_typ (Debruijn.resolve_typ Debruijn.empty_env named)
 
+(* ---------------- the sys interface ----------------
+
+   Effects enter the language the same way every other dependency does:
+   through a unit. `sys` is a host-implemented leaf provider (built further
+   down, next to the dispatcher); its interface lives here so `import Sys`
+   can fall back to it when no Sys.scei file shadows the builtin. *)
+
+let sys_typ : S.typ =
+  S.TAnd
+    ( S.TRcd ("print", S.TArr (S.TString, S.TTop)),
+      S.TRcd
+        ( "readfile",
+          S.TArr (S.TString, S.TOr (S.TString, S.TRcd ("err", S.TString))) ) )
+
 (* ---------------- imports and the unit wrapper ---------------- *)
 
 (* Resolve one import header to a self-contained *named* type, so it can be
@@ -110,7 +124,10 @@ let import_typ ~dir (b : Ast.binder) (src : string Ast.import_source) :
         close_in ic;
         s
       with Sys_error _ ->
-        err "import %s: interface file %s not found" b.bd_name path
+        (* `import Sys` falls back to the built-in host interface, unless a
+           Sys.scei file shadows it. *)
+        if base = "Sys" then print_typ sys_typ
+        else err "import %s: interface file %s not found" b.bd_name path
     in
     match Driver.parse_intf content with
     | Error e -> err "%s:%d:%d: %s" path e.line e.col e.message
@@ -198,51 +215,19 @@ let check_imports_satisfied ~unit_name accT d =
              unambiguously" unit_name l)
     (import_fields d)
 
-(* One link step as a λE term implementing the calculus's linking principle:
-   apply the unit functor to a record of projections wired out of the
-   provider, and merge the result in.
-
-     step = λ(acc : accT). λ(u : d -> b). Mrg (?.1, u (wire d))
-     wire {l : A}      = Lrec (l, Rproj (?.1, l))
-     wire (d1 & d2)    = Mrg (wire d1, wire d2)
-
-   The provider is bound *once* as ?.1 and every import label projects from
-   that binding. This deliberately does not reuse `Elab.linked_core_n`: its
-   sharing wrapper reaches for fixed slots of the ambient environment
-   (`?.0`/`?.1` of a self-application), which is only right at the
-   whole-program elaboration sites it was written for. Binding the provider
-   explicitly is insensitive to where the step is spliced — and the λE
-   typechecker verifies it on every link.
-
-   Mind λE's dependent Mrg: its right operand is checked and evaluated under
-   the context extended with the left value, so inside the outer Mrg the
-   provider is slot 0 (freshly merged) and the functor slot 1 — and every
-   nested merge inside the wire record shifts the provider one further. *)
+(* One link step: apply the unit functor to a record of projections wired out
+   of the provider, and merge the result in. This is `Elab.link_step` — the
+   very term `link`/`linkall` elaborate to — so the two linkers cannot drift:
+   both bind each operand exactly once, and the λE typechecker verifies the
+   result on every link. *)
 let link_step (accT : S.typ) (d : S.typ) (b : S.typ) : C.exp =
-  let accT_c = E.elab_typ accT in
-  let tu_c = E.elab_typ (S.TSig (S.TyArrM (d, S.TyIntf b))) in
-  let rec wire shift = function
-    | S.TRcd (l, _) -> C.Lrec (l, C.Rproj (C.Proj (C.Query, shift), l))
-    | S.TAnd (d1, d2) -> C.Mrg (wire shift d1, wire (shift + 1) d2)
-    | t -> err "malformed import interface: %s" (print_typ t)
-  in
-  C.Lam
-    ( accT_c,
-      C.Lam
-        ( tu_c,
-          C.Mrg
-            ( C.Proj (C.Query, 1),
-              C.App (C.Proj (C.Query, 1), wire 0 d) ) ) )
+  E.link_step (E.elab_typ accT)
+    (E.elab_typ (S.TSig (S.TyArrM (d, S.TyIntf b))))
+    d
 
-(* The leaf step merges a unit that imports nothing. The same index denotes
-   different slots on the two sides of the Mrg: on the left, ?.1 is the
-   accumulated provider; on the right — one slot deeper, under the freshly
-   merged left value — ?.1 is the unit. *)
+(* A leaf step is a non-dependent merge of the unit into the provider. *)
 let link_step_leaf (accT : S.typ) (uT : S.typ) : C.exp =
-  C.Lam
-    ( E.elab_typ accT,
-      C.Lam
-        (E.elab_typ uT, C.Mrg (C.Proj (C.Query, 1), C.Proj (C.Query, 1))) )
+  E.nmrg_step (E.elab_typ accT) (E.elab_typ uT)
 
 (* How a unit occupies a slot: a leaf by its exports, a functor by its
    signature. *)
@@ -328,3 +313,127 @@ let runnable (a : artifact) : S.typ * C.exp =
   match E.srlookup_opt a.a_exports "main" with
   | Some t -> (t, C.Rproj (a.a_core, "main"))
   | None -> (a.a_exports, a.a_core)
+
+(* ---------------- host capabilities ----------------
+
+   `sys` and `loader` are leaf provider units the *host* materializes rather
+   than loads from disk. Their exports are Hostfn values dispatching into
+   OCaml through Eval.host_dispatch, so authority flows only through linking:
+   a term that was never linked (or handed) a capability cannot perform its
+   effect, and `sandbox` cuts effects off with the rest of the context. *)
+
+module Ev = Core_lambdae.Eval
+
+(* Where `print` writes; tests redirect it to capture effect traces. *)
+let host_out : (string -> unit) ref = ref print_string
+
+let hostfn (name : string) (t : S.typ) : C.exp =
+  match E.elab_typ t with
+  | C.TArr (a, b) -> C.Hostfn (name, a, b)
+  | _ -> err "internal: host capability %s is not a function" name
+
+let sys_artifact : artifact =
+  let field l t = (l, hostfn l t) in
+  let fields =
+    match sys_typ with
+    | S.TAnd (S.TRcd (l1, t1), S.TRcd (l2, t2)) -> [ field l1 t1; field l2 t2 ]
+    | _ -> err "internal: sys_typ is not a two-field record intersection"
+  in
+  let core =
+    match List.map (fun (l, e) -> C.Lrec (l, e)) fields with
+    | first :: rest -> List.fold_left (fun acc r -> C.Mrg (acc, r)) first rest
+    | [] -> assert false
+  in
+  { a_name = "sys"; a_imports = None;
+    a_exports = S.TRcd ("Sys", sys_typ); a_core = C.Lrec ("Sys", core) }
+
+(* The loader is a capability whose type *declares* the expected interface:
+
+     import Loader : { load : String -> (Sig | {err : String}) }
+
+   The host reads that declaration off the importing artifact and builds a
+   provider specialized to it. The runtime check is structural equality
+   between Sig and the loaded artifact's slot type — the same comparison the
+   static linker makes, at a later time. The expected type rides in the
+   Hostfn name as printed surface syntax, which parses back to an equal type
+   (print_typ inverts the grammar), so a saved linked program re-manufactures
+   its checker in a fresh process. *)
+
+let loader_label = "Loader"
+
+let loader_typ_of (t : S.typ) : S.typ =
+  match t with
+  | S.TRcd ("load", S.TArr (S.TString, S.TOr (want, S.TRcd ("err", S.TString))))
+    -> want
+  | _ ->
+    err "the %s import must have type {load : String -> (Sig | {err : String})}"
+      loader_label
+
+let loader_artifact (arts : artifact list) : artifact =
+  let declared =
+    List.find_map
+      (fun a ->
+        match a.a_imports with
+        | Some d -> List.assoc_opt loader_label (import_fields d)
+        | None -> None)
+      arts
+  in
+  match declared with
+  | None ->
+    err "no unit imports %s, so there is no loader interface to satisfy"
+      loader_label
+  | Some t ->
+    let want = loader_typ_of t in
+    { a_name = "loader"; a_imports = None;
+      a_exports = S.TRcd (loader_label, t);
+      a_core =
+        C.Lrec (loader_label,
+          C.Lrec ("load",
+            hostfn ("load:" ^ print_typ want)
+              (S.TArr (S.TString, S.TOr (want, S.TRcd ("err", S.TString)))))) }
+
+let is_host_unit name = name = "sys" || name = "loader"
+
+(* ---- the dispatcher ---- *)
+
+let string_arg what v =
+  match v with
+  | C.Lit (C.String s) -> s
+  | _ -> failwith ("Error: " ^ what ^ " expects a string")
+
+let err_t = C.TRcd ("err", C.TString)
+
+let do_load (want : S.typ) (path : string) : C.exp =
+  let fail msg = C.Inr (E.elab_typ want, C.Lrec ("err", C.Lit (C.String msg))) in
+  match load_artifact path with
+  | exception Error m -> fail m
+  | a ->
+    if slot_typ a = want then C.Inl (err_t, Ev.eval C.Unit a.a_core)
+    else
+      fail
+        (Printf.sprintf "%s : %s does not match the expected %s" path
+           (print_typ (slot_typ a)) (print_typ want))
+
+let () =
+  Ev.host_dispatch :=
+    fun name ->
+      match name with
+      | "print" ->
+        Some (fun v -> !host_out (string_arg "print" v ^ "\n"); C.Unit)
+      | "readfile" ->
+        Some
+          (fun v ->
+            let path = string_arg "readfile" v in
+            try
+              let ic = open_in_bin path in
+              let s = really_input_string ic (in_channel_length ic) in
+              close_in ic;
+              C.Inl (err_t, C.Lit (C.String s))
+            with Sys_error m -> C.Inr (C.TString, C.Lrec ("err", C.Lit (C.String m))))
+      | _ when String.starts_with ~prefix:"load:" name ->
+        let want =
+          parse_typ_exn ~what:"loader"
+            (String.sub name 5 (String.length name - 5))
+        in
+        Some (fun v -> do_load want (string_arg "load" v))
+      | _ -> None

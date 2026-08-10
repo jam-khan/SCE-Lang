@@ -51,6 +51,9 @@ type exp =
   (* iso-recursive types: Fold (T, e) stores the mu-body T, folds into mu T *)
   | Fold    of typ * exp
   | Unfold  of exp
+  (* a host capability: applied like a function, dispatched by name through
+     Eval.host_dispatch; only host-built provider units contain these *)
+  | Hostfn  of string * typ * typ
 
 (* Value judgment from the Lean `Value : Exp → Prop` inductive *)
 let rec is_value = 
@@ -62,4 +65,5 @@ let rec is_value =
     | Inl  (_, v) | Inr (_, v) -> is_value v
     | Fclos (v, _, _, _)       -> is_value v
     | Fold (_, v)    -> is_value v
+    | Hostfn _       -> true
     | _              -> false

@@ -166,6 +166,39 @@ values, and both linking levels crossing unit boundaries), each with a
 whole-program twin; the test suite links every set every way — one-shot,
 incrementally, permuted, and at the wasm level — and requires one answer.
 
+## Effects and runtime linking (experimental, this branch)
+
+The language has no print statement. Effects enter through linking: `sys` is
+a host-built provider unit whose exports are capability functions, and a
+program performs IO only if its link line grants it —
+
+```console
+$ main --link sys app.sceo -o prog.sceo
+```
+
+so `sandbox` is effect confinement (a sandboxed term cannot *name* a
+capability, let alone call one) and attenuation is ordinary code. Whole
+programs stay pure; authority exists only where the host wired it.
+
+Runtime linking needed no new linking constructs — `link`/`linkall` are
+already expressions — only a way for a unit value to *arrive* at run time.
+The `loader` capability's type declares the expected interface:
+
+```ocaml
+import Loader : { load : String -> (Sig | {err : String}) }
+```
+
+`load` unmarshals an artifact, compares its stored type against `Sig`
+structurally — the same check the static linker makes, made later — and
+returns a union the program cases on. Elaboration was linearized for this
+(every operand of a merge or link is bound once, so effects fire exactly once,
+in source order). Case studies: [examples/effects/](examples/effects/),
+[examples/plugins/](examples/plugins/) (a plugin manager with attenuated
+per-plugin capabilities), [examples/dynconfig/](examples/dynconfig/)
+(config-driven implementation swapping). The wasm backend rejects
+capability-bearing programs for now; pushing `sys` and the loader down to
+wasm imports is the next step.
+
 ## Layout
 
 | path | role |

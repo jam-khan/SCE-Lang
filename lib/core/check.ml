@@ -129,5 +129,6 @@ let rec infer (ctx : typ) (e : exp) : typ =
       | TMu t -> unfold_mu t
       | _ -> type_error "unfold applied to a non-recursive type"
     end
+  | Hostfn (_, a, b) -> TArr (a, b)
 
 let typecheck (e : exp) : typ = infer TTop e
