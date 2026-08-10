@@ -84,3 +84,67 @@ let run_to_core (src : string) : (C.exp, error) result =
     | Sugar.Error (m, loc) -> Error (at "desugar" loc m)
     | Sce_core.Elab.Elab_error m -> Error (whole "elaborate" m)
     | Core_lambdae.Check.Type_error m -> Error (whole "typecheck" m))
+
+(* ---------------- separate compilation ---------------- *)
+
+(* Compile one source file as a unit: resolve its import headers (against
+   .scei files living next to it), wrap the declarations as a sandboxed
+   struct/functor, and push the result through the unchanged pipeline. Also
+   returns the generated interface texts, one per exported module. *)
+let compile_unit ~(path : string) (src : string) :
+    (Sepcomp.artifact * (string * string) list, error) result =
+  match Driver.parse src with
+  | Error e -> Error { stage = "parse"; message = e.message; line = e.line; col = e.col }
+  | Ok p -> (
+    try
+      (match p.main with
+       | Some m ->
+         raise (Sugar.Error ("a unit cannot end in a ';;' expression", m.loc))
+       | None -> ());
+      let dir = Filename.dirname path in
+      let imports =
+        List.map
+          (fun (b, isrc) ->
+            try (b, Sepcomp.import_typ ~dir b isrc)
+            with Sepcomp.Error m -> raise (Debruijn.Error (m, b.Ast.bd_loc)))
+          p.imports
+      in
+      let indexed = Debruijn.resolve (Sepcomp.unit_wrapper imports p) in
+      let t, sce_exp = Sugar.desugar_program indexed in
+      let _, core = Sce_core.Elab.elab S.TTop sce_exp in
+      ignore (Core_lambdae.Check.typecheck core);
+      let a_imports, a_exports = Sepcomp.unit_info t in
+      let name = Filename.remove_extension (Filename.basename path) in
+      let sceis =
+        List.filter_map
+          (fun d ->
+            match d.Ast.it with
+            | Ast.DModule (b, _) -> (
+              match Sce_core.Elab.srlookup_opt a_exports b.Ast.bd_name with
+              | Some ft ->
+                Some (b.Ast.bd_name ^ ".scei", Sepcomp.print_typ ft ^ "\n")
+              | None -> None)
+            | _ -> None)
+          p.decls
+      in
+      Ok ({ Sepcomp.a_name = name; a_imports; a_exports; a_core = core }, sceis)
+    with
+    | Debruijn.Error (m, loc) -> Error (at "scope" loc m)
+    | Sugar.Error (m, loc) -> Error (at "desugar" loc m)
+    | Sce_core.Elab.Elab_error m -> Error (whole "elaborate" m)
+    | Core_lambdae.Check.Type_error m -> Error (whole "typecheck" m)
+    | Sepcomp.Error m -> Error (whole "unit" m))
+
+let link_artifacts (arts : Sepcomp.artifact list) :
+    (Sepcomp.artifact, error) result =
+  try Ok (Sepcomp.link arts) with Sepcomp.Error m -> Error (whole "link" m)
+
+(* Evaluate a linked artifact: project `main` if it exports one. *)
+let run_artifact (a : Sepcomp.artifact) : (string * string, error) result =
+  try
+    let t, term = Sepcomp.runnable a in
+    let v = Core_lambdae.Eval.eval C.Unit term in
+    Ok (Sce_core.Pretty.typ_to_string t, Core_lambdae.Pretty.exp_to_string v)
+  with
+  | Sepcomp.Error m -> Error (whole "link" m)
+  | Failure m -> Error (whole "runtime" m)

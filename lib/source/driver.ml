@@ -17,10 +17,10 @@ let error_at (loc : Ast.loc) (message : string) : error =
   let line, col = line_col loc.start_p in
   { message; line; col }
 
-let parse (src : string) : (Ast.named, error) result =
+let parse_with entry (src : string) =
   let lexbuf = Lexing.from_string src in
   let supplier = I.lexer_lexbuf_to_supplier Lexer.token lexbuf in
-  let checkpoint = Parser.Incremental.program lexbuf.lex_curr_p in
+  let checkpoint = entry lexbuf.lex_curr_p in
   try
     I.loop_handle
       (fun ast -> Ok ast)
@@ -36,6 +36,13 @@ let parse (src : string) : (Ast.named, error) result =
   with Lexer.Error (msg, pos) ->
     let line, col = line_col pos in
     Error { message = msg; line; col }
+
+let parse (src : string) : (Ast.named, error) result =
+  parse_with Parser.Incremental.program src
+
+(* Parse the contents of a .scei interface file. *)
+let parse_intf (src : string) : (string Ast.intf, error) result =
+  parse_with Parser.Incremental.intf_file src
 
 (* Render an error with the offending source line and a caret under it. *)
 let render ~src { message; line; col } =

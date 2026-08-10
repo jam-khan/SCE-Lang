@@ -9,7 +9,7 @@ let bd (s, e) name = { bd_name = name; bd_loc = { start_p = s; end_p = e } }
 %token <string> STRING
 %token <string> IDENT
 %token LET REC IN FUN IF THEN ELSE CASE OF INL INR END FOLD UNFOLD MU
-%token STRUCT SANDBOX FUNCTOR MODULE OPEN TYPE WITH LINK LINKALL BOX
+%token STRUCT SANDBOX FUNCTOR MODULE OPEN TYPE WITH LINK LINKALL BOX IMPORT
 %token MOD NOT TRUE FALSE
 %token TINT TBOOL TSTRING TTOP
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET
@@ -19,12 +19,35 @@ let bd (s, e) name = { bd_name = name; bd_loc = { start_p = s; end_p = e } }
 %token PLUS MINUS STAR SLASH CARET QUERY EOF
 
 %start <Ast.named> program
+%start <string Ast.intf> intf_file
 
 %%
 
 program:
-  | ds = list(decl); m = option(preceded(SEMISEMI, exp)); EOF
-      { { decls = ds; main = m } }
+  | is = list(import_decl); ds = list(decl); m = option(preceded(SEMISEMI, exp)); EOF
+      { { imports = is; decls = ds; main = m } }
+
+(* A lone identifier in annotation position names an interface file — imports
+   precede every declaration, so no type alias can be in scope there. *)
+import_decl:
+  | IMPORT; name = IDENT; ann = option(preceded(COLON, typ))
+      { let src =
+          match ann with
+          | None -> IAuto
+          | Some { it = TVar a; _ } -> IFile a
+          | Some t -> IInline t
+        in
+        (bd $loc(name) name, src) }
+
+(* ---------------- interface files (.scei) ---------------- *)
+
+intf_file:
+  | als = list(intf_alias); t = typ; EOF
+      { { i_aliases = als; i_typ = t } }
+
+intf_alias:
+  | TYPE; name = IDENT; EQ; t = typ
+      { (bd $loc(name) name, t) }
 
 (* ---------------- declarations ---------------- *)
 

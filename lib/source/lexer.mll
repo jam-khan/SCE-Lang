@@ -11,7 +11,7 @@ let keywords = [
   "case", CASE; "of", OF; "inl", INL; "inr", INR; "end", END;
   "fold", FOLD; "unfold", UNFOLD; "mu", MU;
   "struct", STRUCT; "sandbox", SANDBOX; "functor", FUNCTOR; "module", MODULE;
-  "open", OPEN; "type", TYPE; "with", WITH;
+  "open", OPEN; "type", TYPE; "with", WITH; "import", IMPORT;
   "link", LINK; "linkall", LINKALL; "box", BOX;
   "mod", MOD; "not", NOT; "true", TRUE; "false", FALSE;
   "Int", TINT; "Bool", TBOOL; "String", TSTRING; "Top", TTOP;

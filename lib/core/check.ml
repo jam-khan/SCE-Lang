@@ -77,7 +77,7 @@ let rec infer (ctx : typ) (e : exp) : typ =
       | TArr (a, b) ->
         let a' = infer ctx e2 in
         if a' = a then b else type_error "argument type mismatch"
-      | _ -> type_error "application of a non-function"
+      | t -> type_error ("application of a non-function: " ^ Pretty.typ_to_string t)
     end
   | Box (e1, e2) ->
     let ctx' = infer ctx e1 in

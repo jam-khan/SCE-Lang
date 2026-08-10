@@ -1,5 +1,5 @@
 (tests
- (names test_sce test_wasm)
+ (names test_sce test_wasm test_sepcomp)
  (libraries sce source sce_core core_lambdae wasm_backend)
  (deps
   (glob_files %{project_root}/examples/*.sce)

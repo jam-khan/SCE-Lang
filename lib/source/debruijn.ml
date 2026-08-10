@@ -138,6 +138,38 @@ let rec resolve_typ env (t : string typ) : int typ =
 
 let resolve_typ_opt env = Option.map (resolve_typ env)
 
+(* ---------------- named-level alias expansion ----------------
+
+   A .scei interface is aliases + a type, resolved *before* it meets the
+   importing file's scope — so its aliases are expanded syntactically here,
+   producing a self-contained named type. A mu binder of the same name
+   shadows an alias inside its body. *)
+
+let rec subst_tname (name : string) (body : string typ) (t : string typ) : string typ =
+  let nd it = { it; loc = t.loc } in
+  let s = subst_tname name body in
+  match t.it with
+  | TVar a -> if String.equal a name then body else t
+  | TInt | TBool | TString | TTop -> t
+  | TArr (a, b) -> nd (TArr (s a, s b))
+  | TAnd (a, b) -> nd (TAnd (s a, s b))
+  | TOr (a, b) -> nd (TOr (s a, s b))
+  | TSig (a, b) -> nd (TSig (s a, s b))
+  | TRcd fs -> nd (TRcd (List.map (fun (l, ft) -> (l, s ft)) fs))
+  | TMu (b, t') -> if String.equal b.bd_name name then t else nd (TMu (b, s t'))
+
+let expand_aliases (aliases : (binder * string typ) list) (t : string typ) : string typ =
+  (* each body is expanded against the earlier ones, so every substitution
+     below introduces no further alias references *)
+  let expanded =
+    List.fold_left
+      (fun acc (b, tb) ->
+        let tb = List.fold_left (fun tt (n, bo) -> subst_tname n bo tt) tb acc in
+        acc @ [ (b.bd_name, tb) ])
+      [] aliases
+  in
+  List.fold_left (fun tt (n, bo) -> subst_tname n bo tt) t expanded
+
 (* ---------------- expressions ---------------- *)
 
 let rec resolve_exp env (e : (string, string) exp) : (path, int) exp * shape =
@@ -344,6 +376,10 @@ let default_main env (p : Ast.named) : (path, int) exp =
     { it = ERcd (List.map field (List.filter_map name_of_decl p.decls)); loc }
 
 let resolve (p : Ast.named) : Ast.indexed =
+  (match p.imports with
+   | [] -> ()
+   | (b, _) :: _ ->
+     err b.bd_loc "imports make this file a unit; compile it with -c");
   check_no_duplicate_decls "program" p.decls;
   let rec go env acc ds =
     match ds with
@@ -370,4 +406,4 @@ let resolve (p : Ast.named) : Ast.indexed =
         go { env with frames } ({ it = DOpen cm; loc = d.loc } :: acc) rest)
   in
   let decls, main = go empty_env [] p.decls in
-  { decls; main = Some main }
+  { imports = []; decls; main = Some main }

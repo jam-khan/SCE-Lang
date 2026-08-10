@@ -117,10 +117,22 @@ and ('v, 'tv) decl_desc =
   | DOpen   of ('v, 'tv) exp
   | DType   of binder * 'tv typ
 
+(* Where a unit import's interface comes from:
+   `import M` (the file M.scei), `import M : name` (the file name.scei),
+   or `import M : { ... }` (written inline). *)
+type 'tv import_source =
+  | IAuto
+  | IFile of string
+  | IInline of 'tv typ
+
 type ('v, 'tv) program = {
+  imports : (binder * 'tv import_source) list;
   decls : ('v, 'tv) decl list;
   main  : ('v, 'tv) exp option;
 }
+
+(* A parsed .scei interface file: type aliases, then the interface type. *)
+type 'tv intf = { i_aliases : (binder * 'tv typ) list; i_typ : 'tv typ }
 
 (* The two instantiations the pipeline uses. *)
 type named = (string, string) program
