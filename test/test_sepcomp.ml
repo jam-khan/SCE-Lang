@@ -147,26 +147,60 @@ let () =
   check "linked term is insensitive to the environment"
     (render Core_lambdae.Ast.Unit linked.a_core = render junk linked.a_core)
 
-let () = print_endline "\n-- wasm of the linked artifact --"
+let () = print_endline "\n-- wasm: core-linked and wasm-linked --"
 
 let have cmd = Sys.command (Printf.sprintf "%s >/dev/null 2>&1" cmd) = 0
+
+let node_run args =
+  let out = path "node.out" in
+  let st = Sys.command (Printf.sprintf "node ../wasm/run.js %s > %s 2>&1" args out) in
+  let ic = open_in_bin out in
+  let text = String.trim (really_input_string ic (in_channel_length ic)) in
+  close_in ic;
+  (st, text)
 
 let () =
   if not (have "node --version") then
     print_endline "skipped: node is not installed"
   else begin
+    (* path A: link at core, compile the linked artifact whole *)
     let _, term = Sce.Sepcomp.runnable linked in
     write "prog.wasm" (Wasm_backend.Compile.to_binary term);
-    let out = path "prog.out" in
-    let st =
-      Sys.command
-        (Printf.sprintf "node ../wasm/run.js %s > %s 2>&1" (path "prog.wasm") out)
+    let st, text = node_run (path "prog.wasm") in
+    check "wasm of the core-linked artifact agrees with the interpreter"
+      (st = 0 && text = {|"[yes]"|});
+    (* path B: compile each unit to its own module, link at the wasm level *)
+    List.iter
+      (fun (a : Sce.Sepcomp.artifact) ->
+        write (a.a_name ^ ".wasm") (Wasm_backend.Compile.to_binary a.a_core))
+      [ counter; fmt; app ];
+    let names, unit_types, body = Sce.Sepcomp.wasm_link_parts [ counter; fmt; app ] in
+    write "linked.wasm" (Wasm_backend.Compile.link_binary ~names ~unit_types body);
+    let st, text =
+      node_run
+        (String.concat " "
+           (List.map path [ "linked.wasm"; "counter.wasm"; "fmt.wasm"; "app.wasm" ]))
     in
-    let ic = open_in_bin out in
-    let text = String.trim (really_input_string ic (in_channel_length ic)) in
-    close_in ic;
-    check "wasm of linked artifact agrees with the interpreter"
-      (st = 0 && text = {|"[yes]"|})
+    check "wasm-linked multi-module program agrees with everything else"
+      (st = 0 && text = {|"[yes]"|});
+    (* the manifest rejects units out of order *)
+    let st, _ =
+      node_run
+        (String.concat " "
+           (List.map path [ "linked.wasm"; "fmt.wasm"; "counter.wasm"; "app.wasm" ]))
+    in
+    check "the unit manifest rejects a wrong instantiation order" (st <> 0);
+    if have "wasm-opt --version" then
+      List.iter
+        (fun f ->
+          check ("binaryen validates " ^ f)
+            (Sys.command
+               (Printf.sprintf
+                  "wasm-opt --enable-gc --enable-reference-types \
+                   --enable-bulk-memory %s -o /dev/null 2>/dev/null"
+                  (path f))
+             = 0))
+        [ "counter.wasm"; "fmt.wasm"; "app.wasm"; "linked.wasm" ]
   end
 
 let () = print_endline "\n-- import forms --"

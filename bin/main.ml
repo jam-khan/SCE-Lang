@@ -4,6 +4,8 @@
                     main.exe --link A.sceo B.sceo -o OUT   link, left to right
                     main.exe --run ART.sceo                evaluate a linked artifact
                     main.exe --wasm OUT ART.sceo           emit wasm for a linked artifact
+                    main.exe --unit-wasm OUT ART.sceo      emit one unit's own wasm module
+                    main.exe --link-wasm OUT A.sceo B...   emit a wasm link module (imports u0..)
    With no argument, a REPL where each entry is a whole program submitted with
    a blank line. *)
 
@@ -117,6 +119,24 @@ let wasm_of_artifact ~out ?wat path =
    | None -> ());
   Printf.printf "wrote %s\n" out
 
+(* One unit as its own wasm module: main returns the unit value — a closure
+   for a functor unit. Nothing beyond the ordinary compiler. *)
+let unit_wasm ~out path =
+  let art = Sce.Sepcomp.load_artifact path in
+  write_file out (Wasm_backend.Compile.to_binary art.Sce.Sepcomp.a_core);
+  Printf.printf "wrote %s (%s)\n" out art.Sce.Sepcomp.a_name
+
+(* The wasm-level link: the linkers' shared composition, compiled with units
+   installed through imports. *)
+let link_wasm ~out ?wat paths =
+  let arts = List.map Sce.Sepcomp.load_artifact paths in
+  let names, unit_types, body = Sce.Sepcomp.wasm_link_parts arts in
+  write_file out (Wasm_backend.Compile.link_binary ~names ~unit_types body);
+  (match wat with
+   | Some f -> write_file f (Wasm_backend.Compile.link_wat ~names ~unit_types body)
+   | None -> ());
+  Printf.printf "wrote %s (links %s)\n" out (String.concat ", " names)
+
 let is_artifact path = Filename.check_suffix path ".sceo"
 
 let rec split_link args =
@@ -136,6 +156,12 @@ let () =
       let paths, out = split_link rest in
       link_artifacts paths ~out
     | _ :: "--run" :: path :: [] -> run_artifact path
+    | _ :: "--unit-wasm" :: out :: path :: [] -> unit_wasm ~out path
+    | _ :: "--link-wasm" :: out :: rest ->
+      let wat, paths =
+        match rest with "--wat" :: f :: ps -> (Some f, ps) | ps -> (None, ps)
+      in
+      link_wasm ~out ?wat paths
     | _ :: "--wasm" :: out :: path :: rest ->
       let wat = match rest with "--wat" :: f :: _ -> Some f | _ -> None in
       if is_artifact path then wasm_of_artifact ~out ?wat path

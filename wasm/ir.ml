@@ -36,7 +36,8 @@ type instr =
   | Local_set of int
   | Local_tee of int
   | Global_get of int
-  | Call of int
+  | Call of int                (* a *local* function; emit adds the import offset *)
+  | CallImport of int          (* an imported function, by import index *)
   | CallRef of int             (* call_ref (type $t) *)
   | RefFunc of int             (* needs the function declared in m_declared *)
   | RefCast of int             (* ref.cast (ref $t) — traps on null *)
@@ -69,7 +70,8 @@ type export = { ex_name : string; ex_func : int }
 
 type modul = {
   m_types : subtype list;      (* emitted as a single recursion group *)
-  m_funcs : func list;
+  m_imports : (string * string * int) list; (* module, name, function type *)
+  m_funcs : func list;         (* local functions, indexed after the imports *)
   m_globals : global list;
   m_exports : export list;
   m_declared : int list;       (* functions referenced by ref.func *)

@@ -134,6 +134,33 @@ program is typed and a merge value's shape mirrors its type's shape, `Proj`
 and `Rproj` are resolved at compile time into fixed chains of `struct.get`.
 See [wasm/README.md](wasm/README.md) for the scheme and the value layout.
 
+## Separate compilation
+
+The calculus was designed for it, and the toolchain now does it — at both
+levels:
+
+```console
+$ main -c counter.sce -o counter.sceo        # writes Counter.scei alongside
+$ main -c app.sce -o app.sceo                # `import Counter` reads it back
+$ main --link counter.sceo app.sceo -o prog.sceo
+$ main --run prog.sceo                       # link at core, evaluate
+$ main --unit-wasm counter.wasm counter.sceo # each unit its own wasm module
+$ main --unit-wasm app.wasm app.sceo
+$ main --link-wasm linked.wasm counter.sceo app.sceo
+$ node wasm/run.js linked.wasm counter.wasm app.wasm   # link at wasm, run
+```
+
+A unit is a **sandboxed functor** from its imports to its exports — closed by
+the calculus itself, not by toolchain discipline. `import M` reads `M.scei`
+(generated when the provider compiles), `import M : name` names an interface
+file, and an inline type bypasses files; compile against interfaces, link
+against implementations. Linking is the calculus's first-class linking: each
+step applies the unit functor to a record of projections wired from the
+providers, and the two linkers share one composition term — the core linker
+splices the closed unit terms in and re-typechecks; the wasm linker compiles
+the *same term* with the units installed through imports, so `Query` in the
+link module *is* the loaded units. See [examples/units/](examples/units/).
+
 ## Layout
 
 | path | role |
@@ -143,7 +170,7 @@ See [wasm/README.md](wasm/README.md) for the scheme and the value layout.
 | [lib/sce/](lib/sce/) | λSCE: AST, evaluators, and the elaboration to λE |
 | [lib/source/](lib/source/) | lexer, parser, `frames`, `debruijn`, `sugar`, `driver` |
 | [lib/pipeline.ml](lib/pipeline.ml) | the five stages behind one `run` and one error type |
-| [examples/](examples/) | runnable programs, also used as test fixtures |
+| [examples/](examples/) | runnable programs (units under `units/`), also test fixtures |
 | [test/](test/) | parser, scope-resolution, end-to-end, differential and failure tests |
 
 The test suite includes a differential check that λSCE evaluation agrees with λE

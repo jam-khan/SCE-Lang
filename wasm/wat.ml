@@ -45,7 +45,8 @@ let rec instr buf indent i =
   | Local_set i -> line (Printf.sprintf "local.set %d" i)
   | Local_tee i -> line (Printf.sprintf "local.tee %d" i)
   | Global_get i -> line (Printf.sprintf "global.get %d" i)
-  | Call i -> line (Printf.sprintf "call %d" i)
+  | Call i -> line (Printf.sprintf "call %d ;; local" i)
+  | CallImport i -> line (Printf.sprintf "call %d ;; import" i)
   | CallRef t -> line (Printf.sprintf "call_ref $t%d" t)
   | RefFunc f -> line (Printf.sprintf "ref.func %d" f)
   | RefCast t -> line (Printf.sprintf "ref.cast (ref $t%d)" t)
@@ -118,6 +119,10 @@ let modul (m : modul) : string =
       buf_add buf (Printf.sprintf "    (type $t%d %s)\n" i sub))
     m.m_types;
   buf_add buf "  )\n";
+  List.iteri
+    (fun i (md, nm, ty) ->
+      buf_add buf (Printf.sprintf "  (import %S %S (func ;; %d\n    (type $t%d)))\n" md nm i ty))
+    m.m_imports;
   List.iteri
     (fun i g ->
       buf_add buf

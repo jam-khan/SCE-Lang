@@ -300,6 +300,21 @@ let word n =
   Bytes.set_int32_le b 0 (Int32.of_int n);
   Bytes.to_string b
 
+let assemble st ~imports ~customs (main : func) : Ir.modul =
+  {
+    m_types = typedefs;
+    m_imports = imports;
+    m_funcs = Runtime.funcs @ [ main ] @ st.lifted;
+    m_globals =
+      [ { gl_name = "unit"; gl_type = Ref ty_val; gl_mut = false;
+          gl_init = [ Const tag_unit; StructNew ty_val ] } ];
+    m_exports = List.map (fun (n, i) -> { ex_name = n; ex_func = i }) exports;
+    m_declared = List.mapi (fun i _ -> runtime_count + i) st.lifted;
+    m_datas =
+      (if Buffer.length st.strings = 0 then [] else [ Buffer.contents st.strings ]);
+    m_customs = customs;
+  }
+
 let program (e : C.exp) : Ir.modul =
   let st = new_state () in
   let fb = { nparams = 0; nlocals = 0 } in
@@ -315,18 +330,50 @@ let program (e : C.exp) : Ir.modul =
       fn_body = [ Global_get gl_unit; Local_set env ] @ body;
     }
   in
-  {
-    m_types = typedefs;
-    m_funcs = Runtime.funcs @ [ main ] @ st.lifted;
-    m_globals =
-      [ { gl_name = "unit"; gl_type = Ref ty_val; gl_mut = false;
-          gl_init = [ Const tag_unit; StructNew ty_val ] } ];
-    m_exports = List.map (fun (n, i) -> { ex_name = n; ex_func = i }) exports;
-    m_declared = List.mapi (fun i _ -> runtime_count + i) st.lifted;
-    m_datas =
-      (if Buffer.length st.strings = 0 then [] else [ Buffer.contents st.strings ]);
-    m_customs = [];
-  }
+  assemble st ~imports:[] ~customs:[] main
+
+(* ---------------- the link module ----------------
+
+   Linking at the wasm level is this compiler applied to the linkers' shared
+   composition term, with the units installed through imports instead of
+   spliced in: main's prologue calls each imported `u<k>.main` once and merges
+   the values into the environment, so `Query` *is* the loaded units and every
+   unit occurrence in the composition is an ordinary `Proj (Query, i)`. The
+   expected unit names ride in an `sce.units` custom section so the host can
+   check the instantiation order. *)
+
+let link_module ~(names : string list) ~(unit_types : C.typ list)
+    (body : C.exp) : Ir.modul =
+  let st = new_state () in
+  let fb = { nparams = 0; nlocals = 0 } in
+  let env = fresh fb in
+  let prologue =
+    [ Global_get gl_unit; Local_set env ]
+    @ List.concat
+        (List.mapi
+           (fun k _ ->
+             [ Const tag_mrg; Local_get env; CallImport k;
+               StructNew ty_pair; Local_set env ])
+           names)
+  in
+  let ctx = List.fold_left (fun acc t -> C.TAnd (acc, t)) C.TTop unit_types in
+  let body_is, _ = comp st fb ~env ~ctx body in
+  let main =
+    {
+      fn_name = "main";
+      fn_type = ty_0v;
+      fn_locals = List.init fb.nlocals (fun _ -> Ref ty_val);
+      fn_body = prologue @ body_is;
+    }
+  in
+  let manifest =
+    word (List.length names)
+    ^ String.concat "" (List.map (fun n -> word (String.length n) ^ n) names)
+  in
+  let imports = List.mapi (fun k _ -> (Printf.sprintf "u%d" k, "main", ty_0v)) names in
+  assemble st ~imports ~customs:[ ("sce.units", manifest) ] main
 
 let to_binary (e : C.exp) : string = Emit.modul (program e)
 let to_wat (e : C.exp) : string = Wat.modul (program e)
+let link_binary ~names ~unit_types body = Emit.modul (link_module ~names ~unit_types body)
+let link_wat ~names ~unit_types body = Wat.modul (link_module ~names ~unit_types body)

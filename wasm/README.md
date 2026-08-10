@@ -50,7 +50,7 @@ $I32Box = struct { tag, n }                  Int and Bool
 $Bytes  = array (mut i8)
 $Str    = struct { tag, bytes }
 $Pair   = struct { tag, left, right }        Mrg
-$Lrec   = struct { tag, label id, value }
+$Lrec   = struct { tag, name bytes, value }
 $Fn     = func (self, arg) -> value
 $Clos   = struct { tag, fn, env }            Clos and Fclos
 $Wrap   = struct { tag, value }              Inl, Inr, Fold
@@ -60,15 +60,15 @@ Types sharing a shape are told apart by tag alone. All types sit in one
 recursion group; every reference is `(ref null ...)` so locals stay defaultable,
 and no null is ever actually produced.
 
-Labels are interned to integers; the id → name table travels in the
-`sce.labels` **custom section**, which the host reads with
-`WebAssembly.Module.customSections` — the mapping never touches the module's
-runtime state. String literal bytes live in one passive data segment,
-materialized with `array.new_data`. λE types are erased entirely.
+A record label rides inside the `$Lrec` value as bytes, so results assembled
+from separately compiled modules render with no shared metadata (projection
+never reads it — every `Rproj` is a static path). String literal and label
+bytes live in one passive data segment, materialized with `array.new_data`.
+λE types are erased entirely.
 
 JavaScript cannot look inside GC structs, so the module exports accessors —
-`tag`, `num`, `strLen`, `strByte`, `pairA`, `pairB`, `lrecLabel`, `lrecVal`,
-`wrapVal` — and `run.js` drives the value walk through them, rendering in
+`tag`, `num`, `strLen`, `strByte`, `pairA`, `pairB`, `lrecNameLen`,
+`lrecNameByte`, `lrecVal`, `wrapVal` — and `run.js` drives the walk, rendering in
 exactly the format of [lib/core/pretty.ml](../lib/core/pretty.ml).
 
 ## What the GC design removed
@@ -106,6 +106,34 @@ The runtime that remains is exactly the two functions that need a loop:
 Binaryen cross-checks every module in the test suite:
 `wasm-opt --enable-gc --enable-reference-types --enable-bulk-memory`
 (bulk-memory covers the passive data segment `array.new_data` reads).
+
+## Linking at the wasm level
+
+Separate compilation reaches all the way down. Each unit compiles to its own
+module through the unchanged compiler — `main` returns the unit's value, which
+for a functor unit is literally its `$Clos`. The **link module** is this same
+compiler applied to the linkers' shared composition term (each step applies a
+unit functor to a record of projections wired from the providers), with one
+difference in how the units are installed: `main`'s prologue calls one
+imported `u<k>.main` per unit and merges the results into the environment, so
+`Query` *is* the loaded units and every unit occurrence in the composition is
+an ordinary `Proj (Query, i)`.
+
+```console
+$ main --unit-wasm counter.wasm counter.sceo
+$ main --link-wasm linked.wasm counter.sceo app.sceo
+$ node wasm/run.js linked.wasm counter.wasm app.wasm
+```
+
+Values flow between instances because WasmGC type identity is structural: all
+modules share the same recursion group, so the link module's casts and
+accessors work on structs any unit created. Record labels ride inside `$Lrec`
+values (not in per-module tables), which is what makes results assembled
+across modules render correctly. The expected unit names travel in an
+`sce.units` custom section; `run.js` checks the instantiation order against
+it. Interface checking happens in the toolchain against the artifacts' stored
+λSCE types — wasm's own type system sees only `() -> (ref null $Val)` imports,
+with runtime casts backing what the calculus already proved.
 
 ## Limitations
 

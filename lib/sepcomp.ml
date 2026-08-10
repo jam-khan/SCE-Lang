@@ -212,14 +212,15 @@ let check_imports_satisfied ~unit_name accT d =
    (`?.0`/`?.1` of a self-application), which is only right at the
    whole-program elaboration sites it was written for. Binding the provider
    explicitly is insensitive to where the step is spliced — and the λE
-   typechecker verifies it on every link. *)
+   typechecker verifies it on every link.
+
+   Mind λE's dependent Mrg: its right operand is checked and evaluated under
+   the context extended with the left value, so inside the outer Mrg the
+   provider is slot 0 (freshly merged) and the functor slot 1 — and every
+   nested merge inside the wire record shifts the provider one further. *)
 let link_step (accT : S.typ) (d : S.typ) (b : S.typ) : C.exp =
   let accT_c = E.elab_typ accT in
   let tu_c = E.elab_typ (S.TSig (S.TyArrM (d, S.TyIntf b))) in
-  (* λE's Mrg is dependent: its right operand is checked and evaluated under
-     the context extended with the left value. So inside the outer Mrg the
-     provider is slot 0 (freshly merged) and the functor slot 1 — and every
-     nested merge inside the wire record shifts the provider one further. *)
   let rec wire shift = function
     | S.TRcd (l, _) -> C.Lrec (l, C.Rproj (C.Proj (C.Query, shift), l))
     | S.TAnd (d1, d2) -> C.Mrg (wire shift d1, wire (shift + 1) d2)
@@ -233,7 +234,30 @@ let link_step (accT : S.typ) (d : S.typ) (b : S.typ) : C.exp =
             ( C.Proj (C.Query, 1),
               C.App (C.Proj (C.Query, 1), wire 0 d) ) ) )
 
-let link (arts : artifact list) : artifact =
+(* The leaf step merges a unit that imports nothing. The same index denotes
+   different slots on the two sides of the Mrg: on the left, ?.1 is the
+   accumulated provider; on the right — one slot deeper, under the freshly
+   merged left value — ?.1 is the unit. *)
+let link_step_leaf (accT : S.typ) (uT : S.typ) : C.exp =
+  C.Lam
+    ( E.elab_typ accT,
+      C.Lam
+        (E.elab_typ uT, C.Mrg (C.Proj (C.Query, 1), C.Proj (C.Query, 1))) )
+
+(* How a unit occupies a slot: a leaf by its exports, a functor by its
+   signature. *)
+let slot_typ (u : artifact) : S.typ =
+  match u.a_imports with
+  | None -> u.a_exports
+  | Some d -> S.TSig (S.TyArrM (d, S.TyIntf u.a_exports))
+
+(* The composition both linkers share: a left fold of step applications,
+   `App (App (step_k, acc), u_k)`, parameterized by how a unit occurrence is
+   spelled — the core linker splices the closed artifact terms in, the wasm
+   linker references the units through the environment its link module builds
+   from imports. Same term, two ways of installing the units. *)
+let compose (arts : artifact list) (uref : int -> C.exp) :
+    S.typ * C.exp * string list =
   match arts with
   | [] -> err "nothing to link"
   | first :: rest ->
@@ -242,30 +266,52 @@ let link (arts : artifact list) : artifact =
        err "the first unit (%s) has imports; linking is left to right, so it \
             must be a leaf" first.a_name
      | None -> ());
-    let acc =
+    let accT, core, names, _ =
       List.fold_left
-        (fun (accT, acc, names) u ->
+        (fun (accT, acc, names, k) u ->
           check_no_overlap accT names u.a_exports u.a_name;
-          match u.a_imports with
-          | None ->
-            (S.TAnd (accT, u.a_exports), C.Mrg (acc, u.a_core),
-             names @ [ u.a_name ])
-          | Some d ->
-            check_imports_satisfied ~unit_name:u.a_name accT d;
-            let step = link_step accT d u.a_exports in
-            ( S.TAnd (accT, u.a_exports),
-              C.App (C.App (step, acc), u.a_core),
-              names @ [ u.a_name ] ))
-        (first.a_exports, first.a_core, [ first.a_name ])
+          let step =
+            match u.a_imports with
+            | None -> link_step_leaf accT u.a_exports
+            | Some d ->
+              check_imports_satisfied ~unit_name:u.a_name accT d;
+              link_step accT d u.a_exports
+          in
+          ( S.TAnd (accT, u.a_exports),
+            C.App (C.App (step, acc), uref k),
+            names @ [ u.a_name ],
+            k + 1 ))
+        (first.a_exports, uref 0, [ first.a_name ], 1)
         rest
     in
-    let accT, core, names = acc in
-    (* The linker is only right if its output is well-typed λE. *)
-    (try ignore (Core_lambdae.Check.typecheck core)
-     with Core_lambdae.Check.Type_error m ->
-       err "internal: linked program failed to typecheck: %s" m);
-    { a_name = String.concat "+" names; a_imports = None;
-      a_exports = accT; a_core = core }
+    (accT, core, names)
+
+let link (arts : artifact list) : artifact =
+  let accT, core, names =
+    compose arts (fun k -> (List.nth arts k).a_core)
+  in
+  (* The linker is only right if its output is well-typed λE. *)
+  (try ignore (Core_lambdae.Check.typecheck core)
+   with Core_lambdae.Check.Type_error m ->
+     err "internal: linked program failed to typecheck: %s" m);
+  { a_name = String.concat "+" names; a_imports = None;
+    a_exports = accT; a_core = core }
+
+(* The wasm linker's half of the bargain: the same composition, with unit k
+   referenced as `?.(n-1-k)` — the link module's main builds its environment
+   by merging the imported unit values, so `Query` *is* the loaded units. *)
+let wasm_link_parts (arts : artifact list) :
+    string list * Core_lambdae.Ast.typ list * C.exp =
+  let n = List.length arts in
+  let accT, body, names =
+    compose arts (fun k -> C.Proj (C.Query, n - 1 - k))
+  in
+  let body =
+    match E.srlookup_opt accT "main" with
+    | Some _ -> C.Rproj (body, "main")
+    | None -> body
+  in
+  (names, List.map (fun a -> E.elab_typ (slot_typ a)) arts, body)
 
 (* ---------------- running a linked artifact ----------------
 
