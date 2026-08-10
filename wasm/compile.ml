@@ -1,4 +1,4 @@
-(* λE -> WebAssembly.
+(* λE -> WebAssembly-GC.
 
    λE has no variables: `Query` *is* the environment, and the environment is an
    ordinary value. So there is no closure-conversion pass here — the calculus
@@ -7,17 +7,19 @@
    1. A function compiles to a lifted wasm function `(self, arg) -> result`
       whose body rebuilds its own environment out of `self`. A `Lam` body knows
       statically that it is a `Lam` body, so `App` never has to ask what kind
-      of closure it received: load the table slot and `call_indirect`.
+      of closure it received: read the funcref out of the $Clos struct and
+      `call_ref`. No table, no slots, no indirection.
 
    2. `Proj` and `Rproj` are searches in the interpreter, but the program is
       typed and a merge value's shape mirrors its type's shape. `Check.tlookup`
       and the record path below therefore settle every access at compile time,
-      so both compile to a fixed chain of loads — no spine walk, no label
-      comparison at runtime.
+      so both compile to a fixed chain of casts and struct.gets — no spine
+      walk, no label comparison at runtime.
 
-   Values are boxed cells in linear memory, tagged so the host can render a
-   result without being told its type. Allocation is a bump pointer; there is
-   no GC. *)
+   Values are GC structs subtyping $Val (see Abi), tagged so the host can
+   render a result without being told its type. The engine's collector owns
+   the heap; the module has no linear memory at all. λE types are erased —
+   they direct compilation and then vanish. *)
 
 module C = Core_lambdae.Ast
 module Check = Core_lambdae.Check
@@ -31,88 +33,39 @@ let err fmt = Printf.ksprintf (fun s -> raise (Error s)) fmt
 (* ---------------- static data ---------------- *)
 
 type state = {
-  data : Buffer.t; (* static image, starting at data_base *)
-  mutable ints : (int * int) list; (* literal -> address, memoized *)
-  mutable bools : (bool * int) list;
-  mutable strings : (string * int) list;
-  mutable labels : (string * int) list; (* label -> id *)
-  mutable label_bytes : (int * int) list; (* id -> (address, length) *)
-  mutable lifted : func list; (* in table-slot order *)
+  strings : Buffer.t; (* the one passive data segment *)
+  mutable string_offs : (string * (int * int)) list; (* literal -> (off, len) *)
+  mutable labels : string list; (* id = position, first interned first *)
+  mutable lifted : func list; (* in function-index order *)
 }
 
 let new_state () =
-  {
-    data = Buffer.create 256;
-    ints = [];
-    bools = [];
-    strings = [];
-    labels = [];
-    label_bytes = [];
-    lifted = [];
-  }
+  { strings = Buffer.create 64; string_offs = []; labels = []; lifted = [] }
 
-let word n =
-  let b = Bytes.create 4 in
-  Bytes.set_uint8 b 0 (n land 0xff);
-  Bytes.set_uint8 b 1 ((n asr 8) land 0xff);
-  Bytes.set_uint8 b 2 ((n asr 16) land 0xff);
-  Bytes.set_uint8 b 3 ((n asr 24) land 0xff);
-  Bytes.to_string b
-
-let next_addr st = data_base + Buffer.length st.data
-
-(* Cells are read with i32.load, so everything static stays word-aligned. *)
-let align st =
-  while (next_addr st) land 3 <> 0 do
-    Buffer.add_char st.data '\000'
-  done
-
-let put st bytes =
-  align st;
-  let addr = next_addr st in
-  Buffer.add_string st.data bytes;
-  addr
-
-(* Every literal in the program is known up front, so literals are static cells
-   and compile to a constant address rather than an allocation. *)
-let lit_int st n =
-  match List.assoc_opt n st.ints with
-  | Some a -> a
+let string_slice st s =
+  match List.assoc_opt s st.string_offs with
+  | Some ol -> ol
   | None ->
-    let a = put st (word tag_int ^ word n) in
-    st.ints <- (n, a) :: st.ints;
-    a
+    let off = Buffer.length st.strings in
+    Buffer.add_string st.strings s;
+    let ol = (off, String.length s) in
+    st.string_offs <- (s, ol) :: st.string_offs;
+    ol
 
-let lit_bool st b =
-  match List.assoc_opt b st.bools with
-  | Some a -> a
-  | None ->
-    let a = put st (word tag_bool ^ word (if b then 1 else 0)) in
-    st.bools <- (b, a) :: st.bools;
-    a
-
-let lit_string st s =
-  match List.assoc_opt s st.strings with
-  | Some a -> a
-  | None ->
-    let bytes = put st s in
-    let a = put st (word tag_str ^ word bytes ^ word (String.length s)) in
-    st.strings <- (s, a) :: st.strings;
-    a
-
-(* Labels are interned; the cell stores an id, and the host maps ids to names
-   through the table emitted at the end of the static image. *)
 let label_id st l =
-  match List.assoc_opt l st.labels with
-  | Some i -> i
-  | None ->
-    let id = List.length st.labels in
-    let addr = put st l in
-    st.labels <- st.labels @ [ (l, id) ];
-    st.label_bytes <- st.label_bytes @ [ (addr, String.length l) ];
-    id
+  let rec find i = function
+    | [] ->
+      st.labels <- st.labels @ [ l ];
+      i
+    | l' :: rest -> if String.equal l l' then i else find (i + 1) rest
+  in
+  find 0 st.labels
 
-(* ---------------- per-function local allocation ---------------- *)
+(* ---------------- per-function locals ----------------
+
+   Every local the compiler introduces holds a value, so they are uniformly
+   (ref null $Val) — nullable, hence defaultable, hence free of the
+   definite-assignment rules non-null locals carry. *)
 
 type fbuilder = { nparams : int; mutable nlocals : int }
 
@@ -135,44 +88,56 @@ let rec rlookup_path (a : C.typ) (l : string) : (step list * C.typ) option =
   | C.TAnd (a1, a2) ->
     if Check.lin l a2 then
       if Check.lin l a1 then None
-      else
-        Option.map (fun (p, t) -> (Right :: p, t)) (rlookup_path a2 l)
+      else Option.map (fun (p, t) -> (Right :: p, t)) (rlookup_path a2 l)
     else Option.map (fun (p, t) -> (Left :: p, t)) (rlookup_path a1 l)
   | _ -> None
 
-let step_instr = function
-  | Left -> Load { offset = f_a }
-  | Right -> Load { offset = f_b }
+let step_instrs = function
+  | Left -> [ RefCast ty_pair; StructGet (ty_pair, p_a) ]
+  | Right -> [ RefCast ty_pair; StructGet (ty_pair, p_b) ]
+
+(* unbox the i32 payload of an Int or Bool *)
+let unbox = [ RefCast ty_i32box; StructGet (ty_i32box, p_a) ]
 
 (* ---------------- the compilation scheme ----------------
 
-   `comp` leaves exactly one i32 — a pointer to the result cell — on the stack,
-   and returns the λE type of what it left there so the caller can resolve its
-   own static accesses. It follows `Check.infer` rule for rule. *)
+   `comp` leaves exactly one (ref null $Val) on the stack and returns the λE
+   type of what it left there, so the caller can resolve its own static
+   accesses. It follows `Check.infer` rule for rule. *)
 
 let rec comp st fb ~env ~ctx (e : C.exp) : instr list * C.typ =
   match e with
   | C.Query -> ([ Local_get env ], ctx)
-  | C.Unit -> ([ Const unit_addr ], C.TTop)
-  | C.Lit (C.Int n) -> ([ Const (lit_int st n) ], C.TInt)
-  | C.Lit (C.Bool b) -> ([ Const (lit_bool st b) ], C.TBool)
-  | C.Lit (C.String s) -> ([ Const (lit_string st s) ], C.TString)
+  | C.Unit -> ([ Global_get gl_unit ], C.TTop)
+  | C.Lit (C.Int n) -> ([ Const tag_int; Const n; StructNew ty_i32box ], C.TInt)
+  | C.Lit (C.Bool b) ->
+    ([ Const tag_bool; Const (if b then 1 else 0); StructNew ty_i32box ], C.TBool)
+  | C.Lit (C.String s) ->
+    let off, len = string_slice st s in
+    ( [ Const tag_str; Const off; Const len;
+        ArrayNewData (ty_bytes, strings_data); StructNew ty_str ],
+      C.TString )
   | C.Proj (e1, n) ->
     let is1, t1 = comp st fb ~env ~ctx e1 in
     (* lookup (Mrg (l, r)) 0 = r, and n > 0 descends left first *)
-    let rec walk k = if k = 0 then [ Load { offset = f_b } ] else Load { offset = f_a } :: walk (k - 1) in
+    let rec walk k =
+      if k = 0 then step_instrs Right else step_instrs Left @ walk (k - 1)
+    in
     (is1 @ walk n, Check.tlookup t1 n)
   | C.Rproj (e1, l) -> (
     let is1, t1 = comp st fb ~env ~ctx e1 in
     match rlookup_path t1 l with
     | None -> err "no unambiguous field labelled %s" l
     | Some (path, t) ->
-      (* the route lands on the Lrec cell; its payload is the field *)
-      (is1 @ List.map step_instr path @ [ Load { offset = f_b } ], t))
+      (* the route lands on the $Lrec; its payload is the field *)
+      ( is1
+        @ List.concat_map step_instrs path
+        @ [ RefCast ty_lrec; StructGet (ty_lrec, p_b) ],
+        t ))
   | C.Lrec (l, e1) ->
     let id = label_id st l in
     let is1, t1 = comp st fb ~env ~ctx e1 in
-    ([ Const tag_lrec; Const id ] @ is1 @ [ Call fn_box2 ], C.TRcd (l, t1))
+    ([ Const tag_lrec; Const id ] @ is1 @ [ StructNew ty_lrec ], C.TRcd (l, t1))
   | C.Mrg (e1, e2) ->
     (* the right operand is checked, and evaluated, under ctx & typeof e1 *)
     let is1, a = comp st fb ~env ~ctx e1 in
@@ -180,8 +145,11 @@ let rec comp st fb ~env ~ctx (e : C.exp) : instr list * C.typ =
     let env2 = fresh fb in
     let is2, b = comp st fb ~env:env2 ~ctx:(C.TAnd (ctx, a)) e2 in
     ( is1
-      @ [ Local_set v1; Local_get env; Local_get v1; Call fn_mrg; Local_set env2 ]
-      @ [ Local_get v1 ] @ is2 @ [ Call fn_mrg ],
+      @ [ Local_set v1;
+          Const tag_mrg; Local_get env; Local_get v1; StructNew ty_pair;
+          Local_set env2;
+          Const tag_mrg; Local_get v1 ]
+      @ is2 @ [ StructNew ty_pair ],
       C.TAnd (a, b) )
   | C.Box (e1, e2) ->
     let is1, ctx' = comp st fb ~env ~ctx e1 in
@@ -195,18 +163,21 @@ let rec comp st fb ~env ~ctx (e : C.exp) : instr list * C.typ =
       let is2, a' = comp st fb ~env ~ctx e2 in
       if a' <> a then err "argument type mismatch";
       let f = fresh fb in
-      (* self, then argument, then the table slot call_indirect pops last *)
+      (* self, then argument, then the funcref call_ref pops last *)
       ( is1 @ [ Local_set f; Local_get f ] @ is2
-        @ [ Local_get f; Load { offset = f_a }; Call_indirect ty_2 ],
+        @ [ Local_get f; RefCast ty_clos; StructGet (ty_clos, p_a);
+            CallRef ty_fn ],
         b )
     | _ -> err "application of a non-function")
   | C.Lam (a, body) ->
-    let b, slot = lift st ~kind:`Lam ~ctx ~a ~b:None body in
-    ([ Const tag_clos; Const slot; Local_get env; Call fn_box2 ], C.TArr (a, b))
+    let b, fi = lift st ~kind:`Lam ~ctx ~a ~b:None body in
+    ([ Const tag_clos; RefFunc fi; Local_get env; StructNew ty_clos ],
+      C.TArr (a, b))
   | C.Flam (a, b, body) ->
-    let b', slot = lift st ~kind:`Flam ~ctx ~a ~b:(Some b) body in
+    let b', fi = lift st ~kind:`Flam ~ctx ~a ~b:(Some b) body in
     if b' <> b then err "recursive function body type mismatch";
-    ([ Const tag_fclos; Const slot; Local_get env; Call fn_box2 ], C.TArr (a, b))
+    ([ Const tag_fclos; RefFunc fi; Local_get env; StructNew ty_clos ],
+      C.TArr (a, b))
   | C.Binop (op, e1, e2) ->
     let is1, t1 = comp st fb ~env ~ctx e1 in
     let is2, t2 = comp st fb ~env ~ctx e2 in
@@ -218,13 +189,13 @@ let rec comp st fb ~env ~ctx (e : C.exp) : instr list * C.typ =
     let ist, tt = comp st fb ~env ~ctx t in
     let isf, tf = comp st fb ~env ~ctx f in
     if tt <> tf then err "if branches have different types";
-    (isc @ [ Load { offset = f_a }; If ([ I32 ], ist, isf) ], tt)
+    (isc @ unbox @ [ If ([ Ref ty_val ], ist, isf) ], tt)
   | C.Inl (b, e1) ->
     let is1, a = comp st fb ~env ~ctx e1 in
-    ([ Const tag_inl ] @ is1 @ [ Call fn_box1 ], C.TOr (a, b))
+    ([ Const tag_inl ] @ is1 @ [ StructNew ty_wrap ], C.TOr (a, b))
   | C.Inr (a, e1) ->
     let is1, b = comp st fb ~env ~ctx e1 in
-    ([ Const tag_inr ] @ is1 @ [ Call fn_box1 ], C.TOr (a, b))
+    ([ Const tag_inr ] @ is1 @ [ StructNew ty_wrap ], C.TOr (a, b))
   | C.Case (e1, el, er) -> (
     let is1, t1 = comp st fb ~env ~ctx e1 in
     match t1 with
@@ -236,29 +207,35 @@ let rec comp st fb ~env ~ctx (e : C.exp) : instr list * C.typ =
       let isr, tr = comp st fb ~env:envr ~ctx:(C.TAnd (ctx, b)) er in
       if tl <> tr then err "case branches have different types";
       let bind target =
-        [ Local_get env; Local_get v; Load { offset = f_a }; Call fn_mrg; Local_set target ]
+        [ Const tag_mrg; Local_get env;
+          Local_get v; RefCast ty_wrap; StructGet (ty_wrap, p_a);
+          StructNew ty_pair; Local_set target ]
       in
       ( is1
-        @ [ Local_set v; Local_get v; Load { offset = f_tag }; Const tag_inl; Eq ]
-        @ [ If ([ I32 ], bind envl @ isl, bind envr @ isr) ],
+        @ [ Local_set v; Local_get v; StructGet (ty_val, 0); Const tag_inl; Eq ]
+        @ [ If ([ Ref ty_val ], bind envl @ isl, bind envr @ isr) ],
         tl )
     | _ -> err "case scrutinee is not a union")
   | C.Fold (t, e1) ->
     let is1, a = comp st fb ~env ~ctx e1 in
     if a <> Check.unfold_mu t then err "fold body does not match unrolled type";
-    ([ Const tag_fold ] @ is1 @ [ Call fn_box1 ], C.TMu t)
+    ([ Const tag_fold ] @ is1 @ [ StructNew ty_wrap ], C.TMu t)
   | C.Unfold e1 -> (
     let is1, t1 = comp st fb ~env ~ctx e1 in
     match t1 with
-    | C.TMu t -> (is1 @ [ Load { offset = f_a } ], Check.unfold_mu t)
+    | C.TMu t ->
+      (is1 @ [ RefCast ty_wrap; StructGet (ty_wrap, p_a) ], Check.unfold_mu t)
     | _ -> err "unfold applied to a non-recursive type")
   | C.Clos _ | C.Fclos _ ->
     err "closure values cannot appear in a compiled program"
 
 and binop op t1 is1 is2 =
-  let unbox is = is @ [ Load { offset = f_a } ] in
-  let arith i = [ Const tag_int ] @ unbox is1 @ unbox is2 @ [ i; Call fn_box1 ] in
-  let compare i = [ Const tag_bool ] @ unbox is1 @ unbox is2 @ [ i; Call fn_box1 ] in
+  let arith i =
+    [ Const tag_int ] @ is1 @ unbox @ is2 @ unbox @ [ i; StructNew ty_i32box ]
+  in
+  let compare i =
+    [ Const tag_bool ] @ is1 @ unbox @ is2 @ unbox @ [ i; StructNew ty_i32box ]
+  in
   match (op : C.binop) with
   | C.Add -> arith Add
   | C.Sub -> arith Sub
@@ -273,55 +250,61 @@ and binop op t1 is1 is2 =
   | C.Eq | C.Ne ->
     let negate = if op = C.Ne then [ Eqz ] else [] in
     if t1 = C.TString then
-      [ Const tag_bool ] @ is1 @ is2 @ [ Call fn_streq ] @ negate @ [ Call fn_box1 ]
+      [ Const tag_bool ] @ is1 @ is2
+      @ [ Call fn_streq ] @ negate @ [ StructNew ty_i32box ]
     else
-      [ Const tag_bool ] @ unbox is1 @ unbox is2
-      @ [ (if op = C.Eq then Eq else Ne) ]
-      @ [ Call fn_box1 ]
+      (* i32.ne exists, so integer Ne needs no extra negation *)
+      [ Const tag_bool ] @ is1 @ unbox @ is2 @ unbox
+      @ [ (if op = C.Eq then Eq else Ne); StructNew ty_i32box ]
 
-(* Lift a function body into its own wasm function and record its table slot.
-   The body rebuilds the environment the interpreter would have handed it:
-   `Mrg (cenv, arg)` for a lambda, `Mrg (Mrg (cenv, self), arg)` for a
-   fixpoint, so the argument is ?.0 and the function itself is ?.1. *)
+(* Lift a function body into its own wasm function. The body rebuilds the
+   environment the interpreter would have handed it: `Mrg (cenv, arg)` for a
+   lambda, `Mrg (Mrg (cenv, self), arg)` for a fixpoint, so the argument is
+   ?.0 and the function itself is ?.1. `self` as a value *is* the closure
+   struct, so the fixpoint case just pushes param 0 back. *)
 and lift st ~kind ~ctx ~a ~b body =
   let fb = { nparams = 2; nlocals = 0 } in
   let envl = fresh fb in
+  let cenv = [ Local_get 0; RefCast ty_clos; StructGet (ty_clos, p_b) ] in
   let prologue =
     match kind with
     | `Lam ->
-      [ Local_get 0; Load { offset = f_b }; Local_get 1; Call fn_mrg; Local_set envl ]
+      [ Const tag_mrg ] @ cenv @ [ Local_get 1; StructNew ty_pair; Local_set envl ]
     | `Flam ->
-      [ Local_get 0; Load { offset = f_b }; Local_get 0; Call fn_mrg;
-        Local_get 1; Call fn_mrg; Local_set envl ]
+      [ Const tag_mrg; Const tag_mrg ] @ cenv
+      @ [ Local_get 0; StructNew ty_pair;
+          Local_get 1; StructNew ty_pair; Local_set envl ]
   in
   let inner_ctx =
     match kind with
     | `Lam -> C.TAnd (ctx, a)
     | `Flam -> C.TAnd (C.TAnd (ctx, C.TArr (a, Option.get b)), a)
   in
-  (* Reserve the slot *before* compiling: the body may lift further functions
-     of its own, so the slot cannot be read off the list length afterwards. *)
-  let placeholder = { fn_name = "lifted"; fn_type = ty_2; fn_locals = []; fn_body = [] } in
+  (* Reserve the function index *before* compiling: the body may lift further
+     functions of its own, so the index cannot be read off the list length
+     afterwards. *)
+  let placeholder = { fn_name = "lifted"; fn_type = ty_fn; fn_locals = []; fn_body = [] } in
   st.lifted <- st.lifted @ [ placeholder ];
   let slot = List.length st.lifted - 1 in
+  let fi = runtime_count + slot in
   let is, t = comp st fb ~env:envl ~ctx:inner_ctx body in
   let f =
     {
       fn_name = Printf.sprintf "lifted%d" slot;
-      fn_type = ty_2;
-      fn_locals = List.init fb.nlocals (fun _ -> I32);
+      fn_type = ty_fn;
+      fn_locals = List.init fb.nlocals (fun _ -> Ref ty_val);
       fn_body = prologue @ is;
     }
   in
   st.lifted <- List.mapi (fun i x -> if i = slot then f else x) st.lifted;
-  (t, slot)
+  (t, fi)
 
-(* ---------------- module assembly ----------------
+(* ---------------- module assembly ---------------- *)
 
-   The static image is laid out literals-first, then the label table, and the
-   heap starts after it. Both globals are initialised from addresses that are
-   only known once compilation has finished, which is why they are filled in
-   here rather than up front. *)
+let word n =
+  let b = Bytes.create 4 in
+  Bytes.set_int32_le b 0 (Int32.of_int n);
+  Bytes.to_string b
 
 let program (e : C.exp) : Ir.modul =
   let st = new_state () in
@@ -333,43 +316,26 @@ let program (e : C.exp) : Ir.modul =
   let main =
     {
       fn_name = "main";
-      fn_type = ty_0;
-      fn_locals = List.init fb.nlocals (fun _ -> I32);
-      fn_body = [ Const unit_addr; Local_set env ] @ body;
+      fn_type = ty_0v;
+      fn_locals = List.init fb.nlocals (fun _ -> Ref ty_val);
+      fn_body = [ Global_get gl_unit; Local_set env ] @ body;
     }
   in
-  (* The label table, so the host can turn the id inside an Lrec cell back into
-     a field name: a count, then one (address, length) pair per label. *)
-  let table =
-    word (List.length st.label_bytes)
-    ^ String.concat "" (List.map (fun (a, n) -> word a ^ word n) st.label_bytes)
+  let labels_blob =
+    word (List.length st.labels)
+    ^ String.concat "" (List.map (fun l -> word (String.length l) ^ l) st.labels)
   in
-  let labels_addr = put st table in
-  align st;
-  let heap_base = next_addr st in
-  let pages = max 1 ((heap_base + page_size - 1) / page_size) in
   {
-    m_types = types;
+    m_types = typedefs;
     m_funcs = Runtime.funcs @ [ main ] @ st.lifted;
-    m_table = List.length st.lifted;
-    m_elems = List.mapi (fun i _ -> runtime_count + i) st.lifted;
-    m_pages = pages;
     m_globals =
-      [
-        { gl_name = "hp"; gl_mut = true; gl_init = heap_base };
-        { gl_name = "labels"; gl_mut = false; gl_init = labels_addr };
-      ];
-    m_exports =
-      [
-        { ex_name = "memory"; ex_desc = ExMemory 0 };
-        { ex_name = "main"; ex_desc = ExFunc fn_main };
-        { ex_name = "labels"; ex_desc = ExGlobal gl_labels };
-      ];
+      [ { gl_name = "unit"; gl_type = Ref ty_val; gl_mut = false;
+          gl_init = [ Const tag_unit; StructNew ty_val ] } ];
+    m_exports = List.map (fun (n, i) -> { ex_name = n; ex_func = i }) exports;
+    m_declared = List.mapi (fun i _ -> runtime_count + i) st.lifted;
     m_datas =
-      [
-        { da_offset = unit_addr; da_bytes = word tag_unit };
-        { da_offset = data_base; da_bytes = Buffer.contents st.data };
-      ];
+      (if Buffer.length st.strings = 0 then [] else [ Buffer.contents st.strings ]);
+    m_customs = [ (labels_section, labels_blob) ];
   }
 
 let to_binary (e : C.exp) : string = Emit.modul (program e)

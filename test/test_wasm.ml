@@ -180,8 +180,8 @@ let programs =
       ;; A.area");
     ("open", ";; open { a = 1; b = 2 } in a + b");
     ("program without a main", "let a : Int = 1\nlet b : Int = 2");
-    (* the allocator: fib 24 is ~150k calls, forcing repeated memory.grow *)
-    ("memory growth",
+    (* allocation pressure: fib 24 is ~150k calls, all heap-allocating *)
+    ("allocation pressure",
      ";; let rec fib (n : Int) : Int = if n < 2 then n else fib (n - 1) + fib \
       (n - 2) in fib 24");
     ("string allocation",
@@ -219,7 +219,11 @@ let test_validity () =
           output_string oc (Wasm_backend.Compile.to_binary core);
           close_out oc;
           let ok =
-            Sys.command (Printf.sprintf "wasm-opt %s -o /dev/null 2>/dev/null" wasm) = 0
+            Sys.command
+              (Printf.sprintf
+                 "wasm-opt --enable-gc --enable-reference-types --enable-bulk-memory %s -o /dev/null 2>/dev/null"
+                 wasm)
+            = 0
           in
           Sys.remove wasm;
           check ("binaryen validates: " ^ name) ok)

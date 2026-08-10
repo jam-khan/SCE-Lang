@@ -1,26 +1,50 @@
 (* Ir.modul -> a WebAssembly binary.
 
-   Targets the 1.0 core instruction set only: no bulk memory, no reference
-   types beyond funcref, no GC. That keeps the output acceptable to every
-   engine and to binaryen's validator. *)
+   Targets WasmGC (the typed-references + GC proposals, standardized in wasm
+   3.0): struct/array types in one recursion group, ref.cast, call_ref, and
+   passive data read through array.new_data. No linear memory, no tables. *)
 
 open Ir
 open Encode
 
-let valtype buf I32 = byte buf 0x7f
+(* Heap-type indices are signed LEB (s33); ours are tiny non-negatives, for
+   which s32 produces the identical bytes. *)
+let s33 = s32
+
+let valtype buf = function
+  | I32 -> byte buf 0x7f
+  | Ref i -> byte buf 0x63 (* (ref null $i) *); s33 buf i
 
 let blocktype buf = function
-  | [] -> byte buf 0x40 (* empty *)
+  | [] -> byte buf 0x40
   | [ t ] -> valtype buf t
   | _ -> failwith "emit: multi-value blocks are not used by this backend"
 
-let memarg buf { offset } =
-  u32 buf 2 (* alignment 2^2 = 4 bytes; every cell field is word-aligned *);
-  u32 buf offset
+let storage buf = function
+  | St_i32 -> byte buf 0x7f
+  | St_i8 -> byte buf 0x78
+  | St_ref i -> byte buf 0x63; s33 buf i
 
-let memarg8 buf { offset } =
-  u32 buf 0 (* byte access *);
-  u32 buf offset
+let field buf { fld; fmut } =
+  storage buf fld;
+  byte buf (if fmut then 0x01 else 0x00)
+
+let functype buf { params; results } =
+  byte buf 0x60;
+  vec buf valtype params;
+  vec buf valtype results
+
+let comptype buf = function
+  | CFunc ft -> functype buf ft
+  | CStruct fs -> byte buf 0x5f; vec buf field fs
+  | CArray f -> byte buf 0x5e; field buf f
+
+let subtype buf { super; sfinal; comp } =
+  match (super, sfinal) with
+  | None, true -> comptype buf comp (* plain comptype means final, no supers *)
+  | None, false -> byte buf 0x50; u32 buf 0; comptype buf comp
+  | Some s, true -> byte buf 0x4f; u32 buf 1; u32 buf s; comptype buf comp
+  | Some s, false -> byte buf 0x50; u32 buf 1; u32 buf s; comptype buf comp
 
 let rec instr buf = function
   | Const n -> byte buf 0x41; s32 buf n
@@ -36,19 +60,21 @@ let rec instr buf = function
   | Le_s -> byte buf 0x4c
   | Ge_s -> byte buf 0x4e
   | Eqz -> byte buf 0x45
-  | And -> byte buf 0x71
-  | Or -> byte buf 0x72
-  | Load m -> byte buf 0x28; memarg buf m
-  | Load8_u m -> byte buf 0x2d; memarg8 buf m
-  | Store m -> byte buf 0x36; memarg buf m
-  | Store8 m -> byte buf 0x3a; memarg8 buf m
   | Local_get i -> byte buf 0x20; u32 buf i
   | Local_set i -> byte buf 0x21; u32 buf i
   | Local_tee i -> byte buf 0x22; u32 buf i
   | Global_get i -> byte buf 0x23; u32 buf i
-  | Global_set i -> byte buf 0x24; u32 buf i
   | Call i -> byte buf 0x10; u32 buf i
-  | Call_indirect t -> byte buf 0x11; u32 buf t; u32 buf 0
+  | CallRef t -> byte buf 0x14; u32 buf t
+  | RefFunc f -> byte buf 0xd2; u32 buf f
+  | RefCast t -> byte buf 0xfb; u32 buf 0x16; s33 buf t
+  | StructNew t -> byte buf 0xfb; u32 buf 0x00; u32 buf t
+  | StructGet (t, f) -> byte buf 0xfb; u32 buf 0x02; u32 buf t; u32 buf f
+  | ArrayNewDefault t -> byte buf 0xfb; u32 buf 0x07; u32 buf t
+  | ArrayNewData (t, d) -> byte buf 0xfb; u32 buf 0x09; u32 buf t; u32 buf d
+  | ArrayGetU t -> byte buf 0xfb; u32 buf 0x0d; u32 buf t
+  | ArrayLen -> byte buf 0xfb; u32 buf 0x0f
+  | ArrayCopy (td, ts) -> byte buf 0xfb; u32 buf 0x11; u32 buf td; u32 buf ts
   | If (bt, thn, els) ->
     byte buf 0x04;
     blocktype buf bt;
@@ -67,79 +93,79 @@ let rec instr buf = function
   | Return -> byte buf 0x0f
   | Drop -> byte buf 0x1a
   | Unreachable -> byte buf 0x00
-  | Memory_size -> byte buf 0x3f; byte buf 0x00
-  | Memory_grow -> byte buf 0x40; byte buf 0x00
 
-let functype buf { params; results } =
-  byte buf 0x60;
-  vec buf valtype params;
-  vec buf valtype results
-
-(* Consecutive locals of the same type are run-length encoded; we only have
-   i32, so this is a single run. *)
+(* Consecutive locals of the same type are run-length encoded. *)
 let locals buf ls =
-  if ls = [] then u32 buf 0
-  else begin
-    u32 buf 1;
-    u32 buf (List.length ls);
-    valtype buf I32
-  end
+  let groups =
+    List.fold_left
+      (fun acc t ->
+        match acc with
+        | (t', n) :: rest when t' = t -> (t', n + 1) :: rest
+        | _ -> (t, 1) :: acc)
+      [] ls
+    |> List.rev
+  in
+  u32 buf (List.length groups);
+  List.iter
+    (fun (t, n) ->
+      u32 buf n;
+      valtype buf t)
+    groups
 
 let code buf f =
   let body = Buffer.create 256 in
   locals body f.fn_locals;
   List.iter (instr body) f.fn_body;
-  byte body 0x0b (* end *);
+  byte body 0x0b;
   u32 buf (Buffer.length body);
   Buffer.add_buffer buf body
 
-let limits buf min = byte buf 0x00; u32 buf min
-
 let global buf g =
-  valtype buf I32;
+  valtype buf g.gl_type;
   byte buf (if g.gl_mut then 0x01 else 0x00);
-  byte buf 0x41;
-  s32 buf g.gl_init;
+  List.iter (instr buf) g.gl_init;
   byte buf 0x0b
 
 let export buf e =
   name buf e.ex_name;
-  match e.ex_desc with
-  | ExFunc i -> byte buf 0x00; u32 buf i
-  | ExTable i -> byte buf 0x01; u32 buf i
-  | ExMemory i -> byte buf 0x02; u32 buf i
-  | ExGlobal i -> byte buf 0x03; u32 buf i
-
-let data buf d =
-  byte buf 0x00 (* active, memory 0 *);
-  byte buf 0x41;
-  s32 buf d.da_offset;
-  byte buf 0x0b;
-  u32 buf (String.length d.da_bytes);
-  Buffer.add_string buf d.da_bytes
+  byte buf 0x00;
+  u32 buf e.ex_func
 
 let modul (m : modul) : string =
   let buf = Buffer.create 4096 in
   Buffer.add_string buf magic;
   Buffer.add_string buf version;
-  section buf 1 (fun b -> vec b functype m.m_types);
+  (* one recursion group holding every type, so mutual references just work *)
+  section buf 1 (fun b ->
+      u32 b 1;
+      byte b 0x4e;
+      vec b subtype m.m_types);
   section buf 3 (fun b -> vec b (fun b f -> u32 b f.fn_type) m.m_funcs);
-  if m.m_table > 0 then
-    section buf 4 (fun b ->
-        u32 b 1;
-        byte b 0x70 (* funcref *);
-        limits b m.m_table);
-  section buf 5 (fun b -> u32 b 1; limits b m.m_pages);
   section buf 6 (fun b -> vec b global m.m_globals);
   section buf 7 (fun b -> vec b export m.m_exports);
-  if m.m_elems <> [] then
+  (* declarative element segment: the functions ref.func may name *)
+  if m.m_declared <> [] then
     section buf 9 (fun b ->
         u32 b 1;
-        byte b 0x00 (* active, table 0 *);
-        byte b 0x41;
-        s32 b 0;
-        byte b 0x0b;
-        vec b (fun b i -> u32 b i) m.m_elems);
+        u32 b 3 (* declarative *);
+        byte b 0x00 (* elemkind: func *);
+        vec b (fun b i -> u32 b i) m.m_declared);
+  (* array.new_data requires the data count to be known before the code section *)
+  if m.m_datas <> [] then
+    section buf 12 (fun b -> u32 b (List.length m.m_datas));
   section buf 10 (fun b -> vec b code m.m_funcs);
-  section buf 11 (fun b -> vec b data m.m_datas);
+  if m.m_datas <> [] then
+    section buf 11 (fun b ->
+        vec b
+          (fun b bytes ->
+            u32 b 1 (* passive *);
+            u32 b (String.length bytes);
+            Buffer.add_string b bytes)
+          m.m_datas);
+  List.iter
+    (fun (nm, bytes) ->
+      section buf 0 (fun b ->
+          name b nm;
+          Buffer.add_string b bytes))
+    m.m_customs;
   Buffer.contents buf

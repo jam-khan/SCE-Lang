@@ -8,11 +8,21 @@ open Ir
 
 let buf_add = Buffer.add_string
 
-let valtype_str I32 = "i32"
+let valtype_str = function
+  | I32 -> "i32"
+  | Ref i -> Printf.sprintf "(ref null $t%d)" i
 
-let blocktype_str = function [] -> "" | ts -> " (result " ^ String.concat " " (List.map valtype_str ts) ^ ")"
+let blocktype_str = function
+  | [] -> ""
+  | ts -> " (result " ^ String.concat " " (List.map valtype_str ts) ^ ")"
 
-let memarg_str { offset } = if offset = 0 then "" else Printf.sprintf " offset=%d" offset
+let storage_str = function
+  | St_i32 -> "i32"
+  | St_i8 -> "i8"
+  | St_ref i -> Printf.sprintf "(ref null $t%d)" i
+
+let field_str { fld; fmut } =
+  if fmut then Printf.sprintf "(mut %s)" (storage_str fld) else storage_str fld
 
 let rec instr buf indent i =
   let pad = String.make indent ' ' in
@@ -31,26 +41,26 @@ let rec instr buf indent i =
   | Le_s -> line "i32.le_s"
   | Ge_s -> line "i32.ge_s"
   | Eqz -> line "i32.eqz"
-  | And -> line "i32.and"
-  | Or -> line "i32.or"
-  | Load m -> line ("i32.load" ^ memarg_str m)
-  | Load8_u m -> line ("i32.load8_u" ^ memarg_str m)
-  | Store m -> line ("i32.store" ^ memarg_str m)
-  | Store8 m -> line ("i32.store8" ^ memarg_str m)
   | Local_get i -> line (Printf.sprintf "local.get %d" i)
   | Local_set i -> line (Printf.sprintf "local.set %d" i)
   | Local_tee i -> line (Printf.sprintf "local.tee %d" i)
   | Global_get i -> line (Printf.sprintf "global.get %d" i)
-  | Global_set i -> line (Printf.sprintf "global.set %d" i)
   | Call i -> line (Printf.sprintf "call %d" i)
-  | Call_indirect t -> line (Printf.sprintf "call_indirect (type %d)" t)
+  | CallRef t -> line (Printf.sprintf "call_ref $t%d" t)
+  | RefFunc f -> line (Printf.sprintf "ref.func %d" f)
+  | RefCast t -> line (Printf.sprintf "ref.cast (ref $t%d)" t)
+  | StructNew t -> line (Printf.sprintf "struct.new $t%d" t)
+  | StructGet (t, f) -> line (Printf.sprintf "struct.get $t%d %d" t f)
+  | ArrayNewDefault t -> line (Printf.sprintf "array.new_default $t%d" t)
+  | ArrayNewData (t, d) -> line (Printf.sprintf "array.new_data $t%d %d" t d)
+  | ArrayGetU t -> line (Printf.sprintf "array.get_u $t%d" t)
+  | ArrayLen -> line "array.len"
+  | ArrayCopy (td, ts) -> line (Printf.sprintf "array.copy $t%d $t%d" td ts)
   | Br l -> line (Printf.sprintf "br %d" l)
   | Br_if l -> line (Printf.sprintf "br_if %d" l)
   | Return -> line "return"
   | Drop -> line "drop"
   | Unreachable -> line "unreachable"
-  | Memory_size -> line "memory.size"
-  | Memory_grow -> line "memory.grow"
   | If (bt, thn, els) ->
     line ("if" ^ blocktype_str bt);
     List.iter (instr buf (indent + 2)) thn;
@@ -80,38 +90,54 @@ let escape s =
     s;
   Buffer.contents b
 
+let comptype_str = function
+  | CFunc { params; results } ->
+    Printf.sprintf "(func%s%s)"
+      (if params = [] then ""
+       else " (param " ^ String.concat " " (List.map valtype_str params) ^ ")")
+      (if results = [] then ""
+       else " (result " ^ String.concat " " (List.map valtype_str results) ^ ")")
+  | CStruct fs ->
+    "(struct "
+    ^ String.concat " " (List.map (fun f -> "(field " ^ field_str f ^ ")") fs)
+    ^ ")"
+  | CArray f -> "(array " ^ field_str f ^ ")"
+
 let modul (m : modul) : string =
   let buf = Buffer.create 4096 in
-  buf_add buf "(module\n";
+  buf_add buf "(module\n  (rec\n";
   List.iteri
-    (fun i { params; results } ->
-      buf_add buf
-        (Printf.sprintf "  (type %d (func%s%s))\n" i
-           (if params = [] then ""
-            else " (param " ^ String.concat " " (List.map valtype_str params) ^ ")")
-           (if results = [] then ""
-            else " (result " ^ String.concat " " (List.map valtype_str results) ^ ")")))
+    (fun i { super; sfinal; comp } ->
+      let sub =
+        match (super, sfinal) with
+        | None, true -> comptype_str comp
+        | None, false -> Printf.sprintf "(sub %s)" (comptype_str comp)
+        | Some s, true -> Printf.sprintf "(sub final $t%d %s)" s (comptype_str comp)
+        | Some s, false -> Printf.sprintf "(sub $t%d %s)" s (comptype_str comp)
+      in
+      buf_add buf (Printf.sprintf "    (type $t%d %s)\n" i sub))
     m.m_types;
-  buf_add buf (Printf.sprintf "  (memory %d)\n" m.m_pages);
-  if m.m_table > 0 then buf_add buf (Printf.sprintf "  (table %d funcref)\n" m.m_table);
+  buf_add buf "  )\n";
   List.iteri
     (fun i g ->
       buf_add buf
-        (Printf.sprintf "  (global %d ;; $%s\n    %s (i32.const %d))\n" i g.gl_name
-           (if g.gl_mut then "(mut i32)" else "i32")
-           g.gl_init))
+        (Printf.sprintf "  (global %d ;; $%s\n    %s\n" i g.gl_name
+           (if g.gl_mut then Printf.sprintf "(mut %s)" (valtype_str g.gl_type)
+            else valtype_str g.gl_type));
+      List.iter (instr buf 4) g.gl_init;
+      buf_add buf "  )\n")
     m.m_globals;
-  List.iter
-    (fun d ->
-      buf_add buf (Printf.sprintf "  (data (i32.const %d) \"%s\")\n" d.da_offset (escape d.da_bytes)))
+  List.iteri
+    (fun i d ->
+      buf_add buf (Printf.sprintf "  (data %d \"%s\")\n" i (escape d)))
     m.m_datas;
-  if m.m_elems <> [] then
+  if m.m_declared <> [] then
     buf_add buf
-      (Printf.sprintf "  (elem (i32.const 0) %s)\n"
-         (String.concat " " (List.map string_of_int m.m_elems)));
+      (Printf.sprintf "  (elem declare func %s)\n"
+         (String.concat " " (List.map string_of_int m.m_declared)));
   List.iteri
     (fun i f ->
-      buf_add buf (Printf.sprintf "  (func %d ;; $%s  (type %d)\n" i f.fn_name f.fn_type);
+      buf_add buf (Printf.sprintf "  (func %d ;; $%s  (type $t%d)\n" i f.fn_name f.fn_type);
       if f.fn_locals <> [] then
         buf_add buf
           (Printf.sprintf "    (local %s)\n"
@@ -120,15 +146,10 @@ let modul (m : modul) : string =
       buf_add buf "  )\n")
     m.m_funcs;
   List.iter
-    (fun e ->
-      let d =
-        match e.ex_desc with
-        | ExFunc i -> Printf.sprintf "(func %d)" i
-        | ExTable i -> Printf.sprintf "(table %d)" i
-        | ExMemory i -> Printf.sprintf "(memory %d)" i
-        | ExGlobal i -> Printf.sprintf "(global %d)" i
-      in
-      buf_add buf (Printf.sprintf "  (export \"%s\" %s)\n" e.ex_name d))
+    (fun e -> buf_add buf (Printf.sprintf "  (export \"%s\" (func %d))\n" e.ex_name e.ex_func))
     m.m_exports;
+  List.iter
+    (fun (n, _) -> buf_add buf (Printf.sprintf "  ;; custom section %S\n" n))
+    m.m_customs;
   buf_add buf ")\n";
   Buffer.contents buf

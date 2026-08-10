@@ -1,135 +1,93 @@
-(* The prelude every emitted module carries: allocation, cell construction, and
-   the two string primitives that need a loop. *)
+(* The prelude every emitted module carries.
+
+   With GC structs, allocation and cell construction are single instructions,
+   so the runtime shrinks to the two string primitives that need a loop — plus
+   the accessor exports that let run.js walk a result value, since JavaScript
+   cannot look inside GC structs itself. *)
 
 open Ir
 open Abi
 
-let fn name typ locals body = { fn_name = name; fn_type = typ; fn_locals = locals; fn_body = body }
+let fn name typ locals body =
+  { fn_name = name; fn_type = typ; fn_locals = locals; fn_body = body }
 
-(* alloc (size) -> ptr
+(* the bytes array of a $Str value *)
+let str_bytes local = [ Local_get local; RefCast ty_str; StructGet (ty_str, p_a) ]
 
-   A bump pointer, rounded up to a word so every cell stays i32-aligned, then
-   grow the memory a page at a time until the new top fits. There is no free
-   and no GC. *)
-let alloc =
-  let size = 0 and p = 1 in
-  fn "alloc" ty_1 [ I32 ]
-    [
-      (* size = (size + 3) & ~3 *)
-      Local_get size; Const 3; Add; Const (-4); And; Local_set size;
-      Global_get gl_hp; Local_set p;
-      Global_get gl_hp; Local_get size; Add; Global_set gl_hp;
-      Loop
-        ( [],
-          [
-            Global_get gl_hp; Memory_size; Const page_size; Mul; Gt_s;
-            If ([], [ Const 1; Memory_grow; Drop; Br 1 ], []);
-          ] );
-      Local_get p;
-    ]
-
-(* box1 (tag, a) -> ptr *)
-let box1 =
-  let tag = 0 and a = 1 and p = 2 in
-  fn "box1" ty_2 [ I32 ]
-    [
-      Const 8; Call fn_alloc; Local_set p;
-      Local_get p; Local_get tag; Store { offset = f_tag };
-      Local_get p; Local_get a; Store { offset = f_a };
-      Local_get p;
-    ]
-
-(* box2 (tag, a, b) -> ptr *)
-let box2 =
-  let tag = 0 and a = 1 and b = 2 and p = 3 in
-  fn "box2" ty_3 [ I32 ]
-    [
-      Const 12; Call fn_alloc; Local_set p;
-      Local_get p; Local_get tag; Store { offset = f_tag };
-      Local_get p; Local_get a; Store { offset = f_a };
-      Local_get p; Local_get b; Store { offset = f_b };
-      Local_get p;
-    ]
-
-(* mrg (left, right) -> ptr
-
-   Its own function purely so the compiler can push operands in their natural
-   order at every `Mrg`, of which there is one per binder. *)
-let mrg =
-  fn "mrg" ty_2 [] [ Const tag_mrg; Local_get 0; Local_get 1; Call fn_box2 ]
-
-(* strcat (a, b) -> ptr — byte-by-byte, staying inside the 1.0 instruction set
-   rather than reaching for bulk memory. *)
+(* strcat (a, b) -> $Str *)
 let strcat =
-  let a = 0 and b = 1 and la = 2 and lb = 3 and dst = 4 and i = 5 in
-  let copy ~src ~len ~base =
-    [
-      Const 0; Local_set i;
-      Loop
-        ( [],
-          [
-            Local_get i; Local_get len; Lt_s;
-            If
-              ( [],
-                base
-                @ [ Local_get i; Add ]
-                @ [ Local_get src; Load { offset = f_a }; Local_get i; Add;
-                    Load8_u { offset = 0 } ]
-                @ [ Store8 { offset = 0 } ]
-                @ [ Local_get i; Const 1; Add; Local_set i; Br 1 ],
-                [] );
-          ] );
-    ]
-  in
-  fn "strcat" ty_2 [ I32; I32; I32; I32 ]
-    (
-      [
-        Local_get a; Load { offset = f_b }; Local_set la;
-        Local_get b; Load { offset = f_b }; Local_set lb;
-        Local_get la; Local_get lb; Add; Call fn_alloc; Local_set dst;
-      ]
-      @ copy ~src:a ~len:la ~base:[ Local_get dst ]
-      @ copy ~src:b ~len:lb ~base:[ Local_get dst; Local_get la; Add ]
-      @ [ Const tag_str; Local_get dst; Local_get la; Local_get lb; Add; Call fn_box2 ]
-    )
+  let ba = 2 and bb = 3 and la = 4 and lb = 5 and dst = 6 in
+  fn "strcat" ty_fn [ Ref ty_bytes; Ref ty_bytes; I32; I32; Ref ty_bytes ]
+    (str_bytes 0 @ [ Local_set ba ]
+    @ str_bytes 1 @ [ Local_set bb ]
+    @ [
+        Local_get ba; ArrayLen; Local_set la;
+        Local_get bb; ArrayLen; Local_set lb;
+        Local_get la; Local_get lb; Add; ArrayNewDefault ty_bytes; Local_set dst;
+        (* array.copy: dst, dst offset, src, src offset, length *)
+        Local_get dst; Const 0; Local_get ba; Const 0; Local_get la;
+        ArrayCopy (ty_bytes, ty_bytes);
+        Local_get dst; Local_get la; Local_get bb; Const 0; Local_get lb;
+        ArrayCopy (ty_bytes, ty_bytes);
+        Const tag_str; Local_get dst; StructNew ty_str;
+      ])
 
 (* streq (a, b) -> 0 | 1 *)
 let streq =
-  let a = 0 and b = 1 and la = 2 and i = 3 in
-  fn "streq" ty_2 [ I32; I32 ]
-    [
-      Local_get a; Load { offset = f_b }; Local_set la;
-      Local_get la; Local_get b; Load { offset = f_b }; Ne;
-      If
-        ( [ I32 ],
-          [ Const 0 ],
-          [
-            Const 0; Local_set i;
-            Block
-              ( [ I32 ],
-                [
-                  Loop
-                    ( [],
-                      [
-                        Local_get i; Local_get la; Lt_s;
-                        If
-                          ( [],
-                            [
-                              Local_get a; Load { offset = f_a }; Local_get i; Add;
-                              Load8_u { offset = 0 };
-                              Local_get b; Load { offset = f_a }; Local_get i; Add;
-                              Load8_u { offset = 0 };
-                              Ne;
-                              (* branch out of the enclosing block with 0 *)
-                              If ([], [ Const 0; Br 3 ], []);
-                              Local_get i; Const 1; Add; Local_set i;
-                              Br 1;
-                            ],
-                            [] );
-                      ] );
-                  Const 1;
-                ] );
-          ] );
-    ]
+  let ba = 2 and bb = 3 and la = 4 and i = 5 in
+  fn "streq" ty_vv2i [ Ref ty_bytes; Ref ty_bytes; I32; I32 ]
+    (str_bytes 0 @ [ Local_set ba ]
+    @ str_bytes 1 @ [ Local_set bb ]
+    @ [
+        Local_get ba; ArrayLen; Local_set la;
+        Local_get la; Local_get bb; ArrayLen; Ne;
+        If
+          ( [ I32 ],
+            [ Const 0 ],
+            [
+              Const 0; Local_set i;
+              Block
+                ( [ I32 ],
+                  [
+                    Loop
+                      ( [],
+                        [
+                          Local_get i; Local_get la; Lt_s;
+                          If
+                            ( [],
+                              [
+                                Local_get ba; Local_get i; ArrayGetU ty_bytes;
+                                Local_get bb; Local_get i; ArrayGetU ty_bytes;
+                                Ne;
+                                (* mismatch: leave the block with 0 *)
+                                If ([], [ Const 0; Br 3 ], []);
+                                Local_get i; Const 1; Add; Local_set i;
+                                Br 1;
+                              ],
+                              [] );
+                        ] );
+                    Const 1;
+                  ] );
+            ] );
+      ])
 
-let funcs = [ alloc; box1; box2; mrg; strcat; streq ]
+(* ---------------- host accessors ---------------- *)
+
+let getter name typ cast field =
+  fn name typ [] [ Local_get 0; RefCast cast; StructGet (cast, field) ]
+
+let tag_f = fn "tag" ty_v2i [] [ Local_get 0; StructGet (ty_val, 0) ]
+let num_f = getter "num" ty_v2i ty_i32box p_a
+let str_len = fn "strLen" ty_v2i [] (str_bytes 0 @ [ ArrayLen ])
+let str_byte =
+  fn "strByte" ty_vi2i [] (str_bytes 0 @ [ Local_get 1; ArrayGetU ty_bytes ])
+let pair_a = getter "pairA" ty_v2v ty_pair p_a
+let pair_b = getter "pairB" ty_v2v ty_pair p_b
+let lrec_label = getter "lrecLabel" ty_v2i ty_lrec p_a
+let lrec_val = getter "lrecVal" ty_v2v ty_lrec p_b
+let wrap_val = getter "wrapVal" ty_v2v ty_wrap p_a
+
+(* In the order Abi's fixed indices promise. *)
+let funcs =
+  [ strcat; streq; tag_f; num_f; str_len; str_byte;
+    pair_a; pair_b; lrec_label; lrec_val; wrap_val ]

@@ -2,10 +2,12 @@
 //
 //     node wasm/run.js program.wasm
 //
-// Values are self-describing cells in linear memory, so this walks the heap
-// from the pointer `main` returns and renders it in exactly the format of
-// lib/core/pretty.ml — which is what lets the compiled output be diffed
-// against the OCaml interpreter.
+// Values are GC structs, which JavaScript cannot look inside — so the module
+// exports accessor functions (tag, pairA, lrecVal, ...) and this walks the
+// result through them, rendering in exactly the format of lib/core/pretty.ml.
+// That is what lets the compiled output be diffed against the OCaml
+// interpreter. The label id -> name table travels in the "sce.labels" custom
+// section rather than in the module's state.
 
 const fs = require('fs');
 
@@ -31,6 +33,23 @@ function ocamlStringLit(bytes) {
   return out + '"';
 }
 
+// count:u32le, then per label: length:u32le + bytes
+function parseLabels(mod) {
+  const sections = WebAssembly.Module.customSections(mod, 'sce.labels');
+  if (sections.length === 0) return [];
+  const dv = new DataView(sections[0]);
+  const u8 = new Uint8Array(sections[0]);
+  const labels = [];
+  let p = 4;
+  const count = dv.getUint32(0, true);
+  for (let i = 0; i < count; i++) {
+    const len = dv.getUint32(p, true);
+    labels.push(Buffer.from(u8.subarray(p + 4, p + 4 + len)).toString('latin1'));
+    p += 4 + len;
+  }
+  return labels;
+}
+
 function main() {
   const path = process.argv[2];
   if (!path) {
@@ -39,18 +58,19 @@ function main() {
   }
   const bytes = fs.readFileSync(path);
 
-  let instance;
+  let mod, x;
   try {
-    const mod = new WebAssembly.Module(bytes);
-    instance = new WebAssembly.Instance(mod, {});
+    mod = new WebAssembly.Module(bytes);
+    x = new WebAssembly.Instance(mod, {}).exports;
   } catch (e) {
     console.log('invalid: ' + e.message);
     process.exit(2);
   }
+  const labels = parseLabels(mod);
 
   let result;
   try {
-    result = instance.exports.main();
+    result = x.main();
   } catch (e) {
     // A trap is how the compiled program reports what the interpreter reports
     // with Failure — division by zero, most of all.
@@ -58,32 +78,23 @@ function main() {
     process.exit(3);
   }
 
-  // Read the buffer only now: allocation may have grown the memory, which
-  // detaches any view taken earlier.
-  const buffer = instance.exports.memory.buffer;
-  const dv = new DataView(buffer);
-  const u8 = new Uint8Array(buffer);
-  const i32 = (p) => dv.getInt32(p, true);
-
-  const labelsAddr = instance.exports.labels.value;
-  const labelCount = i32(labelsAddr);
-  const labels = [];
-  for (let i = 0; i < labelCount; i++) {
-    const off = i32(labelsAddr + 4 + i * 8);
-    const len = i32(labelsAddr + 8 + i * 8);
-    labels.push(Buffer.from(u8.subarray(off, off + len)).toString('latin1'));
+  function str(v) {
+    const len = x.strLen(v);
+    const out = new Uint8Array(len);
+    for (let i = 0; i < len; i++) out[i] = x.strByte(v, i);
+    return out;
   }
 
   // A merge whose whole spine is labelled prints as a record, matching the
   // rule in pretty.ml.
-  function recordFields(p) {
-    switch (i32(p)) {
+  function recordFields(v) {
+    switch (x.tag(v)) {
       case TAG.LREC:
-        return [[labels[i32(p + 4)], i32(p + 8)]];
+        return [[labels[x.lrecLabel(v)], x.lrecVal(v)]];
       case TAG.MRG: {
-        const l = recordFields(i32(p + 4));
+        const l = recordFields(x.pairA(v));
         if (!l) return null;
-        const r = recordFields(i32(p + 8));
+        const r = recordFields(x.pairB(v));
         return r ? l.concat(r) : null;
       }
       default:
@@ -91,26 +102,24 @@ function main() {
     }
   }
 
-  function render(p) {
-    const fields = recordFields(p);
+  function render(v) {
+    const fields = recordFields(v);
     if (fields && fields.length > 0) {
-      return '{ ' + fields.map(([l, v]) => `${l} = ${render(v)}`).join('; ') + ' }';
+      return '{ ' + fields.map(([l, w]) => `${l} = ${render(w)}`).join('; ') + ' }';
     }
-    const a = i32(p + 4);
-    const b = i32(p + 8);
-    switch (i32(p)) {
-      case TAG.INT: return String(a);
-      case TAG.BOOL: return a ? 'true' : 'false';
-      case TAG.STR: return ocamlStringLit(u8.subarray(a, a + b));
+    switch (x.tag(v)) {
+      case TAG.INT: return String(x.num(v));
+      case TAG.BOOL: return x.num(v) ? 'true' : 'false';
+      case TAG.STR: return ocamlStringLit(str(v));
       case TAG.UNIT: return '()';
-      case TAG.MRG: return `(${render(a)} ,, ${render(b)})`;
-      case TAG.LREC: return `{ ${labels[a]} = ${render(b)} }`;
+      case TAG.MRG: return `(${render(x.pairA(v))} ,, ${render(x.pairB(v))})`;
+      case TAG.LREC: return `{ ${labels[x.lrecLabel(v)]} = ${render(x.lrecVal(v))} }`;
       case TAG.CLOS: return '<fun>';
       case TAG.FCLOS: return '<rec fun>';
-      case TAG.INL: return `inl ${render(a)}`;
-      case TAG.INR: return `inr ${render(a)}`;
-      case TAG.FOLD: return `fold ${render(a)}`;
-      default: throw new Error(`unknown tag ${i32(p)} at ${p}`);
+      case TAG.INL: return `inl ${render(x.wrapVal(v))}`;
+      case TAG.INR: return `inr ${render(x.wrapVal(v))}`;
+      case TAG.FOLD: return `fold ${render(x.wrapVal(v))}`;
+      default: throw new Error(`unknown tag ${x.tag(v)}`);
     }
   }
 

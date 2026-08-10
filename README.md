@@ -123,20 +123,23 @@ $ node wasm/run.js out.wasm
 { started = 11; doubled = 20; next = 11; secret = 42 }
 ```
 
+It targets **WasmGC**: values are garbage-collected structs, closures hold a
+typed funcref called with `call_ref`, and the emitted module has no linear
+memory and no function table at all — the engine's collector owns the heap.
+
 Because λE has no variables there is no closure-conversion pass to write — the
 calculus arrives pre-converted. A function becomes a lifted wasm function
-`(self, arg) -> result` that rebuilds its own environment, so `App` is a
-`call_indirect` with no dispatch; and since the program is typed and a merge
-value's shape mirrors its type's shape, `Proj` and `Rproj` are resolved at
-compile time into fixed chains of loads. See [wasm/README.md](wasm/README.md)
-for the scheme and the value layout.
+`(self, arg) -> result` that rebuilds its own environment; and since the
+program is typed and a merge value's shape mirrors its type's shape, `Proj`
+and `Rproj` are resolved at compile time into fixed chains of `struct.get`.
+See [wasm/README.md](wasm/README.md) for the scheme and the value layout.
 
 ## Layout
 
 | path | role |
 |---|---|
 | [lib/core/](lib/core/) | λE: AST, typechecker, big- and small-step evaluators, printer |
-| [wasm/](wasm/) | the WebAssembly backend: IR, binary emitter, WAT printer, node host |
+| [wasm/](wasm/) | the WasmGC backend: IR, binary emitter, WAT printer, node host |
 | [lib/sce/](lib/sce/) | λSCE: AST, evaluators, and the elaboration to λE |
 | [lib/source/](lib/source/) | lexer, parser, `frames`, `debruijn`, `sugar`, `driver` |
 | [lib/pipeline.ml](lib/pipeline.ml) | the five stages behind one `run` and one error type |
