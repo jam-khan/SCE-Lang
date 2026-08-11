@@ -69,6 +69,14 @@ let test_parsing () =
       ("comments", "(* a (* nested *) comment *) ;; 1");
       ("no main", "let x : Int = 1");
       ("string escapes", {|;; "a\nb\t\"c\"\\"|});
+      ("adt declaration", "type t = | A | B of Int ;; 1");
+      ("adt tuple payload", "type t = | P of Int * Int ;; 1");
+      ("adt recursive", "type t = | Leaf | Node of t * t ;; 1");
+      ("match", "type t = | A | B of Int ;; match A with | A -> 0 | B n -> n end");
+      ("match wildcard", "type t = | A | B of Int ;; match A with | A -> 0 | _ -> 1 end");
+      ("match tuple pattern",
+       "type t = | P of Int * Int ;; match P (1, 2) with P (a, b) -> a + b end");
+      ("tuple expression", ";; (1, 2)._1");
     ];
 
   List.iter
@@ -81,6 +89,8 @@ let test_parsing () =
       ("unterminated string", {|;; "abc|});
       ("unterminated comment", "(* abc ;; 1");
       ("bad character", ";; 1 @ 2");
+      ("match without end", "type t = | A ;; match A with | A -> 0");
+      ("adt constructor without type", "type t = | A of ;; 1");
     ];
 
   (* precedence and associativity *)
@@ -380,7 +390,27 @@ let test_end_to_end () =
   ok "type alias" "type T = Int\n;; (1 : T)" "Int" "1";
   ok "program without a main" "let a : Int = 1\nlet b : Int = 2"
     "{a : Int} & {b : Int}" "{ a = 1; b = 2 }";
-  ok "query escape hatch" ";; let x = 7 in ?.[0]" "Int" "7"
+  ok "query escape hatch" ";; let x = 7 in ?.[0]" "Int" "7";
+  ok "adt construction and match"
+    "type shape = | Circle of Int | Rect of Int * Int | Point\n\
+     let area (s : shape) : Int =\n\
+    \  match s with\n\
+    \  | Circle r -> r * r * 3\n\
+    \  | Rect (w, h) -> w * h\n\
+    \  | Point -> 0\n\
+    \  end\n\
+     ;; area (Rect (4, 5))" "Int" "20";
+  ok "adt recursion"
+    "type expr = | Lit of Int | Add of expr * expr\n\
+     let rec eval (e : expr) : Int =\n\
+    \  match e with | Lit n -> n | Add (a, b) -> eval a + eval b end\n\
+     ;; eval (Add (Add (Lit 1, Lit 2), Lit 39))" "Int" "42";
+  ok "adt wildcard" "type c = | R | G | B\n;; match G with | R -> 1 | _ -> 2 end"
+    "Int" "2";
+  ok "adt payload record binding"
+    "type p = | P of Int * Int\n\
+     ;; match P (3, 4) with P q -> q._1 * q._2 end" "Int" "12";
+  ok "tuple projection" ";; (7, 8)._2" "Int" "8"
 
 let test_differential () =
   print_endline "-- differential --";
@@ -398,6 +428,10 @@ let test_differential () =
        X.s + 1 end\n\
        ;; L.n";
       ";; open { a = 1; b = 2 } in a + b";
+      "type e = | L of Int | N of e * e\n\
+       let rec s (x : e) : Int =\n\
+       \  match x with | L n -> n | N (a, b) -> s a + s b end\n\
+       ;; s (N (L 1, N (L 2, L 3)))";
     ]
   in
   List.iteri
@@ -472,7 +506,23 @@ let test_failures () =
     "module M = struct let a : Int = 1 let b : Int = 2 end\n\
      module F (X : { a : Int }) = struct let c : Int = X.a end\n\
      module A = F(M)\n\
-     ;; 1" "desugar" 3 12
+     ;; 1" "desugar" 3 12;
+  rejects "non-exhaustive match" "type c = | R | G\n;; match R with | R -> 1 end"
+    "adt" 2 3;
+  rejects "unknown constructor in a pattern"
+    "type c = | R | G\n;; match R with | R -> 1 | B -> 2 end" "adt" 2 27;
+  rejects "duplicate match arm"
+    "type c = | R | G\n;; match R with | R -> 1 | R -> 2 | G -> 3 end" "adt" 2 27;
+  rejects "unreachable wildcard arm"
+    "type c = | R | G\n;; match R with | R -> 1 | G -> 2 | _ -> 3 end" "adt" 2 3;
+  rejects "constructor used without its payload" "type s = | K of Int\n;; K"
+    "adt" 2 3;
+  rejects "duplicate constructor" "type c = | R | R\n;; 1" "adt" 1 15;
+  rejects "match on a non-adt value"
+    "type c = | R | G\nlet f (x : Int) : Int = x\n\
+     ;; match f 1 with | R -> 1 | G -> 2 end" "desugar" 3 9;
+  rejects "wrong tuple payload arity"
+    "type s = | K of Int * Int\n;; K (1, 2, 3)" "desugar" 2 3
 
 let test_examples () =
   print_endline "-- examples --";

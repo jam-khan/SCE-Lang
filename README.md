@@ -50,6 +50,11 @@ mu a. A           (* iso-recursive   *)
 A => B            (* functor         *)
 
 type Point = { x : Int; y : Int }        (* alias, expanded at use sites *)
+
+type shape =                (* ADT: pure sugar over unions, mu, and records; *)
+  | Circle of Int           (* the leading | is what marks it as one *)
+  | Rect of Int * Int
+  | Point
 ```
 
 ```ocaml
@@ -65,6 +70,8 @@ e1 ,,, e2                            (* dependent: the right side sees the left 
 (inl e : A | B)                      (* injections need an ascription *)
 case e of inl x -> u | inr y -> v end
 (fold e : mu a. A)      unfold e
+Circle 3   Rect (4, 5)               (* constructors; (a, b) = {_1 = a; _2 = b} *)
+match s with | Circle r -> r | Rect (w, h) -> w * h | _ -> 0 end
 open e in body
 ?    e.[n]    box e in body          (* escape hatches onto the raw calculus *)
 ```
@@ -178,7 +185,11 @@ $ main --link sys app.sceo -o prog.sceo
 
 so `sandbox` is effect confinement (a sandboxed term cannot *name* a
 capability, let alone call one) and attenuation is ordinary code. Whole
-programs stay pure; authority exists only where the host wired it.
+programs stay pure; authority exists only where the host wired it. Even
+string *introspection* is a granted capability: the core's only string
+primitives are `^` and `=`, and `str` (exports `head` and `tail`) is what a
+lexer links against — see [examples/lambda/](examples/lambda/), a
+lambda-calculus interpreter with parsing, written as five units.
 
 Runtime linking needed no new linking constructs — `link`/`linkall` are
 already expressions — only a way for a unit value to *arrive* at run time.

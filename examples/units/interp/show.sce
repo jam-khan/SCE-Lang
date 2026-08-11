@@ -2,7 +2,7 @@
    rendering is written in the language (^ and = are the only string
    primitives). *)
 
-type E = mu a. Int | { l : a; r : a }
+type expr = | Lit of Int | Add of expr * expr
 
 module Show = struct
   let digit (d : Int) : String =
@@ -14,9 +14,9 @@ module Show = struct
     if n < 10 then digit n else go (n / 10) ^ digit (n mod 10)
   let int (n : Int) : String =
     if n < 0 then "-" ^ go (0 - n) else go n
-  let rec expr (e : E) : String =
-    case unfold e of
-    | inl n -> int n
-    | inr p -> "(" ^ expr p.l ^ " + " ^ expr p.r ^ ")"
+  let rec expr (e : expr) : String =
+    match e with
+    | Lit n -> int n
+    | Add (a, b) -> "(" ^ expr a ^ " + " ^ expr b ^ ")"
     end
 end

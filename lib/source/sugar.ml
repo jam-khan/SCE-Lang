@@ -212,6 +212,7 @@ let rec desugar env (e : (path, int) exp) : S.typ * S.exp =
     (t, S.Mstruct (conv_sandbox sb, c))
   | EFunctor (sb, ps, body) -> functors env sb ps body
   | ELink (k, m, f) -> link env e.loc k m f
+  | EMatch _ -> err e.loc "internal: `match` survived Adt.expand"
 
 and conv_sandbox = function Sandboxed -> S.Sandboxed | Open -> S.Open
 
@@ -376,6 +377,7 @@ and structure env (ds : (path, int) decl list) : S.typ * S.exp =
       match d.it with
       (* Aliases were expanded at their use sites by Debruijn. *)
       | DType _ -> go env chain rest
+      | DAdt _ -> err d.loc "internal: ADT declaration survived Adt.expand"
       | DLet b ->
         let vt, cv = binding here b in
         let l = b.b_bind.bd_name in
@@ -410,6 +412,7 @@ let desugar_program (p : Ast.indexed) : S.typ * S.exp =
     | d :: rest -> (
       match d.it with
       | DType _ -> go env rest
+      | DAdt _ -> err d.loc "internal: ADT declaration survived Adt.expand"
       | DLet b ->
         let vt, cv = binding env b in
         let bt, cb = go { env with slots = F.letb vt env.slots } rest in

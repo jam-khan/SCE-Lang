@@ -285,6 +285,20 @@ let () =
   check "the canned world is hermetic; only the live one sees the filesystem"
     (run () = {|"data(answer) = 42 / data(data.txt) = <missing>"|})
 
+(* ---------------- a lambda-calculus interpreter ---------------- *)
+
+let () =
+  print_endline "\n-- lambda --";
+  let dir = fixture "lambda" in
+  let units =
+    List.map (compile_exn dir)
+      [ "lexer.sce"; "parser.sce"; "eval.sce"; "pretty.sce"; "main.sce" ]
+  in
+  let prog = link_exn (Sce.Sepcomp.str_artifact :: units) in
+  let _, v, _ = run_traced dir prog in
+  check "lex, parse, normalize, print: Church 2+2 = 4; errors are values"
+    (v = {|"\\f. \\x. f (f (f (f x)))  ;  a  ;  parse error: expected ')'"|})
+
 (* ---------------- the same case studies, through wasm ----------------
 
    Trace differential: a capability-bearing program compiled to wasm and run
@@ -446,6 +460,17 @@ let () =
       (link_exn arts) ~units:[ av2 ];
     wasm_level "upgrade: wasm-level link agrees with the interpreter" ~dir arts
       ~loads:[ av2 ];
+    (* the lambda-calculus interpreter, str as a host capability *)
+    let dir = fixture "lambda" in
+    let lunits =
+      List.map (compile_exn dir)
+        [ "lexer.sce"; "parser.sce"; "eval.sce"; "pretty.sce"; "main.sce" ]
+    in
+    let arts = Sce.Sepcomp.str_artifact :: lunits in
+    agree "lambda: wasm agrees with the interpreter" ~dir (link_exn arts)
+      ~units:[];
+    wasm_level "lambda: wasm-level link agrees with the interpreter" ~dir arts
+      ~loads:[];
     (* the hand-written link of a loaded functor *)
     let dir = fixture "linker" in
     let step = compile_exn dir "step.sce" in

@@ -1,10 +1,12 @@
-(* The driver links the constructors to the passes. Each pass is a separately
-   compiled unit against the same structural AST type. *)
+(* The driver links the passes. It has its own structurally identical ADT, so
+   locally built constructors and Ast's builders are interchangeable. *)
 
 import Ast
 import Eval
 import Show
 
-let e = Ast.add (Ast.add (Ast.lit 1) (Ast.lit 2)) (Ast.lit 39)
+type expr = | Lit of Int | Add of expr * expr
+
+let e = Add (Add (Ast.lit 1, Lit 2), Lit 39)
 
 let main : String = Show.expr e ^ " = " ^ Show.int (Eval.run e)

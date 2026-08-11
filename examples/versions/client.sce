@@ -6,9 +6,13 @@ import Lib
 import Loader : { load : String ->
   (({Lib : {version : String; greet : String -> String}}) | {err : String}) }
 
+type fetched =
+  | V2 of {Lib : {version : String; greet : String -> String}}
+  | NoV2 of {err : String}
+
 let main : String =
   let old : String = Lib.greet "world" in
-  case Loader.load "libv2.sceo" of
-  | inl m -> old ^ " | " ^ m.Lib.greet "world"
-  | inr e -> old ^ " | no v2: " ^ e.err
+  match Loader.load "libv2.sceo" with
+  | V2 m -> old ^ " | " ^ m.Lib.greet "world"
+  | NoV2 e -> old ^ " | no v2: " ^ e.err
   end

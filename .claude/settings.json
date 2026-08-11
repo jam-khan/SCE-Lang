@@ -18,7 +18,11 @@
       "Bash(cd /Users/jamkabeeralikhan/Documents/Programming/SCE && grep -c \"Citation\" main.log; grep -o \"Citation '[^']*' undefined\" main.log | sort -u; echo \"=== SCE-Lang ===\"; ls /Users/jamkabeeralikhan/Documents/Programming/SCE-Lang; echo \"=== lambda-sce ===\"; ls /Users/jamkabeeralikhan/Documents/Programming/lambda-sce)",
       "Bash(cd /Users/jamkabeeralikhan/Documents/Programming/lambda-sce && ls LeanSce && echo \"=== sorry count ===\" && grep -rn \"sorry\" LeanSce *.lean 2>/dev/null | wc -l && echo \"=== sizes ===\" && wc -l LeanSce/*.lean 2>/dev/null | tail -30)",
       "Bash(cd /Users/jamkabeeralikhan/Documents/Programming/lambda-sce && echo \"=== SCE SStep constructors ===\" && grep -n \"^  | \" LeanSce/SCE/SmallStep.lean && echo \"=== Core Step constructors ===\" && grep -n \"^  | \" LeanSce/Core/SmallStep.lean | head -80)",
-      "Bash(cd /Users/jamkabeeralikhan/Documents/Programming/lambda-sce && echo \"=== subtyping/disjoint/coercion ===\" && grep -rni \"subtyp\\\\|disjoint\\\\|coerc\\\\|Sub \\\\|<:\\\\|typeof\\\\|infer\" LeanSce/ | head -30; echo \"=== f-ing dir ===\"; ls f-ing | head -20; echo; ls .claude; cat .claude/*/*.md 2>/dev/null | head -40)"
+      "Bash(cd /Users/jamkabeeralikhan/Documents/Programming/lambda-sce && echo \"=== subtyping/disjoint/coercion ===\" && grep -rni \"subtyp\\\\|disjoint\\\\|coerc\\\\|Sub \\\\|<:\\\\|typeof\\\\|infer\" LeanSce/ | head -30; echo \"=== f-ing dir ===\"; ls f-ing | head -20; echo; ls .claude; cat .claude/*/*.md 2>/dev/null | head -40)",
+      "Bash(lake build *)",
+      "Bash(cd /Users/jamkabeeralikhan/Documents/Programming/lambda-sce && head -40 LeanSce/SCE/Equivalence.lean && echo \"===f-ing===\" && ls f-ing && head -30 f-ing/*.md 2>/dev/null | head -40)",
+      "Bash(cd /Users/jamkabeeralikhan/Documents/Programming/lambda-sce && grep -n -A8 \"def linkedCore\\\\b\\\\|def linkedCoreN\\\\|def wireArg\\\\|def nmrgCore\" LeanSce/SCE/Theories.lean | head -50 && echo \"===core syntax===\" && grep -n \"hostfn\\\\|Hostfn\" -r LeanSce/ ; grep -c \"inductive\" LeanSce/Core/Syntax.lean)",
+      "Bash(cd /Users/jamkabeeralikhan/Documents/Programming/lambda-sce && grep -rn \"linkedCore\\\\|wireArg\\\\|nmrgCore\" LeanSce/SCE/Elaboration.lean | head && echo \"===\" && grep -n -B2 -A12 \"def linkedCore \" LeanSce/SCE/Elaboration.lean && grep -n -A6 \"def linkedCoreN\\\\|def wireArg\" LeanSce/SCE/Elaboration.lean)"
     ]
   }
 }

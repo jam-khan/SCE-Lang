@@ -81,6 +81,26 @@ the direct answer to ML's type-sharing (`with type`) machinery.
 interpreter: the `eval` and `show` passes import *nothing* and still agree
 with the constructors' unit on the AST type.
 
+**ADTs are a definitional extension.** OCaml-style datatypes
+(`type shape = | Circle of Int | Rect of Int * Int | Point`, `match`, tuple
+expressions) are pure surface sugar, eliminated by a named-AST pre-pass
+([lib/source/adt.ml](lib/source/adt.ml)) before resolution: a declaration
+becomes a plain alias over left-nested binary unions (`mu`-wrapped when a
+payload mentions the type), tuple payloads become `{_1; _2}` records, and
+constructors/`match` become exactly the ascribed `inl`/`inr`/`fold`/`case`
+idioms a user writes by hand. Nothing downstream — resolution, desugaring,
+elaboration, the mechanization, the wasm backend — changes, so the sugar
+costs zero new metatheory. Constructor names are surface-only: the `.scei`
+stays fully structural, and a consumer redeclares the type with *its own*
+constructor names ([units/peano/](examples/units/peano/) does exactly this —
+`Z`/`S` in the producer, `Zero`/`Next` in the consumer). The raw encodings
+survive as tour exhibits ([unions.sce](examples/unions.sce),
+[recursive.sce](examples/recursive.sce)), and the loader examples declare a
+local ADT as a *view* on the host's structural result union — pattern
+matching over a type the program did not define. Two structurally identical
+ADTs are the same type — the nominal distinction OCaml enforces is
+deliberately absent, matching §3.
+
 ## 4. Merges: ambiguity is caught late in the calculus, early in the toolchain
 
 `Mrg`/`Nmrg` build intersections with no disjointness premise; a duplicated
@@ -146,8 +166,11 @@ materializes; a program performs IO only if its link line grants it, and
   paper's hook.)
 
 **Design rule that follows:** host capabilities are few and explicit —
-`print`, `readfile`, and `load:<type>` ([lib/sepcomp.ml](lib/sepcomp.ml)
-dispatcher), mirrored in [wasm/run.js](wasm/run.js).
+`Sys` (`print`, `readfile`), `Str` (`head`, `tail` — strings are otherwise
+write-only, so even *inspecting text* is a granted capability), and
+`load:<type>` ([lib/sepcomp.ml](lib/sepcomp.ml) dispatcher), mirrored in
+[wasm/run.js](wasm/run.js). In [lambda/](examples/lambda/) only the lexer
+imports `Str`: the interface tells you which unit can look inside a string.
 
 ## 7. The loader: one import, typed by the ABI it enforces, failing as a value
 
@@ -277,6 +300,7 @@ Honest future-work material (§8 of the paper):
 | claim | example | test |
 |---|---|---|
 | structs/functors/link/open, no subtyping | [modules.sce](examples/modules.sce) | test_sce end-to-end + rejection |
+| ADTs and `match` as pure sugar over unions/mu | [adt.sce](examples/adt.sce) | test_sce sweeps + adt-stage rejections |
 | provider sharing (diamond), link-order freedom | [units/diamond/](examples/units/diamond/) | test_commute `diamond` |
 | structural types replace nominal sharing | [units/peano/](examples/units/peano/) | test_commute `peano` |
 | modular passes over a shared structural AST | [units/interp/](examples/units/interp/) | test_commute `interp` |
@@ -292,6 +316,7 @@ Honest future-work material (§8 of the paper):
 | the linker is a term of the language | [linker/](examples/linker/) | test_runtime `linker` |
 | environments as values: box-entry, snapshot rollback | [worlds/](examples/worlds/) | test_runtime `worlds` |
 | one artifact, live and canned worlds | [harness/](examples/harness/) | test_runtime `harness` |
+| a lambda-calculus interpreter with parsing: ADTs, units, and the Str capability at scale | [lambda/](examples/lambda/) | test_runtime `lambda` (+ wasm, wasm-level) |
 
 Every `test_runtime` row above also runs through the wasm trace differential
 and the wasm-level-linked variant.

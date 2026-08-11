@@ -1,5 +1,6 @@
 (* Iso-recursive types. `mu a. A` binds `a` in `A`; `fold` needs an ascription
-   naming the recursive type, and `unfold` peels one layer off. *)
+   naming the recursive type, and `unfold` peels one layer off. These are the
+   raw primitives; a recursive ADT (adt.sce) desugars to exactly this. *)
 
 type Nat = mu a. Top | a
 

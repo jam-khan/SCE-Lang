@@ -1,24 +1,26 @@
-(* Peano numerals over an iso-recursive type. The .scei this generates spells
-   the mu-type out structurally, so consumers need no shared nominal type. *)
+(* Peano numerals as an ADT — sugar over the iso-recursive union
+   mu a. Top | a (see examples/recursive.sce for the raw encoding). The
+   .scei this generates spells the type out structurally, so consumers need
+   no shared nominal declaration. *)
 
-type N = mu a. Top | a
+type nat = | Z | S of nat
 
 module Nat = struct
-  let zero : N = (fold (inl () : Top | N) : N)
-  let succ (n : N) : N = (fold (inr n : Top | N) : N)
-  let rec add (m : N) (n : N) : N =
-    case unfold m of
-    | inl u -> n
-    | inr p -> (fold (inr (add p n) : Top | N) : N)
+  let zero : nat = Z
+  let succ (n : nat) : nat = S n
+  let rec add (m : nat) (n : nat) : nat =
+    match m with
+    | Z -> n
+    | S p -> S (add p n)
     end
-  let rec mul (m : N) (n : N) : N =
-    case unfold m of
-    | inl u -> zero
-    | inr p -> add n (mul p n)
+  let rec mul (m : nat) (n : nat) : nat =
+    match m with
+    | Z -> Z
+    | S p -> add n (mul p n)
     end
-  let rec toint (n : N) : Int =
-    case unfold n of
-    | inl u -> 0
-    | inr p -> 1 + toint p
+  let rec toint (n : nat) : Int =
+    match n with
+    | Z -> 0
+    | S p -> 1 + toint p
     end
 end

@@ -96,6 +96,9 @@ and ('v, 'tv) exp_desc =
   | EStruct  of sandbox * ('v, 'tv) decl list
   | EFunctor of sandbox * 'tv param list * ('v, 'tv) exp
   | ELink    of link_kind * ('v, 'tv) exp * ('v, 'tv) exp
+  (* ADT sugar, eliminated by Adt.expand before resolution:
+     match e with | C x -> e | C (x, y) -> e | _ -> e end *)
+  | EMatch   of ('v, 'tv) exp * (binder * binder list * ('v, 'tv) exp) list
   (* escape hatches onto the raw calculus *)
   | EQuery                                             (* ? *)
   | EIndex   of ('v, 'tv) exp * int                    (* e.[n] *)
@@ -116,6 +119,9 @@ and ('v, 'tv) decl_desc =
   | DModule of binder * ('v, 'tv) exp
   | DOpen   of ('v, 'tv) exp
   | DType   of binder * 'tv typ
+  (* ADT sugar, rewritten to a DType alias by Adt.expand:
+     type t = | C of T * T | D *)
+  | DAdt    of binder * (binder * 'tv typ list) list
 
 (* Where a unit import's interface comes from:
    `import M` (the file M.scei), `import M : name` (the file name.scei),
@@ -144,7 +150,7 @@ let name_of_decl (d : ('v, 'tv) decl) : string option =
   match d.it with
   | DLet b -> Some b.b_bind.bd_name
   | DModule (b, _) -> Some b.bd_name
-  | DType _ | DOpen _ -> None
+  | DType _ | DOpen _ | DAdt _ -> None
 
 let string_of_binop = function
   | Add -> "+" | Sub -> "-" | Mul -> "*" | Div -> "/" | Mod -> "mod"

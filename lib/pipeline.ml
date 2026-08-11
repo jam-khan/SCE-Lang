@@ -44,6 +44,7 @@ let staged (src : string) (k : Ast.named -> 'a) : ('a, error) result =
   | Error e -> Error { stage = "parse"; message = e.message; line = e.line; col = e.col }
   | Ok named -> (
     try Ok (k named) with
+    | Adt.Error (m, loc) -> Error (at "adt" loc m)
     | Debruijn.Error (m, loc) -> Error (at "scope" loc m)
     | Sugar.Error (m, loc) -> Error (at "desugar" loc m)
     | Sce_core.Elab.Elab_error m -> Error (whole "elaborate" m)
@@ -53,7 +54,7 @@ let staged (src : string) (k : Ast.named -> 'a) : ('a, error) result =
 
 (* resolve -> desugar -> elaborate -> check, shared by every entry point. *)
 let core_stages (named : Ast.named) : S.typ * S.exp * C.typ * C.exp =
-  let indexed = Debruijn.resolve named in
+  let indexed = Debruijn.resolve (Adt.expand named) in
   let sce_typ, sce_exp = Sugar.desugar_program indexed in
   let _, core_exp = Sce_core.Elab.elab S.TTop sce_exp in
   let core_typ = Core_lambdae.Check.typecheck core_exp in

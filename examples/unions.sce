@@ -1,5 +1,6 @@
 (* Unions are eliminated with `case`. Both branches must have the same type,
-   and an injection needs an ascription so the other side is known. *)
+   and an injection needs an ascription so the other side is known. These are
+   the raw primitives; adt.sce shows the datatype sugar layered on them. *)
 
 type Tagged = Int | String
 

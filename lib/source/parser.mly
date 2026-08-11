@@ -10,12 +10,12 @@ let bd (s, e) name = { bd_name = name; bd_loc = { start_p = s; end_p = e } }
 %token <string> IDENT
 %token LET REC IN FUN IF THEN ELSE CASE OF INL INR END FOLD UNFOLD MU
 %token STRUCT SANDBOX FUNCTOR MODULE OPEN TYPE WITH LINK LINKALL BOX IMPORT
-%token MOD NOT TRUE FALSE
+%token MATCH MOD NOT TRUE FALSE
 %token TINT TBOOL TSTRING TTOP
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET
 %token COLON SEMI SEMISEMI DOT ARROW DARROW
 %token EQ NE LT LE GT GE BAR BARBAR AMP AMPAMP
-%token COMMACOMMA COMMACOMMACOMMA
+%token COMMA COMMACOMMA COMMACOMMACOMMA
 %token PLUS MINUS STAR SLASH CARET QUERY EOF
 
 %start <Ast.named> program
@@ -63,6 +63,15 @@ decl:
       { nd $loc (DOpen e) }
   | TYPE; name = IDENT; EQ; t = typ
       { nd $loc (DType (bd $loc(name) name, t)) }
+  (* the leading | marks an ADT: `type T = A | B` is already a union alias *)
+  | TYPE; name = IDENT; EQ; BAR; cs = separated_nonempty_list(BAR, ctor)
+      { nd $loc (DAdt (bd $loc(name) name, cs)) }
+
+ctor:
+  | c = IDENT
+      { (bd $loc(c) c, []) }
+  | c = IDENT; OF; ts = separated_nonempty_list(STAR, atom_typ)
+      { (bd $loc(c) c, ts) }
 
 binding:
   | r = boption(REC); name = IDENT; ps = list(param);
@@ -175,6 +184,26 @@ atom:
     INL; x = IDENT; ARROW; e1 = exp;
     BAR; INR; y = IDENT; ARROW; e2 = exp; END
       { nd $loc (ECase (scrut, bd $loc(x) x, e1, bd $loc(y) y, e2)) }
+  | MATCH; scrut = exp; WITH; option(BAR);
+    arms = separated_nonempty_list(BAR, match_arm); END
+      { nd $loc (EMatch (scrut, arms)) }
+  (* a tuple is sugar for a record with fields _1 .. _n *)
+  | LPAREN; e = exp; COMMA; es = separated_nonempty_list(COMMA, exp); RPAREN
+      { nd $loc (ERcd (List.mapi (fun i x -> ("_" ^ string_of_int (i + 1), x))
+                         (e :: es))) }
+
+match_arm:
+  | c = IDENT; xs = arm_args; ARROW; e = exp
+      { (bd $loc(c) c, xs, e) }
+
+arm_args:
+  | (* nullary or wildcard *)         { [] }
+  | x = IDENT                         { [ bd $loc(x) x ] }
+  | LPAREN; xs = separated_nonempty_list(COMMA, arm_var); RPAREN
+      { xs }
+
+arm_var:
+  | x = IDENT                         { bd $loc(x) x }
 
 field:
   | l = IDENT; EQ; e = exp            { (l, e) }

@@ -65,7 +65,7 @@
       "patterns": [
         {
           "name": "keyword.control.sce",
-          "match": "\\b(if|then|else|case|of|end)\\b"
+          "match": "\\b(if|then|else|case|match|of|end)\\b"
         },
         {
           "name": "keyword.declaration.sce",

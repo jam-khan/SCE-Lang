@@ -7,19 +7,24 @@ import Loader : { load : String ->
   (({Env : {fetch : String -> String}} => {run : String -> String})
     | {err : String}) }
 
+type loaded =
+  | Report of (({Env : {fetch : String -> String}}) => {run : String -> String})
+  | Failed of {err : String}
+type file = | Contents of String | NoFile of {err : String}
+
 let live (k : String) : String =
-  case Sys.readfile k of
-  | inl s -> s
-  | inr e -> "<missing>"
+  match Sys.readfile k with
+  | Contents s -> s
+  | NoFile e -> "<missing>"
   end
 
 let canned (k : String) : String = "42"
 
 let main : String =
-  case Loader.load "report.sceo" of
-  | inl f ->
+  match Loader.load "report.sceo" with
+  | Report f ->
     let mock = f({ Env = { fetch = canned } }) in
     let prod = f({ Env = { fetch = live } }) in
     mock.run "answer" ^ " / " ^ prod.run "data.txt"
-  | inr e -> "<" ^ e.err ^ ">"
+  | Failed e -> "<" ^ e.err ^ ">"
   end

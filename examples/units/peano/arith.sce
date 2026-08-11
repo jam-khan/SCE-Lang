@@ -1,12 +1,15 @@
-(* This unit declares its own N; it matches Nat's because types are compared
-   structurally — no nominal identity has to survive separate compilation. *)
+(* This unit declares its own ADT with its own constructor names; it matches
+   Nat's because types are compared structurally — neither the type nor the
+   constructors have to survive separate compilation. *)
 
 import Nat
 
-type N = mu a. Top | a
+type nat = 
+  | Zero 
+  | Next of nat
 
 module Arith = struct
-  let two : N = Nat.succ (Nat.succ Nat.zero)
-  let three : N = Nat.succ two
-  let six : N = Nat.mul two three
+  let two : nat = Next (Next Zero)
+  let three : nat = Nat.succ two
+  let six : nat = Nat.mul two three
 end

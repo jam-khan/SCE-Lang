@@ -266,6 +266,7 @@ let rec resolve_exp env (e : (string, string) exp) : (path, int) exp * shape =
     let cf, sf = resolve_exp env f in
     (* Mlink yields the merge of the module with the functor's result. *)
     (nd (ELink (k, cm, cf)), merge_shape sm (fun_result sf))
+  | EMatch _ -> err e.loc "internal: `match` survived Adt.expand"
 
 and opened_fields loc = function
   | SRcd fs -> fs
@@ -351,7 +352,8 @@ and resolve_struct env (ds : (string, string) decl list) :
            chain on top of the opened slot. *)
         let crest, rest_fields = go { here with frames } [] [] rest in
         ( List.rev ({ it = DOpen cm; loc = d.loc } :: acc) @ crest,
-          chain @ rest_fields ))
+          chain @ rest_fields )
+      | DAdt _ -> err d.loc "internal: ADT declaration survived Adt.expand")
   in
   check_no_duplicate_decls "structure" ds;
   go env [] [] ds
@@ -403,7 +405,8 @@ let resolve (p : Ast.named) : Ast.indexed =
       | DOpen m ->
         let cm, sm = resolve_exp env m in
         let frames = F.openm (FFields (opened_fields m.loc sm)) env.frames in
-        go { env with frames } ({ it = DOpen cm; loc = d.loc } :: acc) rest)
+        go { env with frames } ({ it = DOpen cm; loc = d.loc } :: acc) rest
+      | DAdt _ -> err d.loc "internal: ADT declaration survived Adt.expand")
   in
   let decls, main = go empty_env [] p.decls in
   { imports = []; decls; main = Some main }

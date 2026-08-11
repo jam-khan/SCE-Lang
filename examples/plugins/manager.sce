@@ -7,6 +7,12 @@ import Sys
 import Loader : { load : String ->
   (({Cap : {log : String -> Top}} => {run : String -> String}) | {err : String}) }
 
+(* A local view on the loader's union: constructor names are surface-only, so
+   an ADT with the same payloads matches the host's result type exactly. *)
+type loaded =
+  | Plugin of (({Cap : {log : String -> Top}}) => {run : String -> String})
+  | Failed of {err : String}
+
 module Caps = struct
   (* each plugin logs through its own prefix and can do nothing else *)
   let for_plugin (name : String) : { log : String -> Top } =
@@ -14,9 +20,9 @@ module Caps = struct
 end
 
 let plug (name : String) (path : String) : String =
-  case Loader.load path of
-  | inl p -> open p({ Cap = Caps.for_plugin name }) in run name
-  | inr e -> "<" ^ e.err ^ ">"
+  match Loader.load path with
+  | Plugin p -> open p({ Cap = Caps.for_plugin name }) in run name
+  | Failed e -> "<" ^ e.err ^ ">"
   end
 
 let main : String =

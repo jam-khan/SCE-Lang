@@ -104,6 +104,7 @@ let resolve_units paths =
     (fun p ->
       match p with
       | "sys" -> Sce.Sepcomp.sys_artifact
+      | "str" -> Sce.Sepcomp.str_artifact
       | "loader" -> Sce.Sepcomp.loader_artifact (List.map snd real)
       | p -> List.assoc p real)
     paths

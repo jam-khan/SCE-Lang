@@ -96,6 +96,8 @@ function makeHost(getX) {
         return mkErr(e.message);
       }
     },
+    head: v => mkStr(readStr(v).slice(0, 1)),
+    tail: v => mkStr(readStr(v).slice(1)),
   };
   // load:<sig> — the import *name* carries the expected interface; the loaded
   // module's sce.slot section must print the same, which (print_typ being

@@ -6,6 +6,10 @@
 import Loader : { load : String ->
   (({Seed : {start : Int}} => {bump : Int}) | {err : String}) }
 
+type loaded =
+  | Step of (({Seed : {start : Int}}) => {bump : Int})
+  | Failed of {err : String}
+
 module Prov = struct let start : Int = 10 end
 
 (* the builtin construct, as the reference *)
@@ -14,11 +18,11 @@ module Ref = link Prov with functor (X : { start : Int }) -> struct
 end
 
 let main : String =
-  case Loader.load "step.sceo" of
-  | inl f ->
+  match Loader.load "step.sceo" with
+  | Step f ->
     let linked = Prov ,,, f({ Seed = { start = Prov.start } }) in
     if (linked.bump = Ref.bump) && (linked.start = Prov.start)
     then "hand-written link = builtin link, both halves kept"
     else "disagreement"
-  | inr e -> "<" ^ e.err ^ ">"
+  | Failed e -> "<" ^ e.err ^ ">"
   end

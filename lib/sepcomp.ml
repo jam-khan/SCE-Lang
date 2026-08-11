@@ -108,6 +108,12 @@ let sys_typ : S.typ =
         ( "readfile",
           S.TArr (S.TString, S.TOr (S.TString, S.TRcd ("err", S.TString))) ) )
 
+(* Pure string introspection; strings are otherwise write-only (^ and =). *)
+let str_typ : S.typ =
+  S.TAnd
+    ( S.TRcd ("head", S.TArr (S.TString, S.TString)),
+      S.TRcd ("tail", S.TArr (S.TString, S.TString)) )
+
 (* ---------------- imports and the unit wrapper ---------------- *)
 
 (* Resolve one import header to a self-contained *named* type, so it can be
@@ -124,9 +130,10 @@ let import_typ ~dir (b : Ast.binder) (src : string Ast.import_source) :
         close_in ic;
         s
       with Sys_error _ ->
-        (* `import Sys` falls back to the built-in host interface, unless a
-           Sys.scei file shadows it. *)
+        (* `import Sys`/`import Str` fall back to the built-in host
+           interfaces, unless a .scei file shadows them. *)
         if base = "Sys" then print_typ sys_typ
+        else if base = "Str" then print_typ str_typ
         else err "import %s: interface file %s not found" b.bd_name path
     in
     match Driver.parse_intf content with
@@ -332,20 +339,22 @@ let hostfn (name : string) (t : S.typ) : C.exp =
   | C.TArr (a, b) -> C.Hostfn (name, a, b)
   | _ -> err "internal: host capability %s is not a function" name
 
-let sys_artifact : artifact =
-  let field l t = (l, hostfn l t) in
-  let fields =
-    match sys_typ with
-    | S.TAnd (S.TRcd (l1, t1), S.TRcd (l2, t2)) -> [ field l1 t1; field l2 t2 ]
-    | _ -> err "internal: sys_typ is not a two-field record intersection"
+let host_artifact ~name ~label (t : S.typ) : artifact =
+  let rec fields = function
+    | S.TRcd (l, ft) -> [ (l, hostfn l ft) ]
+    | S.TAnd (a, b) -> fields a @ fields b
+    | _ -> err "internal: host interface %s is not a record intersection" name
   in
   let core =
-    match List.map (fun (l, e) -> C.Lrec (l, e)) fields with
+    match List.map (fun (l, e) -> C.Lrec (l, e)) (fields t) with
     | first :: rest -> List.fold_left (fun acc r -> C.Mrg (acc, r)) first rest
     | [] -> assert false
   in
-  { a_name = "sys"; a_imports = None;
-    a_exports = S.TRcd ("Sys", sys_typ); a_core = C.Lrec ("Sys", core) }
+  { a_name = name; a_imports = None;
+    a_exports = S.TRcd (label, t); a_core = C.Lrec (label, core) }
+
+let sys_artifact : artifact = host_artifact ~name:"sys" ~label:"Sys" sys_typ
+let str_artifact : artifact = host_artifact ~name:"str" ~label:"Str" str_typ
 
 (* The loader is a capability whose type *declares* the expected interface:
 
@@ -392,7 +401,7 @@ let loader_artifact (arts : artifact list) : artifact =
             hostfn ("load:" ^ print_typ want)
               (S.TArr (S.TString, S.TOr (want, S.TRcd ("err", S.TString)))))) }
 
-let is_host_unit name = name = "sys" || name = "loader"
+let is_host_unit name = name = "sys" || name = "loader" || name = "str"
 
 (* ---- the dispatcher ---- *)
 
@@ -430,6 +439,17 @@ let () =
               close_in ic;
               C.Inl (err_t, C.Lit (C.String s))
             with Sys_error m -> C.Inr (C.TString, C.Lrec ("err", C.Lit (C.String m))))
+      | "head" ->
+        Some
+          (fun v ->
+            let s = string_arg "head" v in
+            C.Lit (C.String (if s = "" then "" else String.sub s 0 1)))
+      | "tail" ->
+        Some
+          (fun v ->
+            let s = string_arg "tail" v in
+            C.Lit
+              (C.String (if s = "" then "" else String.sub s 1 (String.length s - 1))))
       | _ when String.starts_with ~prefix:"load:" name ->
         let want =
           parse_typ_exn ~what:"loader"

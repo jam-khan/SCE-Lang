@@ -1,19 +1,18 @@
 (* The four units of this directory as one program — the twin the test suite
    diffs every linking path against. *)
 
-type E = mu a. Int | { l : a; r : a }
+type expr = | Lit of Int | Add of expr * expr
 
 module Ast = struct
-  let lit (n : Int) : E = (fold (inl n : Int | { l : E; r : E }) : E)
-  let add (x : E) (y : E) : E =
-    (fold (inr { l = x; r = y } : Int | { l : E; r : E }) : E)
+  let lit (n : Int) : expr = Lit n
+  let add (x : expr) (y : expr) : expr = Add (x, y)
 end
 
 module Eval = struct
-  let rec run (e : E) : Int =
-    case unfold e of
-    | inl n -> n
-    | inr p -> run p.l + run p.r
+  let rec run (e : expr) : Int =
+    match e with
+    | Lit n -> n
+    | Add (a, b) -> run a + run b
     end
 end
 
@@ -27,13 +26,13 @@ module Show = struct
     if n < 10 then digit n else go (n / 10) ^ digit (n mod 10)
   let int (n : Int) : String =
     if n < 0 then "-" ^ go (0 - n) else go n
-  let rec expr (e : E) : String =
-    case unfold e of
-    | inl n -> int n
-    | inr p -> "(" ^ expr p.l ^ " + " ^ expr p.r ^ ")"
+  let rec expr (e : expr) : String =
+    match e with
+    | Lit n -> int n
+    | Add (a, b) -> "(" ^ expr a ^ " + " ^ expr b ^ ")"
     end
 end
 
-let e = Ast.add (Ast.add (Ast.lit 1) (Ast.lit 2)) (Ast.lit 39)
+let e = Add (Add (Ast.lit 1, Lit 2), Lit 39)
 
 ;; Show.expr e ^ " = " ^ Show.int (Eval.run e)

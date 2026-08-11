@@ -1,12 +1,12 @@
-(* An evaluation pass. It imports nothing: it redeclares E and works on the
-   structure directly — compatibility with Ast's values is structural. *)
+(* An evaluation pass. It imports nothing: it redeclares the type and matches
+   on the structure — compatibility with Ast's values is structural. *)
 
-type E = mu a. Int | { l : a; r : a }
+type expr = | Lit of Int | Add of expr * expr
 
 module Eval = struct
-  let rec run (e : E) : Int =
-    case unfold e of
-    | inl n -> n
-    | inr p -> run p.l + run p.r
+  let rec run (e : expr) : Int =
+    match e with
+    | Lit n -> n
+    | Add (a, b) -> run a + run b
     end
 end
