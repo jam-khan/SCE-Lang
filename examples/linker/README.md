@@ -1,17 +1,18 @@
 # linker
 
-The link step, written in the language it links. `link Prov with F` means:
+The link step, written in the language it links. `link P with f` means:
 extend the world with the provider, wire its exports into the functor's
 import record, keep both halves. That sentence is a one-line program —
 
 ```
-let linked = Prov ,,, f({ Seed = { start = Prov.start } })
+let byhand = P ,,, f({ Seed = P.Seed })
 ```
 
 — and because the builtin construct elaborates to exactly this shape, the two
-must agree. `host.sce` checks that at run time, against a functor loaded from
-disk: the hand-written link of `step.sceo` produces the same `bump` as the
-builtin `link`, with the provider's own exports still reachable in the result.
+must agree. `host.sce` checks that at run time, on the *same* functor loaded
+from disk: `byhand` and `link P with f` are compared field by field on both
+halves — the provider's `Seed.start` and the client's `bump` — which at these
+types is whole-value agreement (`=` is primitive-only).
 
 ```console
 $ main -c step.sce -o step.sceo

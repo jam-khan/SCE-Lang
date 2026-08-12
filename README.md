@@ -203,7 +203,7 @@ import Loader : { load : String -> (Sig | {err : String}) }
 structurally — the same check the static linker makes, made later — and
 returns a union the program cases on. Elaboration was linearized for this
 (every operand of a merge or link is bound once, so effects fire exactly once,
-in source order). Case studies: [examples/effects/](examples/effects/),
+in source order — pinned by [examples/boot/](examples/boot/)). Case studies: [examples/effects/](examples/effects/),
 [examples/plugins/](examples/plugins/) (a plugin manager with attenuated
 per-plugin capabilities), [examples/dynconfig/](examples/dynconfig/)
 (config-driven implementation swapping).
@@ -227,7 +227,7 @@ plugin manager loading plugin modules inside a running wasm instance.
 | [lib/source/](lib/source/) | lexer, parser, `frames`, `debruijn`, `sugar`, `driver` |
 | [lib/pipeline.ml](lib/pipeline.ml) | the five stages behind one `run` and one error type |
 | [Design.md](Design.md) | the design decisions, why each was made, and the example + test that demonstrates it |
-| [examples/](examples/) | runnable programs; separate-compilation case studies under `units/` |
+| [examples/](examples/) | runnable programs, every one a test fixture — see [examples/README.md](examples/README.md) for the annotated index |
 | [test/](test/) | parser, scope-resolution, end-to-end, differential, failure and linking-commutation tests |
 | [editors/vscode/sce/](editors/vscode/sce/) | VS Code syntax highlighting for `.sce`/`.scei` — see its README to install |
 

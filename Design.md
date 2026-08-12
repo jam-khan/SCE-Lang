@@ -133,12 +133,13 @@ linking. [examples/linker/](examples/linker/) makes it executable — the
 hand-written dependent merge
 
 ```
-let linked = Prov ,,, f({ Seed = { start = Prov.start } })
+let byhand = P ,,, f({ Seed = P.Seed })
 ```
 
-agrees at run time with the builtin `link`, applied to a functor that arrived
-from disk. There is no linker formalism to trust because the linker's
-composition term is an ordinary term of the language.
+agrees at run time — field by field, on both halves — with the builtin
+`link P with f`, applied to the *same* functor `f` that arrived from disk.
+There is no linker formalism to trust because the linker's composition term
+is an ordinary term of the language.
 
 **Two linking levels compose:** [units/textlib/](examples/units/textlib/) has
 the toolchain link a unit whose own body uses first-class `linkall` — the
@@ -179,6 +180,12 @@ type is the contract*. The host reads the declaration off the importing
 artifact and builds a provider specialized to it. Restrictions, deliberate:
 one `Loader` import per program, one success type.
 
+**Use-site linking works on loaded functors unchanged.** The wire is
+label-preserving rather than renaming, so the host aligns labels by building
+the capability record under the client's import label — the plugin manager
+instantiates each plugin as `(link { Cap = ... } with p).run`, first-class
+linking applied to a functor that arrived at run time.
+
 **Why failure-as-value matters:** every dynamic-linking example handles the
 `inr` branch in-language — a missing plugin
 ([plugins/](examples/plugins/)), a missing config
@@ -194,8 +201,10 @@ typed migration contract ([upgrade/](examples/upgrade/)).
 ## 8. Recursive linking is a derived form, and the toolchain stays acyclic
 
 The mechanization proves `linkrec` definable from `fix` + linking
-(Theorem 31), inheriting all metatheory (Corollary 32) instead of needing its
-own. The surface language can write the knot directly:
+(`mrec_elab`, RecLinking.lean), inheriting all metatheory as one-line
+corollaries instead of needing its own. The reading is generative: each
+recursive call re-applies the functor, so construction work repeats per
+call — the recursive import must be function-typed for exactly this reason. The surface language can write the knot directly:
 [linkrec/parity.sce](examples/linkrec/parity.sce) ties a functor whose import
 interface is satisfied by its own export, giving mutual `even`/`odd` through
 a single function-typed import — exactly the theorem's shape.
@@ -255,7 +264,10 @@ Two ideas, both worth stating in the paper's implementation section:
 2. **Trace differentials.** Capability-bearing programs must print the same
    lines in the same order under the interpreter and under node
    ([test/test_runtime.ml](test/test_runtime.ml)) — effects, not just values,
-   commute with compilation.
+   commute with compilation. Traces are compared under a *fixed* link line:
+   link order commutes for values (that is what the permuted paths check),
+   not for traces — reordering providers reorders their construction effects,
+   as the semantics prescribes ([boot/](examples/boot/)).
 
 Negative fixtures are first-class: `evil.sce` (scope error), the versions
 ambiguity rejection, stale-`.scei` detection, wrong-interface loads. Every
@@ -307,6 +319,7 @@ Honest future-work material (§8 of the paper):
 | functor closures cross wasm instances | [units/geometry/](examples/units/geometry/) | test_commute `geometry` |
 | both linking levels in one program | [units/textlib/](examples/units/textlib/) | test_commute `textlib` |
 | capabilities via link lines; sandbox cuts them | [effects/](examples/effects/) | test_runtime `effects` |
+| construction effects fire once per unit, however many imports wire it | [boot/](examples/boot/) | test_runtime `boot` |
 | plugin ABI = loader's import type; confinement = scope error | [plugins/](examples/plugins/) | test_runtime `plugins` |
 | config-driven relinking, failure as value | [dynconfig/](examples/dynconfig/) | test_runtime `dynconfig` |
 | same-name versions: static rejection, per-use-site choice | [versions/](examples/versions/) | test_runtime `versions` |

@@ -19,9 +19,12 @@ module Caps = struct
     { log = fun (s : String) -> Sys.print ("[" ^ name ^ "] " ^ s) }
 end
 
+(* Linking at the use site: the capability record is built under the label
+   the plugin imports, `link` wires it in and keeps both halves, and `run` is
+   projected out of the result — dynamic linking as an ordinary expression. *)
 let plug (name : String) (path : String) : String =
   match Loader.load path with
-  | Plugin p -> open p({ Cap = Caps.for_plugin name }) in run name
+  | Plugin p -> (link { Cap = Caps.for_plugin name } with p).run name
   | Failed e -> "<" ^ e.err ^ ">"
   end
 

@@ -133,6 +133,19 @@ let () =
   check "linkall evaluates its provider exactly once"
     (v = "21" && trace = [ "eval" ])
 
+(* The toolchain-level counterpart: a provider unit with a construction-time
+   effect, wired into a consumer with two imports. The linker binds each unit
+   once, so the boot line appears once — a spliced composition term would
+   print it once per wired import, plus once. *)
+let () =
+  print_endline "\n-- boot --";
+  let dir = fixture "boot" in
+  let provider = compile_exn dir "provider.sce" in
+  let consumer = compile_exn dir "consumer.sce" in
+  let _, v, trace = run_traced dir (link_exn [ sys; provider; consumer ]) in
+  check "a construction effect fires once across two wired imports"
+    (v = "3" && trace = [ "loading provider" ])
+
 (* ---------------- the plugin manager ---------------- *)
 
 let () =
@@ -398,6 +411,15 @@ let () =
       && text
          = "[app] greeting world\n[app] greeting again\n\
             \"hello, world / hello, again\"");
+    (* construction-time effects stay single-shot through wasm *)
+    let dir = fixture "boot" in
+    let provider = compile_exn dir "provider.sce" in
+    let consumer = compile_exn dir "consumer.sce" in
+    let arts = [ sys; provider; consumer ] in
+    agree "boot: wasm construction trace agrees with the interpreter" ~dir
+      (link_exn arts) ~units:[];
+    wasm_level "boot: wasm-level link agrees with the interpreter" ~dir arts
+      ~loads:[];
     (* the plugin manager: runtime loads happen inside the wasm host *)
     let dir = fixture "plugins" in
     let shout = compile_exn dir "shout.sce" in

@@ -5,9 +5,12 @@ interface — `{ even : Int -> Bool }` — is satisfied by its *own* export: an
 ordinary `let rec` ties the knot, so the module's export flows back in as its
 import. Mutual recursion (`even`/`odd`) closes through a single function-typed
 import, which is exactly the shape the mechanization proves sound: `linkrec`
-is a *derived form* (Theorem 31), inheriting progress, preservation,
-correctness of elaboration, and determinism (Corollary 32) rather than
-needing its own metatheory.
+is a *derived form* (`mrec_elab` in RecLinking.lean), inheriting progress,
+preservation, correctness of elaboration, and determinism (its one-line
+corollaries) rather than needing its own metatheory. The reading is
+generative — each recursive call re-applies the functor to a fresh package —
+so a functor that performed effects at construction would repeat them per
+call; tie the knot with effect-free construction.
 
 ```console
 $ main parity.sce
