@@ -2,6 +2,8 @@
 
 type typ =
   | TInt
+  | TBool
+  | TString
   | TTop
   | TArr of typ * typ
   | TAnd of typ * typ
