@@ -258,6 +258,15 @@ let () =
      | Error e -> Some e
      | Ok _ -> None)
     ("scope", "unit");
+  (* the imports record is synthesized by unit_wrapper; it must still carry a
+     real location, or this reports at the dummy 1:0 *)
+  (match
+     compile_err "dupimport.sce" "import Counter\nimport Counter\nlet main : Int = 1\n"
+   with
+   | Some e ->
+     check "duplicate imports report a real location"
+       (contains e.message "duplicate field" && e.line = 1 && e.col = 7)
+   | None -> check "duplicate imports report a real location" false);
   (match link_err [ app ] with
    | Some m -> check "first unit must be a leaf" (String.length m > 0)
    | None -> check "first unit must be a leaf" false);

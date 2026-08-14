@@ -44,12 +44,16 @@ let parse (src : string) : (Ast.named, error) result =
 let parse_intf (src : string) : (string Ast.intf, error) result =
   parse_with Parser.Incremental.intf_file src
 
-(* Render an error with the offending source line and a caret under it. *)
+(* Render an error with the offending source line and a caret under it. A node
+   synthesized by the front end carries Ast.dummy_loc, whose line/col are out of
+   range; print the message alone rather than a location that is not in the file. *)
 let render ~src { message; line; col } =
-  let src_line =
-    match List.nth_opt (String.split_on_char '\n' src) (line - 1) with
-    | Some l -> l
-    | None -> ""
-  in
-  Printf.sprintf "%d:%d: %s\n  %s\n  %s^" line col message src_line
-    (String.make col ' ')
+  if line < 1 || col < 0 then message
+  else
+    let src_line =
+      match List.nth_opt (String.split_on_char '\n' src) (line - 1) with
+      | Some l -> l
+      | None -> ""
+    in
+    Printf.sprintf "%d:%d: %s\n  %s\n  %s^" line col message src_line
+      (String.make col ' ')

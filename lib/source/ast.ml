@@ -15,10 +15,10 @@ type 'a node = { it : 'a; loc : loc }
 
 let mk loc it = { it; loc }
 
-let dummy_pos : Lexing.position =
-  { pos_fname = ""; pos_lnum = 1; pos_bol = 0; pos_cnum = 0 }
-
-let dummy_loc = { start_p = dummy_pos; end_p = dummy_pos }
+(* For synthesized nodes. Lexing.dummy_pos is line 0 / offset -1, deliberately
+   invalid, so it cannot be confused with the start of a real file; Driver.render
+   detects it and drops the location rather than pointing at line 1. *)
+let dummy_loc = { start_p = Lexing.dummy_pos; end_p = Lexing.dummy_pos }
 
 (* A resolved variable occurrence. λSCE has no variables: `PIdx i` becomes
    `Proj (Query, i)` and `PField (i, l)` becomes `Rproj (Proj (Query, i), l)`. *)

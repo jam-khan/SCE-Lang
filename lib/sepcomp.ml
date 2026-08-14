@@ -159,12 +159,14 @@ let unit_wrapper (imports : (Ast.binder * string Ast.typ) list)
   let wrapped =
     match imports with
     | [] -> node (Ast.EStruct (Ast.Sandboxed, p.decls))
-    | _ ->
+    | (b0, _) :: _ ->
       let fields = List.map (fun (b, t) -> (b.Ast.bd_name, t)) imports in
+      (* the parameter's record type is where a duplicate import is caught, so
+         it carries the first import's location rather than a dummy *)
       let param =
         {
-          Ast.p_bind = { Ast.bd_name = imports_binder; bd_loc = loc };
-          p_typ = { Ast.it = Ast.TRcd fields; loc };
+          Ast.p_bind = { Ast.bd_name = imports_binder; bd_loc = b0.Ast.bd_loc };
+          p_typ = { Ast.it = Ast.TRcd fields; loc = b0.Ast.bd_loc };
         }
       in
       node
