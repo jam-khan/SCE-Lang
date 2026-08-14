@@ -98,6 +98,25 @@ so a declaration can use the ones before it — and because `Mrg` extends the
 context by exactly one slot holding *all* the preceding fields, every earlier
 field is reached the same way, as `(?.0).l`.
 
+**`?.[n]` is a context index, not a general eliminator for `&`.** Both
+`Eval.lookup` and `Elab.slookup` descend through `Mrg` only, so a chain offers
+one index per constructor and its left-most *leaf* is the base. That is exactly
+what a context is: `Top ,, a ,, b` binds two names, at 0 and 1, and index 2
+falls off the end. A merge written by hand has no base, so `e0 ; e1 ; e2` has
+type `A & B & C` but only indices 0 and 1 — `e0` sits where the base would be:
+
+```ocaml
+let m = 1 ; 2 ; 3
+m.[0]        (* 3 *)
+m.[1]        (* 2 *)
+m.[2]        (* rejected: no component at index 0 *)
+```
+
+The type grammar counts leaves and the lookups count constructors, so the two
+disagree by one on a base-less merge. It is a static rejection in every case —
+the elaborator applies the same recursion, so no well-typed program can get
+stuck — but if you want that component, give it a label and project it by name.
+
 **Sandboxing really cuts the context.** `sandbox struct` and `sandbox functor`
 elaborate under `Top`, so nothing from the enclosing scope is reachable inside.
 Referring to an outer binding there is a scope error, not a runtime surprise.
