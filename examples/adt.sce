@@ -36,6 +36,6 @@ let warm (c : color) : Bool =
   | _ -> false
   end
 
-;; { rect = area (Rect (4, 5));
-    sum = eval (Add (Add (Lit 1, Lit 2), Lit 39));
-    red = warm Red; blue = warm Blue }
+let main = { rect = area (Rect (4, 5)),
+    sum = eval (Add (Add (Lit 1, Lit 2), Lit 39)),
+    red = warm Red, blue = warm Blue }

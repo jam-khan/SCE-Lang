@@ -35,4 +35,4 @@ end
 
 let e = Add (Add (Ast.lit 1, Lit 2), Lit 39)
 
-;; Show.expr e ^ " = " ^ Show.int (Eval.run e)
+let main = Show.expr e ^ " = " ^ Show.int (Eval.run e)

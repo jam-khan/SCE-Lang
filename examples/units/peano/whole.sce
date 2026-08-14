@@ -28,4 +28,4 @@ module Arith = struct
   let six : nat = Nat.mul two three
 end
 
-;; Nat.toint (Nat.add Arith.six Arith.three)
+let main = Nat.toint (Nat.add Arith.six Arith.three)

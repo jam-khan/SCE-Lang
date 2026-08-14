@@ -49,7 +49,7 @@ A | B             (* union           *)
 mu a. A           (* iso-recursive   *)
 A => B            (* functor         *)
 
-type Point = { x : Int; y : Int }        (* alias, expanded at use sites *)
+type Point = { x : Int, y : Int }        (* alias, expanded at use sites *)
 
 type shape =                (* ADT: pure sugar over unions, mu, and records; *)
   | Circle of Int           (* the leading | is what marks it as one *)
@@ -64,13 +64,13 @@ fun (x : Int) -> x + 1               (* parameters are always annotated *)
 let x = 1 in x                       (* the type is synthesized *)
 let rec f (n : Int) : Int = ...      (* needs a return annotation *)
 if c then a else b                   (* `else` is mandatory *)
-{ a = 1; b = 2 }     r.a             (* records and projection *)
-e1 ,, e2                             (* non-dependent merge *)
-e1 ,,, e2                            (* dependent: the right side sees the left *)
+{ a = 1, b = 2 }     r.a             (* records and projection *)
+e1 ; e2                              (* non-dependent merge *)
+e1 ;; e2                             (* dependent: the right side sees the left *)
 (inl e : A | B)                      (* injections need an ascription *)
 case e of inl x -> u | inr y -> v end
 (fold e : mu a. A)      unfold e
-Circle 3   Rect (4, 5)               (* constructors; (a, b) = {_1 = a; _2 = b} *)
+Circle 3   Rect (4, 5)               (* constructors; (a, b) = {_1 = a, _2 = b} *)
 match s with | Circle r -> r | Rect (w, h) -> w * h | _ -> 0 end
 open e in body
 ?    e.[n]    box e in body          (* escape hatches onto the raw calculus *)
@@ -87,7 +87,8 @@ module N = linkall M with functor (X : { a : Int } & { b : Int }) -> ...
 open M
 ```
 
-A program is a sequence of declarations, optionally followed by `;; expr`.
+A program is a sequence of declarations; a `main` binding, if present, is the
+program.
 Without one it evaluates to the record of everything it binds at the top level.
 
 ## Things worth knowing

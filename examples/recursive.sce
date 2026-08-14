@@ -14,4 +14,4 @@ let is_zero (n : Nat) : Bool =
     | inr m -> false
   end
 
-;; { z = is_zero zero; one = is_zero (succ zero) }
+let main = { z = is_zero zero, one = is_zero (succ zero) }

@@ -14,4 +14,4 @@ module Right = struct
   let value : Int = Lib.scale Lib.base
 end
 
-;; Left.value + Right.value
+let main = Left.value + Right.value

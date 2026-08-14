@@ -42,8 +42,6 @@ rule token = parse
                       lexbuf.Lexing.lex_start_p <- start;
                       STRING s }
   (* multi-character symbols must precede their prefixes *)
-  | ",,,"           { COMMACOMMACOMMA }
-  | ",,"            { COMMACOMMA }
   | ','             { COMMA }
   | ";;"            { SEMISEMI }
   | "->"            { ARROW }

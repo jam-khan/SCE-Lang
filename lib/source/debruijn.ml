@@ -363,19 +363,23 @@ and resolve_struct env (ds : (string, string) decl list) :
    Top-level declarations chain with `Letb`, not with the dependent merge a
    struct uses, so each one binds a plain name at index 0. *)
 
-(* With no `;; expr`, a program evaluates to the record of everything it binds
-   at the top level. Building it here keeps all name resolution in one pass. *)
+(* A program is its `main` binding, matching how a linked unit is run; with no
+   `main` it evaluates to the record of everything it binds at the top level.
+   Building it here keeps all name resolution in one pass. *)
 let default_main env (p : Ast.named) : (path, int) exp =
   match p.main with
   | Some e -> fst (resolve_exp env e)
   | None ->
     let loc = dummy_loc in
-    let field name =
+    let names = List.filter_map name_of_decl p.decls in
+    let occurrence name =
       match find env.frames 0 name with
-      | Some (path, _) -> (name, { it = EVar path; loc })
+      | Some (path, _) -> { it = EVar path; loc }
       | None -> err loc "unbound variable '%s'" name
     in
-    { it = ERcd (List.map field (List.filter_map name_of_decl p.decls)); loc }
+    if List.mem "main" names then occurrence "main"
+    else
+      { it = ERcd (List.map (fun n -> (n, occurrence n)) names); loc }
 
 let resolve (p : Ast.named) : Ast.indexed =
   (match p.imports with

@@ -91,10 +91,6 @@ let run_to_core (src : string) : (C.exp, error) result =
 let compile_unit ~(path : string) (src : string) :
     (Sepcomp.artifact * (string * string) list, error) result =
   staged src (fun p ->
-    (match p.main with
-     | Some m ->
-       raise (Sugar.Error ("a unit cannot end in a ';;' expression", m.loc))
-     | None -> ());
     let dir = Filename.dirname path in
     let imports =
       List.map

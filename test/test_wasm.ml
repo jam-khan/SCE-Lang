@@ -98,98 +98,98 @@ let agree name src =
 let programs =
   [
     (* literals and primitives *)
-    ("unit", ";; ()");
-    ("integer", ";; 42");
-    ("arithmetic", ";; 1 + 2 * 3 - 4");
-    ("precedence", ";; (1 + 2) * (10 - 4) / 2");
-    ("division", ";; 7 / 2");
-    ("modulo", ";; 17 mod 5");
-    ("negation", ";; 0 - 5");
-    ("boolean", ";; true");
-    ("comparison", ";; 3 <= 3");
-    ("short-circuit", ";; true && not false || false");
-    ("integer equality", ";; 2 = 2");
-    ("conditional", ";; if 1 < 2 then 10 else 20");
-    ("nested conditional", ";; if false then 1 else if true then 2 else 3");
+    ("unit", "let main = ()");
+    ("integer", "let main = 42");
+    ("arithmetic", "let main = 1 + 2 * 3 - 4");
+    ("precedence", "let main = (1 + 2) * (10 - 4) / 2");
+    ("division", "let main = 7 / 2");
+    ("modulo", "let main = 17 mod 5");
+    ("negation", "let main = 0 - 5");
+    ("boolean", "let main = true");
+    ("comparison", "let main = 3 <= 3");
+    ("short-circuit", "let main = true && not false || false");
+    ("integer equality", "let main = 2 = 2");
+    ("conditional", "let main = if 1 < 2 then 10 else 20");
+    ("nested conditional", "let main = if false then 1 else if true then 2 else 3");
     (* strings *)
-    ("string literal", {|;; "hello"|});
-    ("concatenation", {|;; "ab" ^ "cd" ^ "ef"|});
-    ("string equality", {|;; "abc" = "abc"|});
-    ("string inequality", {|;; "abc" <> "abd"|});
-    ("string escapes", {|;; "a\nb\"c\\d"|});
-    ("empty string", {|;; "" ^ "x"|});
+    ("string literal", {|let main = "hello"|});
+    ("concatenation", {|let main = "ab" ^ "cd" ^ "ef"|});
+    ("string equality", {|let main = "abc" = "abc"|});
+    ("string inequality", {|let main = "abc" <> "abd"|});
+    ("string escapes", {|let main = "a\nb\"c\\d"|});
+    ("empty string", {|let main = "" ^ "x"|});
     (* records and merges *)
-    ("empty record", ";; {}");
-    ("record", ";; { a = 1; b = 2 }");
-    ("projection", ";; { a = 1; b = 2 }.b");
-    ("nested record", ";; { a = { b = 1 } }.a.b");
-    ("non-dependent merge", ";; { a = 1 } ,, { b = 2 }");
-    ("dependent merge", ";; { a = 1 } ,,, { b = a + 1 }");
-    ("context index", ";; { a = 1 } ,,, ?.[0]");
+    ("empty record", "let main = {}");
+    ("record", "let main = { a = 1, b = 2 }");
+    ("projection", "let main = { a = 1, b = 2 }.b");
+    ("nested record", "let main = { a = { b = 1 } }.a.b");
+    ("non-dependent merge", "let main = { a = 1 } ; { b = 2 }");
+    ("dependent merge", "let main = { a = 1 } ;; { b = a + 1 }");
+    ("context index", "let main = { a = 1 } ;; ?.[0]");
     (* functions *)
-    ("let", ";; let x = 1 in x + 1");
-    ("nested let", ";; let a = 1 in let b = 2 in let c = 3 in a + b * c");
-    ("lambda", ";; (fun (x : Int) -> x * 2) 21");
-    ("closure capture", ";; let a = 10 in (fun (x : Int) -> x + a) 5");
-    ("curried", "let f (x : Int) (y : Int) : Int = x + y ;; f 3 4");
+    ("let", "let main = let x = 1 in x + 1");
+    ("nested let", "let main = let a = 1 in let b = 2 in let c = 3 in a + b * c");
+    ("lambda", "let main = (fun (x : Int) -> x * 2) 21");
+    ("closure capture", "let main = let a = 10 in (fun (x : Int) -> x + a) 5");
+    ("curried", "let f (x : Int) (y : Int) : Int = x + y let main = f 3 4");
     ("returns a function",
-     ";; let mk (a : Int) : Int -> Int = fun (b : Int) -> a + b in (mk 3) 4");
+     "let main = let mk (a : Int) : Int -> Int = fun (b : Int) -> a + b in (mk 3) 4");
     ("higher order",
      "let twice (f : Int -> Int) (x : Int) : Int = f (f x)\n\
-      ;; twice (fun (n : Int) -> n * 3) 2");
-    ("function value", ";; fun (x : Int) -> x");
+      let main = twice (fun (n : Int) -> n * 3) 2");
+    ("function value", "let main = fun (x : Int) -> x");
     (* recursion *)
     ("factorial",
-     ";; let rec fact (n : Int) : Int = if n <= 1 then 1 else n * fact (n - 1) \
+     "let main = let rec fact (n : Int) : Int = if n <= 1 then 1 else n * fact (n - 1) \
       in fact 5");
     ("fibonacci",
-     ";; let rec fib (n : Int) : Int = if n < 2 then n else fib (n - 1) + fib \
+     "let main = let rec fib (n : Int) : Int = if n < 2 then n else fib (n - 1) + fib \
       (n - 2) in fib 20");
     ("recursion with two parameters",
-     ";; let rec add (x : Int) (y : Int) : Int = if x = 0 then y else add (x - \
+     "let main = let rec add (x : Int) (y : Int) : Int = if x = 0 then y else add (x - \
       1) (y + 1) in add 5 7");
     (* unions *)
-    ("injection", {|;; (inl 1 : Int | String)|});
+    ("injection", {|let main = (inl 1 : Int | String)|});
     ("case on inl",
-     {|;; case (inl 7 : Int | String) of inl n -> n * 2 | inr s -> 0 end|});
+     {|let main = case (inl 7 : Int | String) of inl n -> n * 2 | inr s -> 0 end|});
     ("case on inr",
-     {|;; case (inr "hi" : Int | String) of inl n -> "num" | inr s -> s end|});
+     {|let main = case (inr "hi" : Int | String) of inl n -> "num" | inr s -> s end|});
     (* iso-recursive types *)
-    ("fold", "type N = mu a. Top | a\n;; (fold (inl () : Top | N) : mu a. Top | a)");
+    ("fold", "type N = mu a. Top | a\nlet main = (fold (inl () : Top | N) : mu a. Top | a)");
     ("unfold",
      "type N = mu a. Top | a\n\
       let z : N = (fold (inl () : Top | N) : mu a. Top | a)\n\
-      ;; case unfold z of inl u -> \"zero\" | inr m -> \"succ\" end");
+      let main = case unfold z of inl u -> \"zero\" | inr m -> \"succ\" end");
     (* modules *)
-    ("structure", "module M = struct let a : Int = 2 let b : Int = a * 3 end ;; M.b");
+    ("structure", "module M = struct let a : Int = 2 let b : Int = a * 3 end let main = M.b");
     ("sandboxed structure",
-     "module M = sandbox struct let k : Int = 42 end ;; M.k");
+     "module M = sandbox struct let k : Int = 42 end let main = M.k");
     ("functor",
      "module F (X : { a : Int }) = struct let b : Int = X.a + 1 end\n\
       module A = F({ a = 1 })\n\
-      ;; A.b");
+      let main = A.b");
     ("link",
      "module C = struct let start : Int = 1 end\n\
       module L = link C with functor (X : { start : Int }) -> struct let next : \
       Int = X.start + 1 end\n\
-      ;; L.next");
+      let main = L.next");
     ("linkall",
      "module P = struct let w : Int = 3 let h : Int = 4 end\n\
       module A = linkall P with functor (X : { w : Int } & { h : Int }) -> \
       struct let area : Int = X.w * X.h end\n\
-      ;; A.area");
-    ("open", ";; open { a = 1; b = 2 } in a + b");
+      let main = A.area");
+    ("open", "let main = open { a = 1, b = 2 } in a + b");
     ("program without a main", "let a : Int = 1\nlet b : Int = 2");
     (* allocation pressure: fib 24 is ~150k calls, all heap-allocating *)
     ("allocation pressure",
-     ";; let rec fib (n : Int) : Int = if n < 2 then n else fib (n - 1) + fib \
+     "let main = let rec fib (n : Int) : Int = if n < 2 then n else fib (n - 1) + fib \
       (n - 2) in fib 24");
     ("string allocation",
-     ";; let rec rep (n : Int) (s : String) : String = if n = 0 then s else rep \
+     "let main = let rec rep (n : Int) (s : String) : String = if n = 0 then s else rep \
       (n - 1) (s ^ \"xyz\") in rep 200 \"\"");
     (* traps: both sides must fail *)
-    ("division by zero", ";; 1 / 0");
-    ("modulo by zero", ";; 1 mod 0");
+    ("division by zero", "let main = 1 / 0");
+    ("modulo by zero", "let main = 1 mod 0");
   ]
 
 let test_examples () =

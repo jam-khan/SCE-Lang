@@ -16,4 +16,4 @@ module App = struct
   let big : Bool = level > 11
 end
 
-;; Fmt.bracket (Fmt.yes App.big)
+let main = Fmt.bracket (Fmt.yes App.big)

@@ -45,7 +45,7 @@ let rec exp_to_string e =
   match record_fields e with
   | Some fields when fields <> [] ->
     "{ "
-    ^ String.concat "; "
+    ^ String.concat ", "
         (List.map (fun (l, v) -> Printf.sprintf "%s = %s" l (exp_to_string v)) fields)
     ^ " }"
   | _ -> (
@@ -56,7 +56,7 @@ let rec exp_to_string e =
     | Proj (e1, n) -> Printf.sprintf "%s.[%d]" (exp_to_string e1) n
     | Lrec (l, e1) -> Printf.sprintf "{ %s = %s }" l (exp_to_string e1)
     | Rproj (e1, l) -> Printf.sprintf "%s.%s" (exp_to_string e1) l
-    | Mrg (a, b) -> Printf.sprintf "(%s ,, %s)" (exp_to_string a) (exp_to_string b)
+    | Mrg (a, b) -> Printf.sprintf "(%s ; %s)" (exp_to_string a) (exp_to_string b)
     | Binop (op, a, b) ->
       Printf.sprintf "(%s %s %s)" (exp_to_string a) (string_of_binop op)
         (exp_to_string b)

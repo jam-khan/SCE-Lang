@@ -65,7 +65,7 @@ type binop =
 
 type unop = Neg | Not
 
-type merge_kind = MNon | MDep     (* ,, = Nmrg    ,,, = Mrg *)
+type merge_kind = MNon | MDep     (* ; = Nmrg    ;; = Mrg *)
 
 type link_kind = LOne | LAll      (* link = Mlink    linkall = Mlinkn *)
 

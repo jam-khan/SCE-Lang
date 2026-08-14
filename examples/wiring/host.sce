@@ -4,11 +4,11 @@
 
 import Sys
 import Loader : { load : String ->
-  (({Cap : {log : String -> Top; peer : String -> String}}
+  (({Cap : {log : String -> Top, peer : String -> String}}
       => {run : String -> String}) | {err : String}) }
 
 type loaded =
-  | Plugin of (({Cap : {log : String -> Top; peer : String -> String}})
+  | Plugin of (({Cap : {log : String -> Top, peer : String -> String}})
                  => {run : String -> String})
   | Failed of {err : String}
 
@@ -22,10 +22,10 @@ let idpeer (s : String) : String = s
 let main : String =
   match Loader.load "exclaim.sceo" with
   | Plugin p ->
-    let ex = p({ Cap = { log = Caps.log_for "exclaim"; peer = idpeer } }) in
+    let ex = p({ Cap = { log = Caps.log_for "exclaim", peer = idpeer } }) in
     (match Loader.load "chain.sceo" with
      | Plugin q ->
-       let ch = q({ Cap = { log = Caps.log_for "chain"; peer = ex.run } }) in
+       let ch = q({ Cap = { log = Caps.log_for "chain", peer = ex.run } }) in
        ch.run "hi"
      | Failed e -> "<" ^ e.err ^ ">"
      end)

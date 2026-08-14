@@ -60,7 +60,7 @@ let whole_src =
   \  let level : Int = Counter.bump (Counter.bump Counter.start)\n\
   \  let big : Bool = level > 11\n\
    end\n\
-   ;; Fmt.bracket (Fmt.yes App.big)\n"
+   let main = Fmt.bracket (Fmt.yes App.big)\n"
 
 let compile name src =
   write name src;
@@ -250,11 +250,8 @@ let () =
   expect "missing .scei"
     (compile_err "noscei.sce" "import Missing\nlet main : Int = 1\n")
     ("scope", "Missing.scei not found");
-  expect "unit cannot end in ';;'"
-    (compile_err "hasmain.sce" "let a : Int = 1\n;; a\n")
-    ("desugar", "cannot end");
   expect "whole-program file cannot import"
-    (match Sce.Pipeline.run "import Counter\n;; 1" with
+    (match Sce.Pipeline.run "import Counter\nlet main = 1" with
      | Error e -> Some e
      | Ok _ -> None)
     ("scope", "unit");

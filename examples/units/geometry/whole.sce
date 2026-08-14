@@ -16,4 +16,4 @@ end
 
 module Doubler = Scale({ k = 2 })
 
-;; Doubler.by (Shapes.area 3 4) + Shapes.diag2 3 4
+let main = Doubler.by (Shapes.area 3 4) + Shapes.diag2 3 4

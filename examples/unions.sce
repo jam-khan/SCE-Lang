@@ -13,4 +13,4 @@ let render (v : Tagged) : String =
     | inr s -> s
   end
 
-;; { neg = render (tag (0 - 1)); zero = render (tag 0); pos = render (tag 9) }
+let main = { neg = render (tag (0 - 1)), zero = render (tag 0), pos = render (tag 9) }

@@ -15,7 +15,7 @@ let bd (s, e) name = { bd_name = name; bd_loc = { start_p = s; end_p = e } }
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET
 %token COLON SEMI SEMISEMI DOT ARROW DARROW
 %token EQ NE LT LE GT GE BAR BARBAR AMP AMPAMP
-%token COMMA COMMACOMMA COMMACOMMACOMMA
+%token COMMA
 %token PLUS MINUS STAR SLASH CARET QUERY EOF
 
 %start <Ast.named> program
@@ -24,8 +24,8 @@ let bd (s, e) name = { bd_name = name; bd_loc = { start_p = s; end_p = e } }
 %%
 
 program:
-  | is = list(import_decl); ds = list(decl); m = option(preceded(SEMISEMI, exp)); EOF
-      { { imports = is; decls = ds; main = m } }
+  | is = list(import_decl); ds = list(decl); EOF
+      { { imports = is; decls = ds; main = None } }
 
 (* A lone identifier in annotation position names an interface file — imports
    precede every declaration, so no type alias can be in scope there. *)
@@ -109,9 +109,9 @@ exp:
       { e }
 
 merge_exp:
-  | l = merge_exp; COMMACOMMA; r = or_exp
+  | l = merge_exp; SEMI; r = or_exp
       { nd $loc (EMerge (MNon, l, r)) }
-  | l = merge_exp; COMMACOMMACOMMA; r = or_exp
+  | l = merge_exp; SEMISEMI; r = or_exp
       { nd $loc (EMerge (MDep, l, r)) }
   | e = or_exp
       { e }
@@ -172,7 +172,7 @@ atom:
   | LPAREN; e = exp; RPAREN           { nd $loc e.it }
   | LPAREN; e = exp; COLON; t = typ; RPAREN
       { nd $loc (EAnnot (e, t)) }
-  | LBRACE; fs = separated_list(SEMI, field); RBRACE
+  | LBRACE; fs = separated_list(COMMA, field); RBRACE
       { nd $loc (ERcd fs) }
   | a = atom; DOT; l = IDENT          { nd $loc (EField (a, l)) }
   | a = atom; DOT; LBRACKET; n = INT; RBRACKET
@@ -233,7 +233,7 @@ atom_typ:
   | TSTRING                           { nd $loc TString }
   | TTOP                              { nd $loc TTop }
   | a = IDENT                         { nd $loc (TVar a) }
-  | LBRACE; fs = separated_list(SEMI, typ_field); RBRACE
+  | LBRACE; fs = separated_list(COMMA, typ_field); RBRACE
       { nd $loc (TRcd fs) }
   | LPAREN; t = typ; RPAREN           { nd $loc t.it }
 

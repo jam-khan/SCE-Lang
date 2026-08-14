@@ -26,4 +26,4 @@ end
 module Spread = linkall Stats with functor (X : { lo : Int } & { hi : Int }) ->
   struct let range : Int = X.hi - X.lo end
 
-;; Csv.row Spread.range (Spread.range * 2) (0 - Spread.range)
+let main = Csv.row Spread.range (Spread.range * 2) (0 - Spread.range)

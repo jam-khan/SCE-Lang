@@ -215,14 +215,14 @@ function main() {
   function render(v) {
     const fields = recordFields(v);
     if (fields && fields.length > 0) {
-      return '{ ' + fields.map(([l, w]) => `${l} = ${render(w)}`).join('; ') + ' }';
+      return '{ ' + fields.map(([l, w]) => `${l} = ${render(w)}`).join(', ') + ' }';
     }
     switch (x.tag(v)) {
       case TAG.INT: return String(x.num(v));
       case TAG.BOOL: return x.num(v) ? 'true' : 'false';
       case TAG.STR: return ocamlStringLit(str(v));
       case TAG.UNIT: return '()';
-      case TAG.MRG: return `(${render(x.pairA(v))} ,, ${render(x.pairB(v))})`;
+      case TAG.MRG: return `(${render(x.pairA(v))} ; ${render(x.pairB(v))})`;
       case TAG.LREC: return `{ ${lrecName(v)} = ${render(x.lrecVal(v))} }`;
       case TAG.CLOS: return '<fun>';
       case TAG.FCLOS: return '<rec fun>';

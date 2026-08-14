@@ -21,7 +21,7 @@ let main : String =
   match Loader.load "step.sceo" with
   | Step f ->
     let builtin = link P with f in
-    let byhand = P ,,, f({ Seed = P.Seed }) in
+    let byhand = P ;; f({ Seed = P.Seed }) in
     if (builtin.bump = byhand.bump)
        && (builtin.Seed.start = byhand.Seed.start)
        && (byhand.bump = P.Seed.start + 1)

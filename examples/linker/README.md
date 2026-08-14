@@ -5,7 +5,7 @@ extend the world with the provider, wire its exports into the functor's
 import record, keep both halves. That sentence is a one-line program —
 
 ```
-let byhand = P ,,, f({ Seed = P.Seed })
+let byhand = P ;; f({ Seed = P.Seed })
 ```
 
 — and because the builtin construct elaborates to exactly this shape, the two

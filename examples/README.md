@@ -21,7 +21,7 @@ says what it demonstrates; together they cover the whole surface.
 | file | what it shows |
 |---|---|
 | [basics.sce](basics.sce) | literals, primitives, records, type aliases, `let rec` — the ML-flavoured baseline |
-| [merges.sce](merges.sce) | the two merges: `,,` (both sides in the same context) vs `,,,` (the right side sees the left) — the difference structs are built on — plus a first `linkall` |
+| [merges.sce](merges.sce) | the two merges: `;` (both sides in the same context) vs `;;` (the right side sees the left) — the difference structs are built on — plus a first `linkall` |
 | [unions.sce](unions.sce) | union types eliminated with `case`; injections carry ascriptions. The raw primitives underneath ADTs |
 | [recursive.sce](recursive.sce) | iso-recursive types by hand: `mu`, `fold` with its ascription, `unfold`. What a recursive ADT desugars to |
 | [adt.sce](adt.sce) | the datatype sugar over both: `type shape = | Circle of Int | ...`, `match`, tuples, enums, a recursive `expr`. Pure sugar — the interface it leaves behind is structural |
@@ -69,7 +69,7 @@ values and linking is a term.
 | example | the claim it carries |
 |---|---|
 | [linkrec/](linkrec/) | recursive linking as a *derived form*: a functor whose import is satisfied by its own export, knot tied by ordinary `let rec` — exactly the shape the mechanization proves sound, inheriting all metatheory. The toolchain linker stays acyclic on purpose; recursion through linking exists precisely where the theory covers it |
-| [linker/](linker/) | the link step, written in the language it links: the hand-written dependent merge `P ,,, f({ Seed = P.Seed })` is checked at run time against the builtin `link P with f` — the *same* functor `f`, arrived from disk, compared field by field on both halves. There is no linker formalism to trust, because the linker's composition term is an ordinary term |
+| [linker/](linker/) | the link step, written in the language it links: the hand-written dependent merge `P ;; f({ Seed = P.Seed })` is checked at run time against the builtin `link P with f` — the *same* functor `f`, arrived from disk, compared field by field on both halves. There is no linker formalism to trust, because the linker's composition term is an ordinary term |
 | [worlds/](worlds/) | environments as values, both directions: a loaded artifact is *entered* as the current environment (`box w in ?.Theme.decorate "hello"` — dynamic linking is literally "run code under an environment that arrived at run time"), and a snapshot `let snap = ?` is re-entered when a load fails — rollback by evaluating under a value you kept |
 | [harness/](harness/) | one loaded artifact, two worlds: the same functor instantiated under a live environment (`fetch` backed by `Sys.readfile`) and a canned one. Mocking with no framework — environments are records, instantiation is application, and the component cannot tell which world it is in |
 
@@ -90,10 +90,10 @@ wasm module.
 
 - **Running artifacts:** `--run` executes a linked artifact's `main` export
   if it has one; otherwise the module value itself is the result. (Whole
-  files without a trailing `;; expr` evaluate to the record of their
+  files without a `main` binding evaluate to the record of their
   top-level bindings.)
 - **Notation vs the paper:** the surface `Top` is the paper's unit/empty
-  type ε; surface `,,` is the paper's parallel merge and `,,,` its dependent
+  type ε; surface `;` is the paper's parallel merge and `;;` its dependent
   merge; `?` is the paper's environment query.
 - **Elided primitives:** `Bool`, `String`, comparison and arithmetic
   operators (`&&`, `mod`, `/`, …) are implementation primitives layered on

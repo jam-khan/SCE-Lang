@@ -133,7 +133,7 @@ linking. [examples/linker/](examples/linker/) makes it executable — the
 hand-written dependent merge
 
 ```
-let byhand = P ,,, f({ Seed = P.Seed })
+let byhand = P ;; f({ Seed = P.Seed })
 ```
 
 agrees at run time — field by field, on both halves — with the builtin

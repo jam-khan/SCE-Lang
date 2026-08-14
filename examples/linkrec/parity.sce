@@ -20,4 +20,4 @@ let odd (n : Int) : Bool =
    let m = Parity({ even = even }) in 
    m.odd n
 
-;; { even10 = even 10; odd10 = odd 10; even7 = even 7 }
+let main = { even10 = even 10, odd10 = odd 10, even7 = even 7 }

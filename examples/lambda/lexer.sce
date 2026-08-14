@@ -9,9 +9,9 @@ type toks = | TNil | TCons of tok * toks
 module Lex = struct
   let stop (c : String) : Bool =
     c = "" || c = " " || c = "\n" || c = "\\" || c = "." || c = "(" || c = ")"
-  let rec ident (acc : String) (s : String) : { name : String; rest : String } =
+  let rec ident (acc : String) (s : String) : { name : String, rest : String } =
     let c = Str.head s in
-    if stop c then { name = acc; rest = s }
+    if stop c then { name = acc, rest = s }
     else ident (acc ^ c) (Str.tail s)
   let rec go (s : String) : toks =
     let c = Str.head s in

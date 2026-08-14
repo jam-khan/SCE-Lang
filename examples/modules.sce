@@ -35,8 +35,8 @@ module Linked =
 (* `open` brings a module's fields into scope for what follows. *)
 open Counter
 
-;; { started = started
-   ; doubled = Applied.doubled
-   ; next    = Linked.next
-   ; secret  = Secret.key
+let main = { started = started
+   , doubled = Applied.doubled
+   , next    = Linked.next
+   , secret  = Secret.key
    }
