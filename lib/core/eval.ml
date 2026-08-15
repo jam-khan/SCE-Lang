@@ -23,6 +23,38 @@ let rlookup (v : exp) (l : string) : exp =
   | Some v' -> v'
   | None -> failwith ("Error: no field labelled " ^ l)
 
+(* Prim: apply a primitive operator to two literal operands. *)
+let prim (op : binop) (l1 : lit) (l2 : lit) : lit =
+  let nonzero n =
+    if n = 0 then failwith "Error: division by zero" else n
+  in
+  match op, l1, l2 with
+  | Add, Int a, Int b -> Int (a + b)
+  | Sub, Int a, Int b -> Int (a - b)
+  | Mul, Int a, Int b -> Int (a * b)
+  | Div, Int a, Int b -> Int (a / nonzero b)
+  | Mod, Int a, Int b -> Int (a mod nonzero b)
+  | Lt,  Int a, Int b -> Bool (a < b)
+  | Le,  Int a, Int b -> Bool (a <= b)
+  | Gt,  Int a, Int b -> Bool (a > b)
+  | Ge,  Int a, Int b -> Bool (a >= b)
+  | Cat, String a, String b -> String (a ^ b)
+  | Eq, _, _ -> Bool (l1 = l2)
+  | Ne, _, _ -> Bool (l1 <> l2)
+  | _ -> failwith "Error: primitive operator applied to ill-typed operands."
+
+(* Both operands of a primitive reduce to literals; anything else is ill-typed. *)
+let prim_exp (op : binop) (v1 : exp) (v2 : exp) : exp =
+  match v1, v2 with
+  | Lit l1, Lit l2 -> Lit (prim op l1 l2)
+  | _ -> failwith "Error: primitive operator applied to non-literals."
+
+let branch (v : exp) (e2 : exp) (e3 : exp) : exp =
+  match v with
+  | Lit (Bool true)  -> e2
+  | Lit (Bool false) -> e3
+  | _ -> failwith "Error: if condition must evaluate to a boolean."
+
 (* Interpreter based on big-step semantics. *)
 let rec eval (env : exp) (e : exp) : exp =
   match e with
@@ -47,6 +79,12 @@ let rec eval (env : exp) (e : exp) : exp =
   | Lrec (l, e1)  -> Lrec (l, eval env e1)
   | Rproj (e1, l) -> rlookup (eval env e1) l
   | Query         -> env
+  | Binop (op, e1, e2) ->
+    (* left to right, explicitly: OCaml applies arguments right to left *)
+    let v1 = eval env e1 in
+    let v2 = eval env e2 in
+    prim_exp op v1 v2
+  | If (e1, e2, e3)    -> eval env (branch (eval env e1) e2 e3)
   | Inl (ty, e1)  -> Inl (ty, eval env e1)
   | Inr (ty, e1)  -> Inr (ty, eval env e1)  
   | Case (e1, el, er) ->
@@ -91,6 +129,12 @@ let rec step (env : exp) (e : exp) : exp =
   | Lrec (l, e1) -> Lrec (l, step env e1)
   | Rproj (e1, l) ->
     if is_value e1 then rlookup e1 l else Rproj (step env e1, l)
+  | Binop (op, e1, e2) ->
+    if not (is_value e1) then Binop (op, step env e1, e2)
+    else if not (is_value e2) then Binop (op, e1, step env e2)
+    else prim_exp op e1 e2
+  | If (e1, e2, e3) ->
+    if is_value e1 then branch e1 e2 e3 else If (step env e1, e2, e3)
   | Inl (ty, e1) -> Inl (ty, step env e1)
   | Inr (ty, e1) -> Inr (ty, step env e1)
   | Case (e1, el, er) ->

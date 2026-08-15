@@ -8,7 +8,7 @@ let type_error msg = raise (Type_error msg)
 (* substTyp d S T replaces var d by S in T (S is closed, so no shifting) *)
 let rec subst_typ (d : int) (s : typ) (t : typ) : typ =
   match t with
-  | TInt | TTop -> t
+  | TInt | TBool | TString | TTop -> t
   | TArr (a, b) -> TArr (subst_typ d s a, subst_typ d s b)
   | TAnd (a, b) -> TAnd (subst_typ d s a, subst_typ d s b)
   | TOr (a, b) -> TOr (subst_typ d s a, subst_typ d s b)
@@ -48,8 +48,23 @@ let rlookup_typ (a : typ) (l : string) : typ =
 
 let type_of_lit = function
   | Int _ -> TInt
-  | Bool _ -> TTop
-  | String _ -> TTop
+  | Bool _ -> TBool
+  | String _ -> TString
+
+(* Operand and result types of each primitive operator. `Eq`/`Ne` are the only
+   operators that are not fixed-arity monomorphic, so they are handled apart. *)
+let type_of_binop (op : binop) (a : typ) (b : typ) : typ =
+  let expect ta tb tr =
+    if a = ta && b = tb then tr
+    else type_error "operand type mismatch in primitive operation"
+  in
+  match op with
+  | Add | Sub | Mul | Div | Mod -> expect TInt TInt TInt
+  | Lt | Le | Gt | Ge -> expect TInt TInt TBool
+  | Cat -> expect TString TString TString
+  | Eq | Ne ->
+    if a = b && (a = TInt || a = TBool || a = TString) then TBool
+    else type_error "equality expects two operands of the same primitive type"
 
 (* Type checker based on the `HasType` judgment. *)
 let rec infer (ctx : typ) (e : exp) : typ =
@@ -79,6 +94,12 @@ let rec infer (ctx : typ) (e : exp) : typ =
   | Proj (e1, n) -> tlookup (infer ctx e1) n
   | Lrec (l, e1) -> TRcd (l, infer ctx e1)
   | Rproj (e1, l) -> rlookup_typ (infer ctx e1) l
+  | Binop (op, e1, e2) -> type_of_binop op (infer ctx e1) (infer ctx e2)
+  | If (e1, e2, e3) ->
+    if infer ctx e1 <> TBool then type_error "if condition is not a boolean";
+    let a = infer ctx e2 in
+    let b = infer ctx e3 in
+    if a = b then a else type_error "if branches have different types"
   | Inl (b, e1) -> TOr (infer ctx e1, b)
   | Inr (a, e1) -> TOr (a, infer ctx e1)
   | Case (e1, el, er) ->

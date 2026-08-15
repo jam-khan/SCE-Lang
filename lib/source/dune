@@ -1,2 +1,13 @@
+; Unwrapped: menhir's inference pass rewrites `Ast.exp` to its canonical path,
+; which for a wrapped library is `Source.Ast.exp` — that makes the generated
+; Parser depend on the library's own main module, which dune rejects.
 (library
- (name source))
+ (name source)
+ (wrapped false)
+ (libraries menhirLib sce_core))
+
+(menhir
+ (modules parser)
+ (flags --table --explain))
+
+(ocamllex lexer)

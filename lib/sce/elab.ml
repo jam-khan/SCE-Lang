@@ -54,6 +54,8 @@ let rec link_ok (g1 : typ) (d : typ) : bool =
 
 let rec elab_typ : typ -> C.typ = function
   | TInt        -> C.TInt
+  | TBool       -> C.TBool
+  | TString     -> C.TString
   | TTop        -> C.TTop
   | TArr (a, b) -> C.TArr (elab_typ a, elab_typ b)
   | TAnd (a, b) -> C.TAnd (elab_typ a, elab_typ b)

@@ -21,6 +21,8 @@ and modtyp =
 (* subst_typ d s t replaces TVar d by s in t (s is closed, so no shifting) *)
 let rec subst_typ d s = function
   | TInt        -> TInt
+  | TBool       -> TBool
+  | TString     -> TString
   | TTop        -> TTop
   | TArr (a, b) -> TArr (subst_typ d s a, subst_typ d s b)
   | TAnd (a, b) -> TAnd (subst_typ d s a, subst_typ d s b)

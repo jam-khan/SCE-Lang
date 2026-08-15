@@ -18,9 +18,14 @@ type 'a node = { it  : 'a; loc : loc }
 
 let mk loc it = { it; loc }
 
+(* For synthesized nodes. Lexing.dummy_pos is line 0 / offset -1, deliberately
+   invalid, so it cannot be confused with the start of a real file. Driver.render
+   must guard on it (line < 1 || col < 0) and drop the location — the negative
+   offset otherwise raises from List.nth_opt and String.make. *)
 let dummy_loc = { start_p = Lexing.dummy_pos; end_p = Lexing.dummy_pos }
 
-(* A resolved variable occurence.*)
+(* A resolved variable occurrence. λSCE has no variables: `PIdx i` becomes
+   `Proj (Query, i)` and `PField (i, l)` becomes `Rproj (Proj (Query, i), l)`. *)
 type path =
   | PIdx    of int
   | PField  of int * string
@@ -29,7 +34,6 @@ type binder = { bd_name : string; bd_loc : loc }
 
 (* types *)
 
-(* *)
 type 'tv typ = 'tv typ_desc node
 
 and 'tv typ_desc =
@@ -42,13 +46,13 @@ and 'tv typ_desc =
   | TArr of 'tv typ * 'tv typ
   | TAnd of 'tv typ * 'tv typ
   | TOr  of 'tv typ * 'tv typ
-  | TRcd of (string * 'tv typ) list
+  | TRcd of (string * 'tv typ) list    (* { l : A, ... } *)
   | TMu  of binder  * 'tv typ
   | TSig of 'tv typ * 'tv typ
 
 type 'tv param = { p_bind : binder; p_typ : 'tv typ }
 
-(* e xpressions *)
+(* expressions *)
 
 (* literals : int, bool, strings *)
 type lit =
@@ -56,7 +60,9 @@ type lit =
   | LBool   of bool
   | LString of string
 
-(* primitive binary ops *)
+(* primitive binary ops. `And`/`Or` are surface-only: they are eliminated into
+   `EIf` by the desugarer, not by the parser, so errors can point at the
+   operator the user wrote. *)
 type binop =
   | Add | Sub | Mul | Div | Mod
   | Lt  | Le  | Gt  | Ge
@@ -67,8 +73,8 @@ type binop =
 type unop = Neg | Not
 
 type merge_kind 
-  = MNon        (* Non-dependent Merge*)
-  | MDep        (* Dependent Merge *)
+  = MNon        (* Non-dependent merge:  ;  = Nmrg *)
+  | MDep        (* Dependent merge:      ;; = Mrg  *)
 
 type link_kind = LOne | LAll
 
@@ -86,7 +92,7 @@ and ('v, 'tv) exp_desc =
   | EIf      of ('v, 'tv) exp * ('v, 'tv) exp * ('v, 'tv) exp
   | ELam     of 'tv param list * ('v, 'tv) exp
   | EApp     of ('v, 'tv) exp * ('v, 'tv) exp
-  | ERcd     of (string * ('v, 'tv) exp) list          (* { l = e; ... } *)
+  | ERcd     of (string * ('v, 'tv) exp) list          (* { l = e, ... } *)
   | EField   of ('v, 'tv) exp * string                 (* e.l *)
   | EMerge   of merge_kind * ('v, 'tv) exp * ('v, 'tv) exp
   | ELet     of ('v, 'tv) binding * ('v, 'tv) exp
@@ -130,6 +136,9 @@ type 'tv import_source =
   | IFile   of string
   | IInline of 'tv typ
 
+(* `main` is never set by the parser — a program is its `let main` declaration.
+   The field survives because Sepcomp.unit_wrapper synthesizes one when it wraps
+   a unit's declarations as a sandboxed functor. *)
 type ('v, 'tv) program = {
   imports : (binder * 'tv import_source) list;
   decls   : ('v, 'tv) decl list;
