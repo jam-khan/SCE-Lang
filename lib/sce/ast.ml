@@ -45,6 +45,13 @@ type lit =
   | Bool   of bool
   | String of string
 
+(* primitive operators; surface `&&`, `||`, `not` and unary `-` desugar away *)
+type binop =
+  | Add | Sub | Mul | Div | Mod   (* Int -> Int -> Int *)
+  | Lt  | Le  | Gt  | Ge          (* Int -> Int -> Bool *)
+  | Eq  | Ne                      (* A -> A -> Bool, A primitive *)
+  | Cat                           (* String -> String -> String *)
+
 type exp =
   | Query
   | Proj  of exp * int
@@ -57,6 +64,9 @@ type exp =
   | Mrg   of exp * exp
   | Lrec  of string * exp
   | Rproj of exp * string
+  (* primitives *)
+  | Binop of binop * exp * exp
+  | If    of exp * exp * exp
   (* to be elaborated *)
   | Mstruct  of sandbox * exp
   | Mfunctor of sandbox * typ * exp
