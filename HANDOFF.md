@@ -22,10 +22,12 @@ target).  `LeanSce/Core` and the SCE→Core elaboration are DELETED (Phase 2e,
 commit `1a79fcd`); `grep -rn "Core\." LeanSce` and `grep -rn "elabExp" LeanSce`
 are empty.
 
-**▶ WHERE TO CONTINUE: §3 below — Phase 3 (brand polymorphism), design DONE this
-session, implementation NOT started.  First action = "Commit A" in §3.6
-(harden `tmergev` with a `Disj A B` premise).  Do not re-derive the design; the
-analysis in §3 was checked against the actual definitions.**
+**▶ WHERE TO CONTINUE: §3 below — Phase 3 (brand polymorphism).  Commit A is
+DONE (session 3, commit `49dbca0`) — with a DESIGN REVISION: `tmergev` is
+hardened with Disj as planned, but a second runtime merge rule **`tmergevc`**
+was added for cast-duplicated merges (see the §3.3 correction below).  Next
+action = "Commit B" in §3.6 (syntax additions).  Do not re-derive the design;
+§3 was checked against the actual definitions and §3.3 against the compiler.**
 
 ---
 
@@ -199,28 +201,36 @@ has the disjointness — the codebase mantra is "tmergev + disjoint_consistent h
 In the substitution lemma's tmergev case: `disj_bsubst hd` + post-subst typings
 (IHs) + post-subst values → `disjoint_consistent` rebuilds Consistent ✓.
 
-Site survey (session 2): ~35 constructor applications + 62 inversion patterns
-across 11 Seal files (grep `HasType.tmergev` vs `| tmergev`).  Inversions:
-mechanically add one binder (`| tmergev hv₁ hv₂ ht₁ ht₂ hd hc` — put Disj BEFORE
-Consistent).  Constructor sites and their Disj source:
-- `Preservation.lean` (8 sites): already pass `disjoint_consistent … hd` — reuse
-  that same `hd`.
-- `CastingLemmas.lean:202` (genVal at `.and`, top-like): needs a new lemma
-  `toplike_disj : TopLike A → TopLike B → Disj A B` (two top-like types share no
-  cost — induction; leaves are `top`, `cost_top_l` closes; NOTE with the new
-  conservative rules: toplike types contain no bvar/or/mu/brand/allb leaves, so
-  still fine). `CastingLemmas.lean:504/508/801`: 504/508 sit inside
-  `cast_preserves_typing`-style lemmas — the enclosing tmergev INVERSION now also
-  yields `hd`; 801 (cand case, casting one value at `.and A B`): the two casts of
-  the SAME value at A and B — Disj A B comes from the enclosing typing inversion
-  (`tanno`/Sub context) — check on site; if absent, that lemma's statement carries
-  the target typing, whose tmergev/tmrg gave Disj.
-- `Lookup.lean:275`, `Linearization.lean:122/160`, `Correctness.lean:156/458`,
-  `Elaboration.lean:544`, `Sealing.lean` (12 sites, LR pairs): each has a Disj in
-  scope (EVal.mrg / LRg-and clause / tmrg inversion / evmrg's hd).  The Sealing
-  sites appear as `…tmergev hv.1 … (disjoint_consistent …)` pairs — same hd.
-- If ANY site truly lacks Disj (e.g. a duplicated-value merge `mrg v v`), STOP and
-  reconsider — none was found in the survey, but the compiler is the oracle.
+**⚠ SESSION-3 CORRECTION (executed, commit `49dbca0`).**  The survey's claim
+about the cand case was WRONG, and the anticipated "STOP and reconsider" case is
+real: in `cast_preservation`'s `.cand` arm, casting ONE value at `.and A₁ A₂`
+(Casting-and) duplicates it into `mrg w₁ w₂` with NO `Disj A₁ A₂` anywhere —
+`Sub` has unconditional `sand`, so `anno 3 (Int & Int)` is well-typed and steps
+(sannov) to `mrg 3 3`.  A Disj-only tmergev falsifies preservation outright.
+
+Resolution (implemented): **split the runtime merge rule.**
+- `tmergev` — hardened with `Disj A B` (before Consistent) exactly as planned;
+  covers every module-composition merge (all surveyed constructor sites had
+  their Disj in scope as predicted).
+- NEW `tmergevc {Δ Γ A B C v v₁ v₂}` : `Value v₁ → Value v₂ →
+  HasType Δ .top v₁ A → HasType Δ .top v₂ B → Value v → HasType Δ .top v C →
+  Cast v A v₁ → Cast v B v₂ → Consistent v₁ v₂ →
+  HasType Δ Γ (.mrg v₁ v₂) (.and A B)` — the cast-duplicated merge, recording
+  the common ORIGIN (its typing + the two casts).  This shape is bsubst-stable
+  BY CONSTRUCTION: the substituted components are casts (via cast_bsubst,
+  §3.5.5) of the substituted origin (typing via the IH), so `hastype_bsubst`'s
+  tmergevc case rebuilds Consistent semantically via `consistent_after_cast` —
+  no lemma cycle (consistent_after_cast is in CastingLemmas; the substitution
+  suite imports it).  The §3.3 counterexample stays excluded: its pair admits
+  no common origin, else it would remain consistent post-substitution.
+- BOTH rules keep `Consistent`, so all ~62 inversion sites stayed mechanical:
+  the tmergev arm gains one binder, and a `tmergevc` arm is added whose body is
+  a copy of the tmergev arm's (it exposes the same hv/ht/hcons data; scripted).
+  Only `tmergevc` construction site so far: `cast_preservation`'s cand arm.
+  `sealv_preservation`'s tmergevc inversion re-seals via plain `tmergev`
+  (WfSig.and's hdAB supplies Disj of the sealed views).  The fundamental lemma
+  (Sealing.lean) rebuilds tmergevc verbatim under the weakened store.
+`toplike_disj` added to Disjointness.lean as planned (genVal_typed).
 
 ### 3.4 Typing, WfSig, sealing forms
 
@@ -326,11 +336,12 @@ Bottom-up order:
 
 ### 3.6 Commit plan (execute in order; `lake build` green after each)
 
-- **Commit A ◀ START HERE**: `tmergev` + `Disj A B` premise (before Consistent).
-  Compiler-guided through the 11 files (§3.3 site notes); add `toplike_disj` to
-  Disjointness.lean.  This is valuable standalone (restores the invariant Eᵢ's
-  consistency-only rule fails to record) and unblocks everything else.
-- **Commit B**: Syntax additions (§3.1) — types, terms, substitutions, HasBVar,
+- **Commit A ✅ DONE** (`49dbca0`, session 3): `tmergev` + `Disj A B` premise
+  AND the `tmergevc` split (§3.3 correction).  Downstream consequences for later
+  commits: `hastype_bsubst` (Commit F) gains a tmergevc case = IHs (origin +
+  components) + `cast_bsubst` + `consistent_after_cast`; new typing-inversion
+  proofs written from Commit D onward must handle BOTH merge rules.
+- **Commit B ◀ START HERE**: Syntax additions (§3.1) — types, terms, substitutions, HasBVar,
   Value/genVal/Ordinary/toplike_dec.  Everything still compiles because no
   relation mentions the new constructors yet EXCEPT total matches: `genVal`
   (extended here), `substBrand`/`substTyp` (extended here).
@@ -383,8 +394,11 @@ Bottom-up order:
   cmrgl/cmrgr (Ordinary), cand, crcd, cwrap (identity), cinl/cinr, cfold
   (identity), cfarrow/cfarrowtl.  `Consistent v₁ v₂ := ∀ {A w₁ w₂}, Cast v₁ A w₁
   → Cast v₂ A w₂ → w₁ = w₂`.
-- `HasType.tmergev` premise order TODAY: `hv₁ hv₂ ht₁ ht₂ hcons` (components at
-  `.top`).  `tclos`: `hv henv hd hbody hsub₁ hsub₂` with slacks `Sub B' B`,
+- `HasType.tmergev` premise order TODAY: `hv₁ hv₂ ht₁ ht₂ hd hcons` (components
+  at `.top`, Disj before Consistent).  `HasType.tmergevc` premise order:
+  `hv₁ hv₂ ht₁ ht₂ hv ht hc₁ hc₂ hcons` (first four mirror tmergev; then origin
+  value/typing, the two casts, Consistent).  Inversion arms:
+  `| tmergev _ _ hp hq hd hcons` / `| tmergevc _ _ hp hq hv ht hc₁ hc₂ hcons`.  `tclos`: `hv henv hd hbody hsub₁ hsub₂` with slacks `Sub B' B`,
   `Sub C A`.  `tflam`: `hd₁ hd₂ hbody`.  `tfclos`: `hv henv hd₁ hd₂ hbody
   hs₁ hs₂ hs₃`.  `tseal`: `hΔ hnr hwf h`.  `tunseal`: `hΔ hnr hwf h heq`.
 - `SealV`/`UnsealV` + `proxyEnv`/`proxyFun` + `Step`/`MStep` + `value_not_step` +
@@ -450,6 +464,8 @@ Bottom-up order:
 ## 5. Commit log (newest first; session 2 above the line)
 
 ```
+49dbca0 Seal: harden tmergev with Disj; split off tmergevc — Phase 3 Commit A (session 3)
+3a28c98 HANDOFF.md: Phase 3 design complete
 3b799d9 HANDOFF.md: work lives on lambdae-sub; main stays clean
 c287715 HANDOFF.md: Phase 2 complete — single source, single target
 a379899 S_Sem: single lookupv_value/sel_value — dedupe the value-lemma triplets
