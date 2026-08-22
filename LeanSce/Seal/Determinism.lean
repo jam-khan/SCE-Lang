@@ -116,7 +116,8 @@ theorem gdeterminism {venv e e₁ : Exp} (h₁ : Step venv e e₁)
     | smrgl _ hs₂ =>
       cases ht with
       | tmrg ha _ _ _ => rw [ih ha henv hs₂]
-      | tmergev hva _ _ _ _ => exact (value_not_step hva hs).elim
+      | tmergev hva _ _ _ _ _ => exact (value_not_step hva hs).elim
+      | tmergevc hva _ _ _ _ _ _ _ _ => exact (value_not_step hva hs).elim
     | smrgr _ hv₁ _ => exact (value_not_step hv₁ hs).elim
   | smrgr hv hv₁ hs ih =>
     cases h₂ with
@@ -124,7 +125,8 @@ theorem gdeterminism {venv e e₁ : Exp} (h₁ : Step venv e e₁)
     | smrgr _ _ hs₂ =>
       cases ht with
       | tmrg ha hb hd₁ _ => rw [ih hb (env_extend_typing hv hv₁ henv ha hd₁) hs₂]
-      | tmergev _ hvb _ _ _ => exact (value_not_step hvb hs).elim
+      | tmergev _ hvb _ _ _ _ => exact (value_not_step hvb hs).elim
+      | tmergevc _ hvb _ _ _ _ _ _ _ => exact (value_not_step hvb hs).elim
   | sproj _ hs ih =>
     cases h₂ with
     | sproj _ hs₂ =>

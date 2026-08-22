@@ -55,6 +55,24 @@ theorem disj_top {A : Typ} : Disj .top A := cost_top_l
 
 theorem disj_top_r {A : Typ} : Disj A .top := fun hc => cost_top_l (cost_symm hc)
 
+-- Two top-like types share no common ordinary supertype: COST's leaf rules all sit at
+-- non-top-like formers (int/brand/or/var/mu), and top-likeness recurses through the
+-- structural rules.
+theorem toplike_disj {A B : Typ} (ha : TopLike A) (hb : TopLike B) : Disj A B := by
+  intro hc
+  induction hc with
+  | cint => nomatch ha
+  | candl _ ih => cases ha with | tland h₁ _ => exact ih h₁ hb
+  | candr _ ih => cases ha with | tland _ h₂ => exact ih h₂ hb
+  | crandl _ ih => cases hb with | tland h₁ _ => exact ih ha h₁
+  | crandr _ ih => cases hb with | tland _ h₂ => exact ih ha h₂
+  | carr _ ih => cases ha with | tlarr h₁ => cases hb with | tlarr h₂ => exact ih h₁ h₂
+  | crcd _ ih => cases ha with | tlrcd h₁ => cases hb with | tlrcd h₂ => exact ih h₁ h₂
+  | cbrand => nomatch ha
+  | coror => nomatch ha
+  | cvar => nomatch ha
+  | cmu => nomatch ha
+
 -- COST propagates down subtyping on the left (the engine of Eᵢ Lemma 2.6).
 theorem cost_compose : {A B C : Typ} → Sub A B → Cost B C → Cost A C
   | _, _, _, .sint, h => h

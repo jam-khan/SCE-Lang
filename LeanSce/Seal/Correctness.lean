@@ -153,7 +153,7 @@ theorem eval_typed {A : SCE.Typ} {vs : SCE.Exp} {vc : Seal.Exp} (h : EVal Δ A v
   | lit => exact HasType.tint
   | unit => exact HasType.tunit
   | mrg h₁ h₂ hd ih₁ ih₂ =>
-    exact HasType.tmergev (eval_value h₁) (eval_value h₂) ih₁ ih₂
+    exact HasType.tmergev (eval_value h₁) (eval_value h₂) ih₁ ih₂ hd
       (disjoint_consistent (eval_value h₁) (eval_value h₂) ih₁ ih₂ hd)
   | rcd _ ih => exact HasType.trcd ih
   | clos _ h hbody hd ih =>
@@ -456,6 +456,7 @@ theorem eval_env_restrict {Γ A : SCE.Typ} {ρs v₁s : SCE.Exp} {ρc v₁c : Se
     : ∃ ρ', Cast (.mrg ρc v₁c) (sealTyp Γ) ρ' ∧ EVal Δ Γ ρs ρ' := by
   have hty : HasType (sealStore Δ) .top (.mrg ρc v₁c) (.and (sealTyp Γ) (sealTyp A)) :=
     HasType.tmergev (eval_value hρ) (eval_value h₁) (eval_typed hρ) (eval_typed h₁)
+      (disj_symm hd)
       (disjoint_consistent (eval_value hρ) (eval_value h₁) (eval_typed hρ) (eval_typed h₁)
         (disj_symm hd))
   obtain ⟨ρ', hc⟩ := cast_progress (Value.vmrg (eval_value hρ) (eval_value h₁)) hty

@@ -509,12 +509,14 @@ theorem cast_merge_eq_l_ord {a b : Exp} {Γ B₁ B₂ T : Typ} {w w' : Exp}
     | cmrgl _ hx =>
       cases ht with
       | tmrg hp _ _ _ => exact cast_determinism hx hva hp hc'
-      | tmergev _ _ hp _ _ => exact cast_determinism hx hva hp hc'
+      | tmergev _ _ hp _ _ _ => exact cast_determinism hx hva hp hc'
+      | tmergevc _ _ hp _ _ _ _ _ _ => exact cast_determinism hx hva hp hc'
     | cmrgr _ hy =>
       cases ht with
       | tmrg hp hq _ hd₂ =>
         exact (disjoint_consistent hva hvb hp hq hd₂ hc' hy).symm
-      | tmergev _ _ _ _ hcons => exact (hcons hc' hy).symm
+      | tmergev _ _ _ _ _ hcons => exact (hcons hc' hy).symm
+      | tmergevc _ _ _ _ _ _ _ _ hcons => exact (hcons hc' hy).symm
     | cand _ _ => nomatch hord
     | ctop => nomatch hord
 
@@ -574,11 +576,13 @@ theorem cast_merge_eq_r_ord {a b : Exp} {Γ B₁ B₂ T : Typ} {w w' : Exp}
     | cmrgr _ hy =>
       cases ht with
       | tmrg _ hq _ _ => exact cast_determinism hy hvb hq hc'
-      | tmergev _ _ _ hq _ => exact cast_determinism hy hvb hq hc'
+      | tmergev _ _ _ hq _ _ => exact cast_determinism hy hvb hq hc'
+      | tmergevc _ _ _ hq _ _ _ _ _ => exact cast_determinism hy hvb hq hc'
     | cmrgl _ hx =>
       cases ht with
       | tmrg hp hq _ hd₂ => exact disjoint_consistent hva hvb hp hq hd₂ hx hc'
-      | tmergev _ _ _ _ hcons => exact hcons hx hc'
+      | tmergev _ _ _ _ _ hcons => exact hcons hx hc'
+      | tmergevc _ _ _ _ _ _ _ _ hcons => exact hcons hx hc'
     | cand _ _ => nomatch hord
     | ctop => nomatch hord
 
@@ -1130,9 +1134,9 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A
     have hva := lr_value ha
     have hta := lr_typed ha
     have hρ' : LR Δ₁ Δ₂ η (.and _ _) (.mrg ρ₁ a₁) (.mrg ρ₂ a₂) :=
-      ⟨HasType.tmergev hvρ.1 hva.1 htρ.1 hta.1
+      ⟨HasType.tmergev hvρ.1 hva.1 htρ.1 hta.1 (disj_symm hd₁)
           (disjoint_consistent hvρ.1 hva.1 htρ.1 hta.1 (disj_symm hd₁)),
-        HasType.tmergev hvρ.2 hva.2 htρ.2 hta.2
+        HasType.tmergev hvρ.2 hva.2 htρ.2 hta.2 (disj_symm hd₁)
           (disjoint_consistent hvρ.2 hva.2 htρ.2 hta.2 (disj_symm hd₁)),
         _, _, _, _, rfl, rfl, hρ, ha⟩
     obtain ⟨b₁, b₂, rb₁, rb₂, hb⟩ := ih₂ hf₂ hρ'
@@ -1141,19 +1145,30 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A
     refine ⟨.mrg a₁ b₁, .mrg a₂ b₂, ?_, ?_, ?_⟩
     · exact mstep_trans (mstep_mrgl hvρ.1 ra₁) (mstep_mrgr hvρ.1 hva.1 rb₁)
     · exact mstep_trans (mstep_mrgl hvρ.2 ra₂) (mstep_mrgr hvρ.2 hva.2 rb₂)
-    · exact ⟨HasType.tmergev hva.1 hvb.1 hta.1 htb.1
+    · exact ⟨HasType.tmergev hva.1 hvb.1 hta.1 htb.1 hd₂
           (disjoint_consistent hva.1 hvb.1 hta.1 htb.1 hd₂),
-        HasType.tmergev hva.2 hvb.2 hta.2 htb.2
+        HasType.tmergev hva.2 hvb.2 hta.2 htb.2 hd₂
           (disjoint_consistent hva.2 hvb.2 hta.2 htb.2 hd₂),
         _, _, _, _, rfl, rfl, ha, hb⟩
-  | tmergev hv₁ hv₂ hp hq hcons ih₁ ih₂ =>
+  | tmergev hv₁ hv₂ hp hq hd hcons ih₁ ih₂ =>
     intro ρ₁ ρ₂ _
     obtain ⟨hf₁, hf₂⟩ := Finitary.mrg_inv hfin
     exact ⟨_, _, MStep.refl, MStep.refl,
       HasType.tmergev hv₁ hv₂ (hastype_weaken_store storele_noBrands hp)
-        (hastype_weaken_store storele_noBrands hq) hcons,
+        (hastype_weaken_store storele_noBrands hq) hd hcons,
       HasType.tmergev hv₁ hv₂ (hastype_weaken_store storele_noBrands hp)
-        (hastype_weaken_store storele_noBrands hq) hcons,
+        (hastype_weaken_store storele_noBrands hq) hd hcons,
+      _, _, _, _, rfl, rfl, semtyp_value_self (ih₁ hf₁) hv₁, semtyp_value_self (ih₂ hf₂) hv₂⟩
+  | tmergevc hv₁ hv₂ hp hq hv ht hc₁ hc₂ hcons ih₁ ih₂ _ =>
+    intro ρ₁ ρ₂ _
+    obtain ⟨hf₁, hf₂⟩ := Finitary.mrg_inv hfin
+    exact ⟨_, _, MStep.refl, MStep.refl,
+      HasType.tmergevc hv₁ hv₂ (hastype_weaken_store storele_noBrands hp)
+        (hastype_weaken_store storele_noBrands hq) hv
+        (hastype_weaken_store storele_noBrands ht) hc₁ hc₂ hcons,
+      HasType.tmergevc hv₁ hv₂ (hastype_weaken_store storele_noBrands hp)
+        (hastype_weaken_store storele_noBrands hq) hv
+        (hastype_weaken_store storele_noBrands ht) hc₁ hc₂ hcons,
       _, _, _, _, rfl, rfl, semtyp_value_self (ih₁ hf₁) hv₁, semtyp_value_self (ih₂ hf₂) hv₂⟩
   | tlam hd hb ih =>
     intro ρ₁ ρ₂ hρ
@@ -1175,9 +1190,9 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A
     have hvu' := lr_value hu'
     have htu' := lr_typed hu'
     have hρ' : LR Δ₁ Δ₂ η (.and _ _) (.mrg ρ₁ u₁') (.mrg ρ₂ u₂') :=
-      ⟨HasType.tmergev hvρ.1 hvu'.1 htρ.1 htu'.1
+      ⟨HasType.tmergev hvρ.1 hvu'.1 htρ.1 htu'.1 hd
           (disjoint_consistent hvρ.1 hvu'.1 htρ.1 htu'.1 hd),
-        HasType.tmergev hvρ.2 hvu'.2 htρ.2 htu'.2
+        HasType.tmergev hvρ.2 hvu'.2 htρ.2 htu'.2 hd
           (disjoint_consistent hvρ.2 hvu'.2 htρ.2 htu'.2 hd),
         _, _, _, _, rfl, rfl, hρ, hu'⟩
     obtain ⟨b₁, b₂, rb₁, rb₂, hbb⟩ := ih hfb hρ'
@@ -1217,9 +1232,9 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A
     have hgv := lr_value hgg
     have hgt := lr_typed hgg
     have hρ' : LR Δ₁ Δ₂ η (.and _ _) (.mrg _ u₁') (.mrg _ u₂') :=
-      ⟨HasType.tmergev hgv.1 hvu'.1 hgt.1 htu'.1
+      ⟨HasType.tmergev hgv.1 hvu'.1 hgt.1 htu'.1 hd
           (disjoint_consistent hgv.1 hvu'.1 hgt.1 htu'.1 hd),
-        HasType.tmergev hgv.2 hvu'.2 hgt.2 htu'.2
+        HasType.tmergev hgv.2 hvu'.2 hgt.2 htu'.2 hd
           (disjoint_consistent hgv.2 hvu'.2 hgt.2 htu'.2 hd),
         _, _, _, _, rfl, rfl, hgg, hu'⟩
     obtain ⟨b₁, b₂, rb₁, rb₂, hbb⟩ := ih_b hfb hρ'
@@ -1272,9 +1287,9 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A
       have hvw := lr_value hA
       have htw := lr_typed hA
       have hρ' : LR Δ₁ Δ₂ η (.and _ _) (.mrg ρ₁ w₁) (.mrg ρ₂ w₂) :=
-        ⟨HasType.tmergev hvρ.1 hvw.1 htρ.1 htw.1
+        ⟨HasType.tmergev hvρ.1 hvw.1 htρ.1 htw.1 hd₁
             (disjoint_consistent hvρ.1 hvw.1 htρ.1 htw.1 hd₁),
-          HasType.tmergev hvρ.2 hvw.2 htρ.2 htw.2
+          HasType.tmergev hvρ.2 hvw.2 htρ.2 htw.2 hd₁
             (disjoint_consistent hvρ.2 hvw.2 htρ.2 htw.2 hd₁),
           _, _, _, _, rfl, rfl, hρ, hA⟩
       obtain ⟨s₁, s₂, rs₁, rs₂, hs⟩ := ih₁ hfe₁ hρ'
@@ -1294,9 +1309,9 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A
       have hvw := lr_value hB
       have htw := lr_typed hB
       have hρ' : LR Δ₁ Δ₂ η (.and _ _) (.mrg ρ₁ w₁) (.mrg ρ₂ w₂) :=
-        ⟨HasType.tmergev hvρ.1 hvw.1 htρ.1 htw.1
+        ⟨HasType.tmergev hvρ.1 hvw.1 htρ.1 htw.1 hd₂
             (disjoint_consistent hvρ.1 hvw.1 htρ.1 htw.1 hd₂),
-          HasType.tmergev hvρ.2 hvw.2 htρ.2 htw.2
+          HasType.tmergev hvρ.2 hvw.2 htρ.2 htw.2 hd₂
             (disjoint_consistent hvρ.2 hvw.2 htρ.2 htw.2 hd₂),
           _, _, _, _, rfl, rfl, hρ, hB⟩
       obtain ⟨s₁, s₂, rs₁, rs₂, hs⟩ := ih₂ hfe₂ hρ'

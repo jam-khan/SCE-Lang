@@ -120,7 +120,7 @@ theorem seal_separate_compilation_lin
     have htE₁ : HasType (sealStore Δ) .top (.mrg ρc (.lrec x vc₁'))
         (.and (sealTyp Γ) (.rcd x (sealTyp Γ₁))) :=
       HasType.tmergev hρv (Value.vrcd hv₁c') (eval_typed henv)
-        (HasType.trcd (eval_typed hEV₁'))
+        (HasType.trcd (eval_typed hEV₁')) (disj_rcd_notin hfrΓ)
         (disjoint_consistent hρv (Value.vrcd hv₁c') (eval_typed henv)
           (HasType.trcd (eval_typed hEV₁')) (disj_rcd_notin hfrΓ))
     -- self-cast of the beta environment E₁ at C₀, and its componentwise shape
@@ -157,7 +157,7 @@ theorem seal_separate_compilation_lin
         disj_and_l (disj_symm hd₁) (disj_symm (disj_rcd_notin hfrΓ₁))
       have htE₂ : HasType (sealStore Δ) .top (.mrg (.mrg ρc (.lrec x vc₁')) vc₁')
           (.and (.and (sealTyp Γ) (.rcd x (sealTyp Γ₁))) (sealTyp Γ₁)) :=
-        HasType.tmergev hE₁v hv₁c' htE₁ (eval_typed hEV₁')
+        HasType.tmergev hE₁v hv₁c' htE₁ (eval_typed hEV₁') hDC
           (disjoint_consistent hE₁v hv₁c' htE₁ (eval_typed hEV₁') hDC)
       obtain ⟨EE, cEE⟩ := cast_progress (Value.vmrg hE₁v hv₁c') htE₂
         (Sub.sandl (sub_refl _))

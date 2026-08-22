@@ -541,7 +541,7 @@ theorem seal_type_preservation {Γ : SCE.Typ} {es : SCE.Exp} {A : SCE.Typ} {ce :
   | ebox _ _ ih₁ ih₂ => exact HasType.tbox ih₁ ih₂
   | edmrg _ _ hd₁ hd₂ ih₁ ih₂ => exact HasType.tmrg ih₁ ih₂ hd₁ hd₂
   | evmrg hv₁ hv₂ h₁ h₂ hd ih₁ ih₂ =>
-    exact HasType.tmergev (elabSeal_value h₁ hv₁) (elabSeal_value h₂ hv₂) ih₁ ih₂
+    exact HasType.tmergev (elabSeal_value h₁ hv₁) (elabSeal_value h₂ hv₂) ih₁ ih₂ hd
       (disjoint_consistent (elabSeal_value h₁ hv₁) (elabSeal_value h₂ hv₂) ih₁ ih₂ hd)
   | enmrg _ _ hd₁ hd₂ ih₁ ih₂ =>
     exact HasType.tmrg ih₁

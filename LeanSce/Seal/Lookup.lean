@@ -32,7 +32,8 @@ theorem lookup_prog {A : Typ} {n : Nat} {B : Typ} (hl : Lookup A n B)
   | zero =>
     cases ht with
     | tmrg _ _ _ _ => exact ⟨_, LookupV.lvzero⟩
-    | tmergev _ _ _ _ _ => exact ⟨_, LookupV.lvzero⟩
+    | tmergev _ _ _ _ _ _ => exact ⟨_, LookupV.lvzero⟩
+    | tmergevc _ _ _ _ _ _ _ _ _ => exact ⟨_, LookupV.lvzero⟩
     | tquery => nomatch hv
     | tapp _ _ => nomatch hv
     | tbox _ _ => nomatch hv
@@ -50,7 +51,10 @@ theorem lookup_prog {A : Typ} {n : Nat} {B : Typ} (hl : Lookup A n B)
       | vmrg hv₁ _ =>
         obtain ⟨v', hlv⟩ := ih hv₁ h₁
         exact ⟨v', LookupV.lvsucc hlv⟩
-    | tmergev hv₁ _ h₁ _ _ =>
+    | tmergev hv₁ _ h₁ _ _ _ =>
+      obtain ⟨v', hlv⟩ := ih hv₁ h₁
+      exact ⟨v', LookupV.lvsucc hlv⟩
+    | tmergevc hv₁ _ h₁ _ _ _ _ _ _ =>
       obtain ⟨v', hlv⟩ := ih hv₁ h₁
       exact ⟨v', LookupV.lvsucc hlv⟩
     | tquery => nomatch hv
@@ -75,7 +79,8 @@ theorem lookup_pres {A : Typ} {n : Nat} {B : Typ} (hl : Lookup A n B)
       | vmrg _ hv₂ =>
         cases ht with
         | tmrg _ h₂ _ _ => exact value_weaken h₂ hv₂
-        | tmergev _ _ _ h₂ _ => exact value_weaken h₂ hv₂
+        | tmergev _ _ _ h₂ _ _ => exact value_weaken h₂ hv₂
+        | tmergevc _ _ _ h₂ _ _ _ _ _ => exact value_weaken h₂ hv₂
   | succ _ ih =>
     cases hlv with
     | lvsucc hlv' =>
@@ -83,7 +88,9 @@ theorem lookup_pres {A : Typ} {n : Nat} {B : Typ} (hl : Lookup A n B)
       | vmrg hv₁ _ =>
         cases ht with
         | tmrg h₁ _ _ _ => exact ih hv₁ h₁ hlv'
-        | tmergev _ _ h₁ _ _ =>
+        | tmergev _ _ h₁ _ _ _ =>
+          exact value_weaken (ih hv₁ h₁ hlv') (lookupv_value hlv' hv₁)
+        | tmergevc _ _ h₁ _ _ _ _ _ _ =>
           exact value_weaken (ih hv₁ h₁ hlv') (lookupv_value hlv' hv₁)
 
 -- If l does not occur in the type, the value has no l-selection (Core's notin_false).
@@ -98,13 +105,15 @@ theorem lin_absent {v v' : Exp} {l : String} (hlv : RLookupV v l v')
     | vmrg hv₁ _ =>
       cases ht with
       | tmrg h₁ _ _ _ => exact ih hv₁ h₁ (fun hlin => hnl (Lin.andl hlin))
-      | tmergev _ _ h₁ _ _ => exact ih hv₁ h₁ (fun hlin => hnl (Lin.andl hlin))
+      | tmergev _ _ h₁ _ _ _ => exact ih hv₁ h₁ (fun hlin => hnl (Lin.andl hlin))
+      | tmergevc _ _ h₁ _ _ _ _ _ _ => exact ih hv₁ h₁ (fun hlin => hnl (Lin.andl hlin))
   | vlandr _ ih =>
     cases hv with
     | vmrg _ hv₂ =>
       cases ht with
       | tmrg _ h₂ _ _ => exact ih hv₂ h₂ (fun hlin => hnl (Lin.andr hlin))
-      | tmergev _ _ _ h₂ _ => exact ih hv₂ h₂ (fun hlin => hnl (Lin.andr hlin))
+      | tmergev _ _ _ h₂ _ _ => exact ih hv₂ h₂ (fun hlin => hnl (Lin.andr hlin))
+      | tmergevc _ _ _ h₂ _ _ _ _ _ => exact ih hv₂ h₂ (fun hlin => hnl (Lin.andr hlin))
 
 theorem rlookup_prog {B : Typ} {l : String} {A : Typ} (hl : RLookup B l A)
     {v : Exp} {Γ : Typ} (hv : Value v) (ht : HasType Δ Γ v B) : ∃ v', RLookupV v l v' := by
@@ -129,7 +138,10 @@ theorem rlookup_prog {B : Typ} {l : String} {A : Typ} (hl : RLookup B l A)
       | vmrg hv₁ _ =>
         obtain ⟨v', hlv⟩ := ih hv₁ h₁
         exact ⟨v', RLookupV.vlandl hlv⟩
-    | tmergev hv₁ _ h₁ _ _ =>
+    | tmergev hv₁ _ h₁ _ _ _ =>
+      obtain ⟨v', hlv⟩ := ih hv₁ h₁
+      exact ⟨v', RLookupV.vlandl hlv⟩
+    | tmergevc hv₁ _ h₁ _ _ _ _ _ _ =>
       obtain ⟨v', hlv⟩ := ih hv₁ h₁
       exact ⟨v', RLookupV.vlandl hlv⟩
     | tquery => nomatch hv
@@ -149,7 +161,10 @@ theorem rlookup_prog {B : Typ} {l : String} {A : Typ} (hl : RLookup B l A)
       | vmrg _ hv₂ =>
         obtain ⟨v', hlv⟩ := ih hv₂ h₂
         exact ⟨v', RLookupV.vlandr hlv⟩
-    | tmergev _ hv₂ _ h₂ _ =>
+    | tmergev _ hv₂ _ h₂ _ _ =>
+      obtain ⟨v', hlv⟩ := ih hv₂ h₂
+      exact ⟨v', RLookupV.vlandr hlv⟩
+    | tmergevc _ hv₂ _ h₂ _ _ _ _ _ =>
       obtain ⟨v', hlv⟩ := ih hv₂ h₂
       exact ⟨v', RLookupV.vlandr hlv⟩
     | tquery => nomatch hv
@@ -182,14 +197,17 @@ theorem rlookup_pres {B : Typ} {l : String} {A : Typ} (hl : RLookup B l A)
       | vmrg hv₁ hv₂ =>
         cases ht with
         | tmrg h₁ _ _ _ => exact ih hv₁ h₁ hlv'
-        | tmergev _ _ h₁ _ _ =>
+        | tmergev _ _ h₁ _ _ _ =>
+          exact value_weaken (ih hv₁ h₁ hlv') (rlookupv_value hlv' hv₁)
+        | tmergevc _ _ h₁ _ _ _ _ _ _ =>
           exact value_weaken (ih hv₁ h₁ hlv') (rlookupv_value hlv' hv₁)
     | vlandr hlv' =>
       cases hv with
       | vmrg hv₁ hv₂ =>
         cases ht with
         | tmrg _ h₂ _ _ => exact (lin_absent hlv' hv₂ h₂ hnl).elim
-        | tmergev _ _ _ h₂ _ => exact (lin_absent hlv' hv₂ h₂ hnl).elim
+        | tmergev _ _ _ h₂ _ _ => exact (lin_absent hlv' hv₂ h₂ hnl).elim
+        | tmergevc _ _ _ h₂ _ _ _ _ _ => exact (lin_absent hlv' hv₂ h₂ hnl).elim
   | landr _ hnl ih =>
     cases hlv with
     | rvlzero => nomatch ht
@@ -200,14 +218,17 @@ theorem rlookup_pres {B : Typ} {l : String} {A : Typ} (hl : RLookup B l A)
         | tmrg _ h₂ _ _ =>
           exact value_weaken (ih hv₂ (value_weaken h₂ hv₂ : HasType Δ .top _ _) hlv')
             (rlookupv_value hlv' hv₂)
-        | tmergev _ _ _ h₂ _ =>
+        | tmergev _ _ _ h₂ _ _ =>
+          exact value_weaken (ih hv₂ h₂ hlv') (rlookupv_value hlv' hv₂)
+        | tmergevc _ _ _ h₂ _ _ _ _ _ =>
           exact value_weaken (ih hv₂ h₂ hlv') (rlookupv_value hlv' hv₂)
     | vlandl hlv' =>
       cases hv with
       | vmrg hv₁ hv₂ =>
         cases ht with
         | tmrg h₁ _ _ _ => exact (lin_absent hlv' hv₁ h₁ hnl).elim
-        | tmergev _ _ h₁ _ _ => exact (lin_absent hlv' hv₁ h₁ hnl).elim
+        | tmergev _ _ h₁ _ _ _ => exact (lin_absent hlv' hv₁ h₁ hnl).elim
+        | tmergevc _ _ h₁ _ _ _ _ _ _ => exact (lin_absent hlv' hv₁ h₁ hnl).elim
 
 -- λE Lemma 4.1: well-typed selection is deterministic — containment rules out the
 -- ambiguous branch.
@@ -232,17 +253,20 @@ theorem sel_determinism {B : Typ} {l : String} {A : Typ} (hl : RLookup B l A)
         | vlandl h₂' =>
           cases ht with
           | tmrg hp _ _ _ => exact ih hv₁ hp h₁' h₂'
-          | tmergev _ _ hp _ _ => exact ih hv₁ hp h₁' h₂'
+          | tmergev _ _ hp _ _ _ => exact ih hv₁ hp h₁' h₂'
+          | tmergevc _ _ hp _ _ _ _ _ _ => exact ih hv₁ hp h₁' h₂'
         | vlandr h₂' =>
           cases ht with
           | tmrg _ hq _ _ => exact (lin_absent h₂' hv₂ hq hnl).elim
-          | tmergev _ _ _ hq _ => exact (lin_absent h₂' hv₂ hq hnl).elim
+          | tmergev _ _ _ hq _ _ => exact (lin_absent h₂' hv₂ hq hnl).elim
+          | tmergevc _ _ _ hq _ _ _ _ _ => exact (lin_absent h₂' hv₂ hq hnl).elim
     | vlandr h₁' =>
       cases hv with
       | vmrg hv₁ hv₂ =>
         cases ht with
         | tmrg _ hq _ _ => exact (lin_absent h₁' hv₂ hq hnl).elim
-        | tmergev _ _ _ hq _ => exact (lin_absent h₁' hv₂ hq hnl).elim
+        | tmergev _ _ _ hq _ _ => exact (lin_absent h₁' hv₂ hq hnl).elim
+        | tmergevc _ _ _ hq _ _ _ _ _ => exact (lin_absent h₁' hv₂ hq hnl).elim
   | landr _ hnl ih =>
     cases h₁ with
     | rvlzero => nomatch ht
@@ -253,17 +277,20 @@ theorem sel_determinism {B : Typ} {l : String} {A : Typ} (hl : RLookup B l A)
         | vlandr h₂' =>
           cases ht with
           | tmrg _ hq _ _ => exact ih hv₂ (value_weaken hq hv₂ : HasType Δ .top _ _) h₁' h₂'
-          | tmergev _ _ _ hq _ => exact ih hv₂ hq h₁' h₂'
+          | tmergev _ _ _ hq _ _ => exact ih hv₂ hq h₁' h₂'
+          | tmergevc _ _ _ hq _ _ _ _ _ => exact ih hv₂ hq h₁' h₂'
         | vlandl h₂' =>
           cases ht with
           | tmrg hp _ _ _ => exact (lin_absent h₂' hv₁ hp hnl).elim
-          | tmergev _ _ hp _ _ => exact (lin_absent h₂' hv₁ hp hnl).elim
+          | tmergev _ _ hp _ _ _ => exact (lin_absent h₂' hv₁ hp hnl).elim
+          | tmergevc _ _ hp _ _ _ _ _ _ => exact (lin_absent h₂' hv₁ hp hnl).elim
     | vlandl h₁' =>
       cases hv with
       | vmrg hv₁ hv₂ =>
         cases ht with
         | tmrg hp _ _ _ => exact (lin_absent h₁' hv₁ hp hnl).elim
-        | tmergev _ _ hp _ _ => exact (lin_absent h₁' hv₁ hp hnl).elim
+        | tmergev _ _ hp _ _ _ => exact (lin_absent h₁' hv₁ hp hnl).elim
+        | tmergevc _ _ hp _ _ _ _ _ _ => exact (lin_absent h₁' hv₁ hp hnl).elim
 
 -- The environment extended by a merge branch stays well-typed: the shared plumbing of
 -- smrgr in preservation, progress, and determinism.  This is exactly where the A ∗ Γ
@@ -272,7 +299,7 @@ theorem env_extend_typing {v v₁ : Exp} {Γ A : Typ}
     (hv : Value v) (hv₁ : Value v₁) (henv : HasType Δ .top v Γ) (h₁ : HasType Δ Γ v₁ A)
     (hd : Disj A Γ) : HasType Δ .top (.mrg v v₁) (.and Γ A) := by
   have h₁' : HasType Δ .top v₁ A := value_weaken h₁ hv₁
-  exact HasType.tmergev hv hv₁ henv h₁'
+  exact HasType.tmergev hv hv₁ henv h₁' (disj_symm hd)
     (disjoint_consistent hv hv₁ henv h₁' (disj_symm hd))
 
 end Seal

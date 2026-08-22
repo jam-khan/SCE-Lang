@@ -132,11 +132,15 @@ theorem sealv_preservation {n : Nat} {R : Typ} (hΔ : Δ n = some R) (hR : NoRes
         | tmrg ht₁ ht₂ _ _ =>
           have hA := value_weaken (ih₁ hwfA hv₁ ht₁) hw₁ (Γ' := .top)
           have hB := value_weaken (ih₂ hwfB hv₂ ht₂) hw₂ (Γ' := .top)
-          exact HasType.tmergev hw₁ hw₂ hA hB (disjoint_consistent hw₁ hw₂ hA hB hdAB)
-        | tmergev _ _ ht₁ ht₂ _ =>
+          exact HasType.tmergev hw₁ hw₂ hA hB hdAB (disjoint_consistent hw₁ hw₂ hA hB hdAB)
+        | tmergev _ _ ht₁ ht₂ _ _ =>
           have hA := ih₁ hwfA hv₁ ht₁
           have hB := ih₂ hwfB hv₂ ht₂
-          exact HasType.tmergev hw₁ hw₂ hA hB (disjoint_consistent hw₁ hw₂ hA hB hdAB)
+          exact HasType.tmergev hw₁ hw₂ hA hB hdAB (disjoint_consistent hw₁ hw₂ hA hB hdAB)
+        | tmergevc _ _ ht₁ ht₂ _ _ _ _ _ =>
+          have hA := ih₁ hwfA hv₁ ht₁
+          have hB := ih₂ hwfB hv₂ ht₂
+          exact HasType.tmergev hw₁ hw₂ hA hB hdAB (disjoint_consistent hw₁ hw₂ hA hB hdAB)
   | rcd h ih =>
     intro Γ hwf hv ht
     cases hwf with
@@ -218,11 +222,15 @@ theorem unsealv_preservation {n : Nat} {R : Typ} (hΔ : Δ n = some R) (hR : NoR
         | tmrg ht₁ ht₂ _ _ =>
           have hA := value_weaken (ih₁ hwfA hv₁ ht₁) hw₁ (Γ' := .top)
           have hB := value_weaken (ih₂ hwfB hv₂ ht₂) hw₂ (Γ' := .top)
-          exact HasType.tmergev hw₁ hw₂ hA hB (disjoint_consistent hw₁ hw₂ hA hB hdAB')
-        | tmergev _ _ ht₁ ht₂ _ =>
+          exact HasType.tmergev hw₁ hw₂ hA hB hdAB' (disjoint_consistent hw₁ hw₂ hA hB hdAB')
+        | tmergev _ _ ht₁ ht₂ _ _ =>
           have hA := ih₁ hwfA hv₁ ht₁
           have hB := ih₂ hwfB hv₂ ht₂
-          exact HasType.tmergev hw₁ hw₂ hA hB (disjoint_consistent hw₁ hw₂ hA hB hdAB')
+          exact HasType.tmergev hw₁ hw₂ hA hB hdAB' (disjoint_consistent hw₁ hw₂ hA hB hdAB')
+        | tmergevc _ _ ht₁ ht₂ _ _ _ _ _ =>
+          have hA := ih₁ hwfA hv₁ ht₁
+          have hB := ih₂ hwfB hv₂ ht₂
+          exact HasType.tmergev hw₁ hw₂ hA hB hdAB' (disjoint_consistent hw₁ hw₂ hA hB hdAB')
   | rcd h ih =>
     intro Γ hwf hv ht
     cases hwf with
@@ -291,7 +299,7 @@ theorem gpreservation {venv e e' : Exp} (hstep : Step venv e e')
         have hv₂' := cast_value hv₂ hc
         have ht₂' : HasType Δ .top _ _ := value_weaken (cast_preservation hc hv₂ h₂) hv₂'
         exact HasType.tbox
-          (HasType.tmergev hu hv₂' henv₁ ht₂'
+          (HasType.tmergev hu hv₂' henv₁ ht₂' hd
             (disjoint_consistent hu hv₂' henv₁ ht₂' hd))
           (HasType.tanno hb hs₁)
   | sclos hv =>
@@ -316,7 +324,7 @@ theorem gpreservation {venv e e' : Exp} (hstep : Step venv e e')
       | tinl hp =>
         have hp' : HasType Δ .top _ _ := value_weaken hp hv₁
         exact HasType.tbox
-          (HasType.tmergev hv hv₁ henv hp' (disjoint_consistent hv hv₁ henv hp' hd₁)) h₁
+          (HasType.tmergev hv hv₁ henv hp' hd₁ (disjoint_consistent hv hv₁ henv hp' hd₁)) h₁
   | scaser hv hv₁ =>
     cases ht with
     | tcase h hd₁ hd₂ h₁ h₂ =>
@@ -324,7 +332,7 @@ theorem gpreservation {venv e e' : Exp} (hstep : Step venv e e')
       | tinr hp =>
         have hp' : HasType Δ .top _ _ := value_weaken hp hv₁
         exact HasType.tbox
-          (HasType.tmergev hv hv₁ henv hp' (disjoint_consistent hv hv₁ henv hp' hd₂)) h₂
+          (HasType.tmergev hv hv₁ henv hp' hd₂ (disjoint_consistent hv hv₁ henv hp' hd₂)) h₂
   | sfold _ _ ih =>
     cases ht with
     | tfold h => exact HasType.tfold (ih h henv)
@@ -355,10 +363,10 @@ theorem gpreservation {venv e e' : Exp} (hstep : Step venv e e')
         have hv₂' := cast_value hv₂ hc
         have ht₂' : HasType Δ .top _ _ := value_weaken (cast_preservation hc hv₂ h₂) hv₂'
         have hinner : HasType Δ .top _ _ :=
-          HasType.tmergev hu (Value.vfclos hu) henv₁ hself
+          HasType.tmergev hu (Value.vfclos hu) henv₁ hself hd₁
             (disjoint_consistent hu (Value.vfclos hu) henv₁ hself hd₁)
         exact HasType.tbox
-          (HasType.tmergev (Value.vmrg hu (Value.vfclos hu)) hv₂' hinner ht₂'
+          (HasType.tmergev (Value.vmrg hu (Value.vfclos hu)) hv₂' hinner ht₂' hd₂
             (disjoint_consistent (Value.vmrg hu (Value.vfclos hu)) hv₂' hinner ht₂' hd₂))
           (HasType.tanno hb (sub_trans hs₁ hs₂))
   | sboxl _ _ ih =>
@@ -373,12 +381,14 @@ theorem gpreservation {venv e e' : Exp} (hstep : Step venv e e')
   | smrgl _ hs ih =>
     cases ht with
     | tmrg h₁ h₂ hd₁ hd₂ => exact HasType.tmrg (ih h₁ henv) h₂ hd₁ hd₂
-    | tmergev hva _ _ _ _ => exact (value_not_step hva hs).elim
+    | tmergev hva _ _ _ _ _ => exact (value_not_step hva hs).elim
+    | tmergevc hva _ _ _ _ _ _ _ _ => exact (value_not_step hva hs).elim
   | smrgr hv hv₁ hs ih =>
     cases ht with
     | tmrg h₁ h₂ hd₁ hd₂ =>
       exact HasType.tmrg h₁ (ih h₂ (env_extend_typing hv hv₁ henv h₁ hd₁)) hd₁ hd₂
-    | tmergev _ hvb _ _ _ => exact (value_not_step hvb hs).elim
+    | tmergev _ hvb _ _ _ _ => exact (value_not_step hvb hs).elim
+    | tmergevc _ hvb _ _ _ _ _ _ _ => exact (value_not_step hvb hs).elim
   | sproj _ _ ih =>
     cases ht with
     | tproj h hl => exact HasType.tproj (ih h henv) hl

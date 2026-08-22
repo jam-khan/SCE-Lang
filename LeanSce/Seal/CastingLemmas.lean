@@ -200,7 +200,7 @@ theorem genVal_typed {A : Typ} (htl : TopLike A) : ∀ Γ, HasType Δ Γ (genVal
   | tland h₁ h₂ ih₁ ih₂ =>
     intro Γ
     exact HasType.tmergev (genVal_value _) (genVal_value _) (ih₁ .top) (ih₂ .top)
-      (gen_consistent h₁ h₂)
+      (toplike_disj h₁ h₂) (gen_consistent h₁ h₂)
   | tlarr h ih =>
     intro Γ
     rename_i A₁ A₂
@@ -222,13 +222,15 @@ theorem cast_int_cost : {v w : Exp} → Cast v .int w
     cases hv with | vmrg hp _ =>
     cases ht with
     | tmrg hp' _ _ _ => exact Cost.candl (cast_int_cost hc hp hp')
-    | tmergev _ _ hp' _ _ => exact Cost.candl (cast_int_cost hc hp hp')
+    | tmergev _ _ hp' _ _ _ => exact Cost.candl (cast_int_cost hc hp hp')
+    | tmergevc _ _ hp' _ _ _ _ _ _ => exact Cost.candl (cast_int_cost hc hp hp')
   | _, _, .cmrgr _ hc => by
     intro hv ht
     cases hv with | vmrg _ hq =>
     cases ht with
     | tmrg _ hq' _ _ => exact Cost.candr (cast_int_cost hc hq hq')
-    | tmergev _ _ _ hq' _ => exact Cost.candr (cast_int_cost hc hq hq')
+    | tmergev _ _ _ hq' _ _ => exact Cost.candr (cast_int_cost hc hq hq')
+    | tmergevc _ _ _ hq' _ _ _ _ _ => exact Cost.candr (cast_int_cost hc hq hq')
 
 -- A value castable at a non-top-like arrow type is COST-related to any arrow whose
 -- codomain sits below the target codomain.
@@ -253,14 +255,16 @@ theorem cast_arr_cost : {v w : Exp} → {C D : Typ} → Cast v (.arr C D) w → 
     cases hv with | vmrg hp _ =>
     cases ht with
     | tmrg hp' _ _ _ => exact Cost.crandl (cast_arr_cost hc hntlD hp hp' hsB₀)
-    | tmergev _ _ hp' _ _ => exact Cost.crandl (cast_arr_cost hc hntlD hp hp' hsB₀)
+    | tmergev _ _ hp' _ _ _ => exact Cost.crandl (cast_arr_cost hc hntlD hp hp' hsB₀)
+    | tmergevc _ _ hp' _ _ _ _ _ _ => exact Cost.crandl (cast_arr_cost hc hntlD hp hp' hsB₀)
   | _, _, _, _, .cmrgr _ hc, hntlD => by
     intro hv ht
     intro E B₀ hsB₀
     cases hv with | vmrg _ hq =>
     cases ht with
     | tmrg _ hq' _ _ => exact Cost.crandr (cast_arr_cost hc hntlD hq hq' hsB₀)
-    | tmergev _ _ _ hq' _ => exact Cost.crandr (cast_arr_cost hc hntlD hq hq' hsB₀)
+    | tmergev _ _ _ hq' _ _ => exact Cost.crandr (cast_arr_cost hc hntlD hq hq' hsB₀)
+    | tmergevc _ _ _ hq' _ _ _ _ _ => exact Cost.crandr (cast_arr_cost hc hntlD hq hq' hsB₀)
 
 -- A value castable at a brand has that brand as a leaf of its type (only wrappers cast at
 -- brands, and only twrap types wrappers).
@@ -275,13 +279,15 @@ theorem cast_brand_cost : {v w : Exp} → {n : Nat} → Cast v (.brand n) w
     cases hv with | vmrg hp _ =>
     cases ht with
     | tmrg hp' _ _ _ => exact Cost.candl (cast_brand_cost hc hp hp')
-    | tmergev _ _ hp' _ _ => exact Cost.candl (cast_brand_cost hc hp hp')
+    | tmergev _ _ hp' _ _ _ => exact Cost.candl (cast_brand_cost hc hp hp')
+    | tmergevc _ _ hp' _ _ _ _ _ _ => exact Cost.candl (cast_brand_cost hc hp hp')
   | _, _, _, .cmrgr _ hc => by
     intro hv ht
     cases hv with | vmrg _ hq =>
     cases ht with
     | tmrg _ hq' _ _ => exact Cost.candr (cast_brand_cost hc hq hq')
-    | tmergev _ _ _ hq' _ => exact Cost.candr (cast_brand_cost hc hq hq')
+    | tmergev _ _ _ hq' _ _ => exact Cost.candr (cast_brand_cost hc hq hq')
+    | tmergevc _ _ _ hq' _ _ _ _ _ => exact Cost.candr (cast_brand_cost hc hq hq')
 
 -- A value castable at a union target has a union leaf in its type; since any two union
 -- types share a COST unconditionally (coror), the leaf is COST-related to EVERY union.
@@ -300,13 +306,15 @@ theorem cast_or_cost : {v w : Exp} → {A' B' : Typ} → Cast v (.or A' B') w
     cases hv with | vmrg hp _ =>
     cases ht with
     | tmrg hp' _ _ _ => exact Cost.candl (cast_or_cost hc hp hp')
-    | tmergev _ _ hp' _ _ => exact Cost.candl (cast_or_cost hc hp hp')
+    | tmergev _ _ hp' _ _ _ => exact Cost.candl (cast_or_cost hc hp hp')
+    | tmergevc _ _ hp' _ _ _ _ _ _ => exact Cost.candl (cast_or_cost hc hp hp')
   | _, _, _, _, .cmrgr _ hc => by
     intro hv ht
     cases hv with | vmrg _ hq =>
     cases ht with
     | tmrg _ hq' _ _ => exact Cost.candr (cast_or_cost hc hq hq')
-    | tmergev _ _ _ hq' _ => exact Cost.candr (cast_or_cost hc hq hq')
+    | tmergev _ _ _ hq' _ _ => exact Cost.candr (cast_or_cost hc hq hq')
+    | tmergevc _ _ _ hq' _ _ _ _ _ => exact Cost.candr (cast_or_cost hc hq hq')
 
 -- A value castable at a μ-type has that μ-type as a leaf of its type (only same-body
 -- folds cast at μ, and only tfold types folds) — the brand pattern.
@@ -321,13 +329,15 @@ theorem cast_mu_cost : {v w : Exp} → {T : Typ} → Cast v (.mu T) w
     cases hv with | vmrg hp _ =>
     cases ht with
     | tmrg hp' _ _ _ => exact Cost.candl (cast_mu_cost hc hp hp')
-    | tmergev _ _ hp' _ _ => exact Cost.candl (cast_mu_cost hc hp hp')
+    | tmergev _ _ hp' _ _ _ => exact Cost.candl (cast_mu_cost hc hp hp')
+    | tmergevc _ _ hp' _ _ _ _ _ _ => exact Cost.candl (cast_mu_cost hc hp hp')
   | _, _, _, .cmrgr _ hc => by
     intro hv ht
     cases hv with | vmrg _ hq =>
     cases ht with
     | tmrg _ hq' _ _ => exact Cost.candr (cast_mu_cost hc hq hq')
-    | tmergev _ _ _ hq' _ => exact Cost.candr (cast_mu_cost hc hq hq')
+    | tmergev _ _ _ hq' _ _ => exact Cost.candr (cast_mu_cost hc hq hq')
+    | tmergevc _ _ _ hq' _ _ _ _ _ => exact Cost.candr (cast_mu_cost hc hq hq')
 
 -- Peel the second cast at a record target down to its record leaf, handing the leaf to a
 -- continuation (which will be the outer induction hypothesis of casts_not_disjoint).
@@ -346,13 +356,15 @@ theorem cast_rcd_cost_aux : {v w : Exp} → {l : String} → {T' : Typ} → Cast
     cases hv with | vmrg hp _ =>
     cases ht with
     | tmrg hp' _ _ _ => exact Cost.crandl (cast_rcd_cost_aux hc hp hp' k)
-    | tmergev _ _ hp' _ _ => exact Cost.crandl (cast_rcd_cost_aux hc hp hp' k)
+    | tmergev _ _ hp' _ _ _ => exact Cost.crandl (cast_rcd_cost_aux hc hp hp' k)
+    | tmergevc _ _ hp' _ _ _ _ _ _ => exact Cost.crandl (cast_rcd_cost_aux hc hp hp' k)
   | _, _, _, _, .cmrgr _ hc => by
     intro hv ht k
     cases hv with | vmrg _ hq =>
     cases ht with
     | tmrg _ hq' _ _ => exact Cost.crandr (cast_rcd_cost_aux hc hq hq' k)
-    | tmergev _ _ _ hq' _ => exact Cost.crandr (cast_rcd_cost_aux hc hq hq' k)
+    | tmergev _ _ _ hq' _ _ => exact Cost.crandr (cast_rcd_cost_aux hc hq hq' k)
+    | tmergevc _ _ _ hq' _ _ _ _ _ => exact Cost.crandr (cast_rcd_cost_aux hc hq hq' k)
 
 -- If two well-typed values both cast at a common non-top-like type, their types share a
 -- common ordinary supertype.  This is the heart of Eᵢ Lemma 4: disjoint values simply have
@@ -405,13 +417,15 @@ theorem casts_not_disjoint
     cases hv₁ with | vmrg hp _ =>
     cases ht₁ with
     | tmrg hp' _ _ _ => exact Cost.candl (ih hp hp' hv₂ ht₂ hc₂ hntl)
-    | tmergev _ _ hp' _ _ => exact Cost.candl (ih hp hp' hv₂ ht₂ hc₂ hntl)
+    | tmergev _ _ hp' _ _ _ => exact Cost.candl (ih hp hp' hv₂ ht₂ hc₂ hntl)
+    | tmergevc _ _ hp' _ _ _ _ _ _ => exact Cost.candl (ih hp hp' hv₂ ht₂ hc₂ hntl)
   | cmrgr _ _ ih =>
     intro Γ₁ A hv₁ ht₁ v₂ Γ₂ B w₂ hv₂ ht₂ hc₂ hntl
     cases hv₁ with | vmrg _ hq =>
     cases ht₁ with
     | tmrg _ hq' _ _ => exact Cost.candr (ih hq hq' hv₂ ht₂ hc₂ hntl)
-    | tmergev _ _ _ hq' _ => exact Cost.candr (ih hq hq' hv₂ ht₂ hc₂ hntl)
+    | tmergev _ _ _ hq' _ _ => exact Cost.candr (ih hq hq' hv₂ ht₂ hc₂ hntl)
+    | tmergevc _ _ _ hq' _ _ _ _ _ => exact Cost.candr (ih hq hq' hv₂ ht₂ hc₂ hntl)
   | @cand _ T₁ T₂ _ _ _ _ ih₁ ih₂ =>
     intro Γ₁ A hv₁ ht₁ v₂ Γ₂ B w₂ hv₂ ht₂ hc₂ hntl
     cases hc₂ with
@@ -501,11 +515,14 @@ theorem value_weaken {v : Exp} {Γ A : Typ} (ht : HasType Δ Γ v A)
     intro Γ' hv
     cases hv with
     | vmrg hv₁ hv₂ =>
-      exact HasType.tmergev hv₁ hv₂ (ih₁ hv₁) (ih₂ hv₂)
+      exact HasType.tmergev hv₁ hv₂ (ih₁ hv₁) (ih₂ hv₂) hd₂
         (disjoint_consistent hv₁ hv₂ hp hq hd₂)
-  | tmergev hv₁ hv₂ hp hq hcons _ _ =>
+  | tmergev hv₁ hv₂ hp hq hd hcons _ _ =>
     intro Γ' _
-    exact HasType.tmergev hv₁ hv₂ hp hq hcons
+    exact HasType.tmergev hv₁ hv₂ hp hq hd hcons
+  | tmergevc hv₁ hv₂ hp hq hv' ht' hc₁ hc₂ hcons _ _ _ =>
+    intro Γ' _
+    exact HasType.tmergevc hv₁ hv₂ hp hq hv' ht' hc₁ hc₂ hcons
   | tlam _ _ _ => intro _ hv; nomatch hv
   | tclos hv' henv hd hb hs₁ hs₂ _ _ =>
     intro Γ' _
@@ -589,11 +606,13 @@ theorem cast_determinism {v : Exp} {A : Typ} {w₁ : Exp} (c₁ : Cast v A w₁)
     | cmrgl _ hc₂ =>
       cases ht with
       | tmrg hp _ _ _ => exact ih hv₁ hp hc₂
-      | tmergev _ _ hp _ _ => exact ih hv₁ hp hc₂
+      | tmergev _ _ hp _ _ _ => exact ih hv₁ hp hc₂
+      | tmergevc _ _ hp _ _ _ _ _ _ => exact ih hv₁ hp hc₂
     | cmrgr _ hc₂ =>
       cases ht with
       | tmrg hp hq _ hd₂ => exact disjoint_consistent hv₁ hv₂ hp hq hd₂ hc hc₂
-      | tmergev _ _ _ _ hcons => exact hcons hc hc₂
+      | tmergev _ _ _ _ _ hcons => exact hcons hc hc₂
+      | tmergevc _ _ _ _ _ _ _ _ hcons => exact hcons hc hc₂
     | cand _ _ => nomatch hord
     | ctop => nomatch hord
   | cmrgr hord hc ih =>
@@ -603,11 +622,13 @@ theorem cast_determinism {v : Exp} {A : Typ} {w₁ : Exp} (c₁ : Cast v A w₁)
     | cmrgr _ hc₂ =>
       cases ht with
       | tmrg _ hq _ _ => exact ih hv₂ hq hc₂
-      | tmergev _ _ _ hq _ => exact ih hv₂ hq hc₂
+      | tmergev _ _ _ hq _ _ => exact ih hv₂ hq hc₂
+      | tmergevc _ _ _ hq _ _ _ _ _ => exact ih hv₂ hq hc₂
     | cmrgl _ hc₂ =>
       cases ht with
       | tmrg hp hq _ hd₂ => exact (disjoint_consistent hv₁ hv₂ hp hq hd₂ hc₂ hc).symm
-      | tmergev _ _ _ _ hcons => exact (hcons hc₂ hc).symm
+      | tmergev _ _ _ _ _ hcons => exact (hcons hc₂ hc).symm
+      | tmergevc _ _ _ _ _ _ _ _ hcons => exact (hcons hc₂ hc).symm
     | cand _ _ => nomatch hord
     | ctop => nomatch hord
   | cand _ _ ih₁ ih₂ =>
@@ -786,7 +807,9 @@ theorem cast_preservation : {v : Exp} → {A : Typ} → {w : Exp} → Cast v A w
     cases hv with | vmrg hv₁ hv₂ =>
     cases ht with
     | tmrg hp _ _ _ => exact cast_preservation hc hv₁ hp
-    | tmergev _ _ hp _ _ =>
+    | tmergev _ _ hp _ _ _ =>
+      exact value_weaken (cast_preservation hc hv₁ hp) (cast_value hv₁ hc)
+    | tmergevc _ _ hp _ _ _ _ _ _ =>
       exact value_weaken (cast_preservation hc hv₁ hp) (cast_value hv₁ hc)
   | _, _, _, .cmrgr _ hc => by
     intro hv ht
@@ -794,13 +817,18 @@ theorem cast_preservation : {v : Exp} → {A : Typ} → {w : Exp} → Cast v A w
     cases ht with
     | tmrg _ hq _ _ =>
       exact value_weaken (cast_preservation hc hv₂ hq) (cast_value hv₂ hc)
-    | tmergev _ _ _ hq _ =>
+    | tmergev _ _ _ hq _ _ =>
+      exact value_weaken (cast_preservation hc hv₂ hq) (cast_value hv₂ hc)
+    | tmergevc _ _ _ hq _ _ _ _ _ =>
       exact value_weaken (cast_preservation hc hv₂ hq) (cast_value hv₂ hc)
   | _, _, _, .cand hc₁ hc₂ => by
     intro hv ht
-    exact HasType.tmergev (cast_value hv hc₁) (cast_value hv hc₂)
+    -- The components are the two casts of the common origin v — the tmergevc shape;
+    -- their types need not be disjoint (casting at Int & Int duplicates).
+    exact HasType.tmergevc (cast_value hv hc₁) (cast_value hv hc₂)
       (value_weaken (cast_preservation hc₁ hv ht) (cast_value hv hc₁))
       (value_weaken (cast_preservation hc₂ hv ht) (cast_value hv hc₂))
+      hv (value_weaken ht hv) hc₁ hc₂
       (consistent_after_cast hv ht hc₁ hc₂)
   | _, _, _, .crcd hc => by
     intro hv ht
@@ -869,7 +897,17 @@ theorem cast_progress {A : Typ}
       | sandr hs' =>
         obtain ⟨w, hc⟩ := ih₂ hv₂ hs'
         exact ⟨w, Cast.cmrgr Ordinary.oint hc⟩
-    | tmergev _ _ _ _ _ ih₁ ih₂ =>
+    | tmergev _ _ _ _ _ _ ih₁ ih₂ =>
+      intro hv hs
+      cases hv with | vmrg hv₁ hv₂ =>
+      cases hs with
+      | sandl hs' =>
+        obtain ⟨w, hc⟩ := ih₁ hv₁ hs'
+        exact ⟨w, Cast.cmrgl Ordinary.oint hc⟩
+      | sandr hs' =>
+        obtain ⟨w, hc⟩ := ih₂ hv₂ hs'
+        exact ⟨w, Cast.cmrgr Ordinary.oint hc⟩
+    | tmergevc _ _ _ _ _ _ _ _ _ ih₁ ih₂ _ =>
       intro hv hs
       cases hv with | vmrg hv₁ hv₂ =>
       cases hs with
@@ -914,7 +952,17 @@ theorem cast_progress {A : Typ}
       | sandr hs' =>
         obtain ⟨w, hc⟩ := ih₂ hv₂ hs'
         exact ⟨w, Cast.cmrgr Ordinary.obrand hc⟩
-    | tmergev _ _ _ _ _ ih₁ ih₂ =>
+    | tmergev _ _ _ _ _ _ ih₁ ih₂ =>
+      intro hv hs
+      cases hv with | vmrg hv₁ hv₂ =>
+      cases hs with
+      | sandl hs' =>
+        obtain ⟨w, hc⟩ := ih₁ hv₁ hs'
+        exact ⟨w, Cast.cmrgl Ordinary.obrand hc⟩
+      | sandr hs' =>
+        obtain ⟨w, hc⟩ := ih₂ hv₂ hs'
+        exact ⟨w, Cast.cmrgr Ordinary.obrand hc⟩
+    | tmergevc _ _ _ _ _ _ _ _ _ ih₁ ih₂ _ =>
       intro hv hs
       cases hv with | vmrg hv₁ hv₂ =>
       cases hs with
@@ -962,7 +1010,17 @@ theorem cast_progress {A : Typ}
       | sandr hs' =>
         obtain ⟨w, hc⟩ := ih₂ hv₂ hs'
         exact ⟨w, Cast.cmrgr Ordinary.oarr hc⟩
-    | tmergev _ _ _ _ _ ih₁ ih₂ =>
+    | tmergev _ _ _ _ _ _ ih₁ ih₂ =>
+      intro hv hs
+      cases hv with | vmrg hv₁ hv₂ =>
+      cases hs with
+      | sandl hs' =>
+        obtain ⟨w, hc⟩ := ih₁ hv₁ hs'
+        exact ⟨w, Cast.cmrgl Ordinary.oarr hc⟩
+      | sandr hs' =>
+        obtain ⟨w, hc⟩ := ih₂ hv₂ hs'
+        exact ⟨w, Cast.cmrgr Ordinary.oarr hc⟩
+    | tmergevc _ _ _ _ _ _ _ _ _ ih₁ ih₂ _ =>
       intro hv hs
       cases hv with | vmrg hv₁ hv₂ =>
       cases hs with
@@ -1025,7 +1083,17 @@ theorem cast_progress {A : Typ}
       | sandr hs' =>
         obtain ⟨w, hc⟩ := ih₂ hv₂ hs'
         exact ⟨w, Cast.cmrgr Ordinary.orcd hc⟩
-    | tmergev _ _ _ _ _ ih₁ ih₂ =>
+    | tmergev _ _ _ _ _ _ ih₁ ih₂ =>
+      intro hv hs
+      cases hv with | vmrg hv₁ hv₂ =>
+      cases hs with
+      | sandl hs' =>
+        obtain ⟨w, hc⟩ := ih₁ hv₁ hs'
+        exact ⟨w, Cast.cmrgl Ordinary.orcd hc⟩
+      | sandr hs' =>
+        obtain ⟨w, hc⟩ := ih₂ hv₂ hs'
+        exact ⟨w, Cast.cmrgr Ordinary.orcd hc⟩
+    | tmergevc _ _ _ _ _ _ _ _ _ ih₁ ih₂ _ =>
       intro hv hs
       cases hv with | vmrg hv₁ hv₂ =>
       cases hs with
@@ -1070,7 +1138,17 @@ theorem cast_progress {A : Typ}
       | sandr hs' =>
         obtain ⟨w, hc⟩ := ihm₂ hv₂ hs'
         exact ⟨w, Cast.cmrgr Ordinary.oor hc⟩
-    | tmergev _ _ _ _ _ ihm₁ ihm₂ =>
+    | tmergev _ _ _ _ _ _ ihm₁ ihm₂ =>
+      intro hv hs
+      cases hv with | vmrg hv₁ hv₂ =>
+      cases hs with
+      | sandl hs' =>
+        obtain ⟨w, hc⟩ := ihm₁ hv₁ hs'
+        exact ⟨w, Cast.cmrgl Ordinary.oor hc⟩
+      | sandr hs' =>
+        obtain ⟨w, hc⟩ := ihm₂ hv₂ hs'
+        exact ⟨w, Cast.cmrgr Ordinary.oor hc⟩
+    | tmergevc _ _ _ _ _ _ _ _ _ ihm₁ ihm₂ _ =>
       intro hv hs
       cases hv with | vmrg hv₁ hv₂ =>
       cases hs with
@@ -1127,7 +1205,17 @@ theorem cast_progress {A : Typ}
       | sandr hs' =>
         obtain ⟨w, hc⟩ := ihm₂ hv₂ hs'
         exact ⟨w, Cast.cmrgr Ordinary.ovar hc⟩
-    | tmergev _ _ _ _ _ ihm₁ ihm₂ =>
+    | tmergev _ _ _ _ _ _ ihm₁ ihm₂ =>
+      intro hv hs
+      cases hv with | vmrg hv₁ hv₂ =>
+      cases hs with
+      | sandl hs' =>
+        obtain ⟨w, hc⟩ := ihm₁ hv₁ hs'
+        exact ⟨w, Cast.cmrgl Ordinary.ovar hc⟩
+      | sandr hs' =>
+        obtain ⟨w, hc⟩ := ihm₂ hv₂ hs'
+        exact ⟨w, Cast.cmrgr Ordinary.ovar hc⟩
+    | tmergevc _ _ _ _ _ _ _ _ _ ihm₁ ihm₂ _ =>
       intro hv hs
       cases hv with | vmrg hv₁ hv₂ =>
       cases hs with
@@ -1172,7 +1260,17 @@ theorem cast_progress {A : Typ}
       | sandr hs' =>
         obtain ⟨w, hc⟩ := ihm₂ hv₂ hs'
         exact ⟨w, Cast.cmrgr Ordinary.omu hc⟩
-    | tmergev _ _ _ _ _ ihm₁ ihm₂ =>
+    | tmergev _ _ _ _ _ _ ihm₁ ihm₂ =>
+      intro hv hs
+      cases hv with | vmrg hv₁ hv₂ =>
+      cases hs with
+      | sandl hs' =>
+        obtain ⟨w, hc⟩ := ihm₁ hv₁ hs'
+        exact ⟨w, Cast.cmrgl Ordinary.omu hc⟩
+      | sandr hs' =>
+        obtain ⟨w, hc⟩ := ihm₂ hv₂ hs'
+        exact ⟨w, Cast.cmrgr Ordinary.omu hc⟩
+    | tmergevc _ _ _ _ _ _ _ _ _ ihm₁ ihm₂ _ =>
       intro hv hs
       cases hv with | vmrg hv₁ hv₂ =>
       cases hs with

@@ -61,7 +61,11 @@ theorem sealv_progress {n : Nat} {R : Typ} : (S : Typ) → ∀ {Γ : Typ} {v : E
         obtain ⟨w₁, hw₁⟩ := sealv_progress A hv₁ h₁
         obtain ⟨w₂, hw₂⟩ := sealv_progress B hv₂ h₂
         exact ⟨_, SealV.and hw₁ hw₂⟩
-    | tmergev hv₁ hv₂ h₁ h₂ _ =>
+    | tmergev hv₁ hv₂ h₁ h₂ _ _ =>
+      obtain ⟨w₁, hw₁⟩ := sealv_progress A hv₁ h₁
+      obtain ⟨w₂, hw₂⟩ := sealv_progress B hv₂ h₂
+      exact ⟨_, SealV.and hw₁ hw₂⟩
+    | tmergevc hv₁ hv₂ h₁ h₂ _ _ _ _ _ =>
       obtain ⟨w₁, hw₁⟩ := sealv_progress A hv₁ h₁
       obtain ⟨w₂, hw₂⟩ := sealv_progress B hv₂ h₂
       exact ⟨_, SealV.and hw₁ hw₂⟩
@@ -159,7 +163,11 @@ theorem unsealv_progress {n : Nat} {R : Typ} : (S : Typ) → ∀ {Γ : Typ} {v :
         obtain ⟨w₁, hw₁⟩ := unsealv_progress A hv₁ h₁
         obtain ⟨w₂, hw₂⟩ := unsealv_progress B hv₂ h₂
         exact ⟨_, UnsealV.and hw₁ hw₂⟩
-    | tmergev hv₁ hv₂ h₁ h₂ _ =>
+    | tmergev hv₁ hv₂ h₁ h₂ _ _ =>
+      obtain ⟨w₁, hw₁⟩ := unsealv_progress A hv₁ h₁
+      obtain ⟨w₂, hw₂⟩ := unsealv_progress B hv₂ h₂
+      exact ⟨_, UnsealV.and hw₁ hw₂⟩
+    | tmergevc hv₁ hv₂ h₁ h₂ _ _ _ _ _ =>
       obtain ⟨w₁, hw₁⟩ := unsealv_progress A hv₁ h₁
       obtain ⟨w₂, hw₂⟩ := unsealv_progress B hv₂ h₂
       exact ⟨_, UnsealV.and hw₁ hw₂⟩
@@ -279,7 +287,8 @@ theorem gprogress {Γ A : Typ} {e : Exp} (ht : HasType Δ Γ e A)
         obtain ⟨e₂', hs'⟩ := hs
         exact Or.inr ⟨_, Step.smrgr hv hv₁ hs'⟩
       | inl hv₂ => exact Or.inl (Value.vmrg hv₁ hv₂)
-  | tmergev hv₁ hv₂ _ _ _ _ _ => exact Or.inl (Value.vmrg hv₁ hv₂)
+  | tmergev hv₁ hv₂ _ _ _ _ _ _ => exact Or.inl (Value.vmrg hv₁ hv₂)
+  | tmergevc hv₁ hv₂ _ _ _ _ _ _ _ _ _ _ => exact Or.inl (Value.vmrg hv₁ hv₂)
   | tlam _ _ _ => exact Or.inr ⟨_, Step.sclos hv⟩
   | tclos hu _ _ _ _ _ _ _ => exact Or.inl (Value.vclos hu)
   | tflam _ _ _ _ => exact Or.inr ⟨_, Step.sflam hv⟩

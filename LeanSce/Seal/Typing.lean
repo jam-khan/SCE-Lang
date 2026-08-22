@@ -82,11 +82,36 @@ inductive HasType : BrandStore → Typ → Exp → Typ → Prop where
     → Disj A Γ
     → Disj A B
     → HasType Δ Γ (.mrg e₁ e₂) (.and A B)
+  -- Runtime merges come in exactly two shapes, and the split records which.  tmergev is
+  -- the disjoint-components case (module composition): Disj is required so that merge
+  -- typing survives brand-variable instantiation — Consistent alone is not stable under
+  -- bsubst (two closures at `arr (bvar 0) Int` / `arr (brand n) Int` are consistent, but
+  -- instantiating β := n breaks it), while Disj will be, by the conservative COST rules
+  -- at brand variables.  Consistent is kept alongside (derivable via disjoint_consistent)
+  -- so inversions get cast-determinism at merges without a lemma cycle.
   | tmergev {Δ : BrandStore} {Γ A B : Typ} {v₁ v₂ : Exp}
     : Value v₁
     → Value v₂
     → HasType Δ .top v₁ A
     → HasType Δ .top v₂ B
+    → Disj A B
+    → Consistent v₁ v₂
+    → HasType Δ Γ (.mrg v₁ v₂) (.and A B)
+  -- The duplicated-value case: casting one value at `.and A B` (Casting-and) merges the
+  -- two casts of a COMMON origin, whose component types need not be disjoint
+  -- (`anno 3 (Int & Int)` steps to `mrg 3 3`).  Recording the origin — its typing and the
+  -- two casts — is what keeps this case stable under brand-variable instantiation: the
+  -- substituted components are casts of the substituted origin, so consistency is
+  -- rebuilt semantically (consistent_after_cast) rather than assumed.
+  | tmergevc {Δ : BrandStore} {Γ A B C : Typ} {v v₁ v₂ : Exp}
+    : Value v₁
+    → Value v₂
+    → HasType Δ .top v₁ A
+    → HasType Δ .top v₂ B
+    → Value v
+    → HasType Δ .top v C
+    → Cast v A v₁
+    → Cast v B v₂
     → Consistent v₁ v₂
     → HasType Δ Γ (.mrg v₁ v₂) (.and A B)
   | tlam {Δ : BrandStore} {Γ A B : Typ} {e : Exp}
@@ -200,7 +225,9 @@ theorem hastype_weaken_store {Δ Δ' : BrandStore} (hle : StoreLe Δ Δ') {Γ : 
   | trcd _ ih => exact HasType.trcd ih
   | trproj _ hl ih => exact HasType.trproj ih hl
   | tmrg _ _ hd₁ hd₂ ih₁ ih₂ => exact HasType.tmrg ih₁ ih₂ hd₁ hd₂
-  | tmergev hv₁ hv₂ _ _ hc ih₁ ih₂ => exact HasType.tmergev hv₁ hv₂ ih₁ ih₂ hc
+  | tmergev hv₁ hv₂ _ _ hd hc ih₁ ih₂ => exact HasType.tmergev hv₁ hv₂ ih₁ ih₂ hd hc
+  | tmergevc hv₁ hv₂ _ _ hv _ hc₁ hc₂ hc ih₁ ih₂ ih =>
+    exact HasType.tmergevc hv₁ hv₂ ih₁ ih₂ hv ih hc₁ hc₂ hc
   | tlam hd _ ih => exact HasType.tlam hd ih
   | tclos hv _ hd _ hs₁ hs₂ ih₁ ih₂ => exact HasType.tclos hv ih₁ hd ih₂ hs₁ hs₂
   | tanno _ hs ih => exact HasType.tanno ih hs
