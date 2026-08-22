@@ -7,6 +7,7 @@ import LeanSce.Seal.Casting
 import LeanSce.Seal.Typing
 import LeanSce.Seal.SmallStep
 import LeanSce.Seal.CastingLemmas
+import LeanSce.Seal.BrandSubst
 import LeanSce.Seal.Lookup
 import LeanSce.Seal.Determinism
 import LeanSce.Seal.Progress
