@@ -171,6 +171,13 @@ theorem sealv_preservation {n : Nat} {R : Typ} (hΔ : Δ n = some R) (hR : NoRes
   | var =>
     intro Γ hwf _ _
     nomatch hwf
+  -- WfSig has no bvar case (signatures are bvar-free), and no allb case yet.
+  | bvar =>
+    intro Γ hwf _ _
+    nomatch hwf
+  | allb =>
+    intro Γ hwf _ _
+    nomatch hwf
   | mu =>
     intro Γ hwf hv ht
     cases hwf with
@@ -259,6 +266,13 @@ theorem unsealv_preservation {n : Nat} {R : Typ} (hΔ : Δ n = some R) (hR : NoR
         cases ht with
         | tinr ht' => exact HasType.tinr (ih hwfB hv' ht')
   | var =>
+    intro Γ hwf _ _
+    nomatch hwf
+  -- WfSig has no bvar case (signatures are bvar-free), and no allb case yet.
+  | bvar =>
+    intro Γ hwf _ _
+    nomatch hwf
+  | allb =>
     intro Γ hwf _ _
     nomatch hwf
   | mu =>

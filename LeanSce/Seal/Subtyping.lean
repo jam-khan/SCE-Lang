@@ -37,6 +37,10 @@ inductive Sub : Typ → Typ → Prop where
   -- μ-types and their variables are opaque: subtypes only of themselves (and ε).
   | svar {n} : Sub (.var n) (.var n)
   | smu {T} : Sub (.mu T) (.mu T)
+  -- Brand variables and ∀-types: opaque, reflexive-only (the brand pattern) — a bvar
+  -- stands for an unknown concrete brand, and ∀-bodies admit no width/depth variance.
+  | sbvar {i} : Sub (.bvar i) (.bvar i)
+  | sallb {A} : Sub (.allb A) (.allb A)
 
 theorem sub_refl : (A : Typ) → Sub A A
   | .int => Sub.sint
@@ -48,6 +52,8 @@ theorem sub_refl : (A : Typ) → Sub A A
   | .or A B => Sub.sor (sub_refl A) (sub_refl B)
   | .var _ => Sub.svar
   | .mu _ => Sub.smu
+  | .bvar _ => Sub.sbvar
+  | .allb _ => Sub.sallb
 
 theorem sub_and_inv_l : {A B C : Typ} → Sub A (.and B C) → Sub A B
   | _, _, _, .sandl h => .sandl (sub_and_inv_l h)
@@ -78,6 +84,8 @@ theorem sub_toplike {A B : Typ} (htl : TopLike A) (h : Sub A B) : TopLike B := b
   | sor _ _ _ _ => nomatch htl
   | svar => exact htl
   | smu => exact htl
+  | sbvar => exact htl
+  | sallb => exact htl
 
 -- Peel the sandl/sandr chain of a derivation whose target is an arrow, handing the
 -- arrow-vs-arrow leaf to a continuation.
@@ -131,6 +139,8 @@ theorem sub_trans : {B A C : Typ} → Sub A B → Sub B C → Sub A C := by
     | or C₁ C₂ _ _ => intro _ h₂; nomatch h₂
     | var _ => intro _ h₂; nomatch h₂
     | mu _ _ => intro _ h₂; nomatch h₂
+    | bvar _ => intro _ h₂; nomatch h₂
+    | allb _ _ => intro _ h₂; nomatch h₂
     | and C₁ C₂ ihC₁ ihC₂ =>
       intro h₁ h₂
       exact Sub.sand (ihC₁ h₁ (sub_and_inv_l h₂)) (ihC₂ h₁ (sub_and_inv_r h₂))
@@ -145,6 +155,8 @@ theorem sub_trans : {B A C : Typ} → Sub A B → Sub B C → Sub A C := by
     | or C₁ C₂ _ _ => intro _ h₂; nomatch h₂
     | var _ => intro _ h₂; nomatch h₂
     | mu _ _ => intro _ h₂; nomatch h₂
+    | bvar _ => intro _ h₂; nomatch h₂
+    | allb _ _ => intro _ h₂; nomatch h₂
     | and C₁ C₂ ihC₁ ihC₂ =>
       intro h₁ h₂
       exact Sub.sand (ihC₁ h₁ (sub_and_inv_l h₂)) (ihC₂ h₁ (sub_and_inv_r h₂))
@@ -159,6 +171,8 @@ theorem sub_trans : {B A C : Typ} → Sub A B → Sub B C → Sub A C := by
     | brand _ => intro _ h₂; nomatch h₂
     | or C₁ C₂ _ _ => intro _ h₂; nomatch h₂
     | mu _ _ => intro _ h₂; nomatch h₂
+    | bvar _ => intro _ h₂; nomatch h₂
+    | allb _ _ => intro _ h₂; nomatch h₂
     | and C₁ C₂ ihC₁ ihC₂ =>
       intro h₁ h₂
       exact Sub.sand (ihC₁ h₁ (sub_and_inv_l h₂)) (ihC₂ h₁ (sub_and_inv_r h₂))
@@ -166,6 +180,8 @@ theorem sub_trans : {B A C : Typ} → Sub A B → Sub B C → Sub A C := by
     intro A C
     induction C with
     | mu _ _ => intro h₁ h₂; cases h₂; exact h₁
+    | bvar _ => intro _ h₂; nomatch h₂
+    | allb _ _ => intro _ h₂; nomatch h₂
     | top => intro _ _; exact Sub.stop
     | int => intro _ h₂; nomatch h₂
     | arr C₁ C₂ _ _ => intro _ h₂; nomatch h₂
@@ -173,6 +189,38 @@ theorem sub_trans : {B A C : Typ} → Sub A B → Sub B C → Sub A C := by
     | brand _ => intro _ h₂; nomatch h₂
     | or C₁ C₂ _ _ => intro _ h₂; nomatch h₂
     | var _ => intro _ h₂; nomatch h₂
+    | and C₁ C₂ ihC₁ ihC₂ =>
+      intro h₁ h₂
+      exact Sub.sand (ihC₁ h₁ (sub_and_inv_l h₂)) (ihC₂ h₁ (sub_and_inv_r h₂))
+  | bvar i =>
+    intro A C
+    induction C with
+    | bvar _ => intro h₁ h₂; cases h₂; exact h₁
+    | top => intro _ _; exact Sub.stop
+    | int => intro _ h₂; nomatch h₂
+    | arr C₁ C₂ _ _ => intro _ h₂; nomatch h₂
+    | rcd l C' _ => intro _ h₂; nomatch h₂
+    | brand _ => intro _ h₂; nomatch h₂
+    | or C₁ C₂ _ _ => intro _ h₂; nomatch h₂
+    | var _ => intro _ h₂; nomatch h₂
+    | mu _ _ => intro _ h₂; nomatch h₂
+    | allb _ _ => intro _ h₂; nomatch h₂
+    | and C₁ C₂ ihC₁ ihC₂ =>
+      intro h₁ h₂
+      exact Sub.sand (ihC₁ h₁ (sub_and_inv_l h₂)) (ihC₂ h₁ (sub_and_inv_r h₂))
+  | allb B' _ =>
+    intro A C
+    induction C with
+    | allb _ _ => intro h₁ h₂; cases h₂; exact h₁
+    | top => intro _ _; exact Sub.stop
+    | int => intro _ h₂; nomatch h₂
+    | arr C₁ C₂ _ _ => intro _ h₂; nomatch h₂
+    | rcd l C' _ => intro _ h₂; nomatch h₂
+    | brand _ => intro _ h₂; nomatch h₂
+    | or C₁ C₂ _ _ => intro _ h₂; nomatch h₂
+    | var _ => intro _ h₂; nomatch h₂
+    | mu _ _ => intro _ h₂; nomatch h₂
+    | bvar _ => intro _ h₂; nomatch h₂
     | and C₁ C₂ ihC₁ ihC₂ =>
       intro h₁ h₂
       exact Sub.sand (ihC₁ h₁ (sub_and_inv_l h₂)) (ihC₂ h₁ (sub_and_inv_r h₂))
@@ -218,6 +266,16 @@ theorem sub_trans : {B A C : Typ} → Sub A B → Sub B C → Sub A C := by
       cases h₂ with
       | sandl hp => exact ihB₁ (sub_and_inv_l h₁) hp
       | sandr hp => exact ihB₂ (sub_and_inv_r h₁) hp
+    | bvar _ =>
+      intro h₁ h₂
+      cases h₂ with
+      | sandl hp => exact ihB₁ (sub_and_inv_l h₁) hp
+      | sandr hp => exact ihB₂ (sub_and_inv_r h₁) hp
+    | allb _ _ =>
+      intro h₁ h₂
+      cases h₂ with
+      | sandl hp => exact ihB₁ (sub_and_inv_l h₁) hp
+      | sandr hp => exact ihB₂ (sub_and_inv_r h₁) hp
   | arr B₁ B₂ ihB₁ ihB₂ =>
     intro A C
     induction C with
@@ -231,6 +289,8 @@ theorem sub_trans : {B A C : Typ} → Sub A B → Sub B C → Sub A C := by
     | or C₁ C₂ _ _ => intro _ h₂; nomatch h₂
     | var _ => intro _ h₂; nomatch h₂
     | mu _ _ => intro _ h₂; nomatch h₂
+    | bvar _ => intro _ h₂; nomatch h₂
+    | allb _ _ => intro _ h₂; nomatch h₂
     | arr C₁ C₂ _ _ =>
       intro h₁ h₂
       cases h₂ with
@@ -251,6 +311,8 @@ theorem sub_trans : {B A C : Typ} → Sub A B → Sub B C → Sub A C := by
     | or C₁ C₂ _ _ => intro _ h₂; nomatch h₂
     | var _ => intro _ h₂; nomatch h₂
     | mu _ _ => intro _ h₂; nomatch h₂
+    | bvar _ => intro _ h₂; nomatch h₂
+    | allb _ _ => intro _ h₂; nomatch h₂
     | rcd l' C' _ =>
       intro h₁ h₂
       cases h₂ with
@@ -271,6 +333,8 @@ theorem sub_trans : {B A C : Typ} → Sub A B → Sub B C → Sub A C := by
     | rcd l C' _ => intro _ h₂; nomatch h₂
     | var _ => intro _ h₂; nomatch h₂
     | mu _ _ => intro _ h₂; nomatch h₂
+    | bvar _ => intro _ h₂; nomatch h₂
+    | allb _ _ => intro _ h₂; nomatch h₂
     | or C₁ C₂ _ _ =>
       intro h₁ h₂
       cases h₂ with

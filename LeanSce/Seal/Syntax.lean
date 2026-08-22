@@ -26,6 +26,12 @@ inductive Typ where
   -- (Amber-style width/depth subtyping under μ is future work.)
   | var   : Nat → Typ
   | mu    : Typ → Typ
+  -- Brand polymorphism.  `bvar i` is a brand VARIABLE (de Bruijn, bound by the nearest
+  -- `allb`) — a namespace separate from both `var` (μ) and `brand` (concrete names).
+  -- Instantiation substitutes a CLOSED `brand n`, so no shifting is ever needed (the
+  -- `var`/μ trick).  `allb A` is ∀β. A.
+  | bvar  : Nat → Typ
+  | allb  : Typ → Typ
   deriving Repr
 
 -- The private brand store: `Δ n = some R` means the sealing unit knows α_n ≈ R.  Clients
@@ -48,6 +54,9 @@ def substBrand (n : Nat) (R : Typ) : Typ → Typ
   -- Brands and μ's de Bruijn variables live in separate namespaces: no capture.
   | .var m     => .var m
   | .mu T      => .mu (substBrand n R T)
+  -- Brand variables are a third namespace: substBrand replaces only concrete brands.
+  | .bvar i    => .bvar i
+  | .allb A    => .allb (substBrand n R A)
 
 -- `substTyp d S T` replaces var d by S in T (S is closed, so no shifting) — the
 -- μ-unfolding substitution.
@@ -61,6 +70,40 @@ def substTyp (d : Nat) (S : Typ) : Typ → Typ
   | .or A B    => .or (substTyp d S A) (substTyp d S B)
   | .var m     => if m = d then S else .var m
   | .mu T      => .mu (substTyp (d + 1) S T)
+  -- μ-vars and brand variables never interact: allb binds bvars, not vars — no bump.
+  | .bvar i    => .bvar i
+  | .allb A    => .allb (substTyp d S A)
+
+-- `bsubst d n T` replaces the brand variable `bvar d` by the CONCRETE `brand n` in `T` —
+-- the ∀β-instantiation substitution.  The substitutend is closed, so no shifting (the
+-- substTyp/μ trick); `d` bumps only under `allb` (μ binds `var`, not bvars).
+def bsubst (d n : Nat) : Typ → Typ
+  | .int       => .int
+  | .top       => .top
+  | .arr A B   => .arr (bsubst d n A) (bsubst d n B)
+  | .and A B   => .and (bsubst d n A) (bsubst d n B)
+  | .rcd l A   => .rcd l (bsubst d n A)
+  | .brand m   => .brand m
+  | .or A B    => .or (bsubst d n A) (bsubst d n B)
+  | .var m     => .var m
+  | .mu T      => .mu (bsubst d n T)
+  | .bvar i    => if i = d then .brand n else .bvar i
+  | .allb A    => .allb (bsubst (d + 1) n A)
+
+-- `HasBVar T`: some brand variable occurs in `T` (ANY index — index-blind on purpose:
+-- it feeds the conservative COST rules and the bsubst-invariance side conditions, both
+-- of which quantify over every possible instantiation depth).
+inductive HasBVar : Typ → Prop where
+  | bvar {i}      : HasBVar (.bvar i)
+  | arrl {A B}    : HasBVar A → HasBVar (.arr A B)
+  | arrr {A B}    : HasBVar B → HasBVar (.arr A B)
+  | andl {A B}    : HasBVar A → HasBVar (.and A B)
+  | andr {A B}    : HasBVar B → HasBVar (.and A B)
+  | rcd {l A}     : HasBVar A → HasBVar (.rcd l A)
+  | orl {A B}     : HasBVar A → HasBVar (.or A B)
+  | orr {A B}     : HasBVar B → HasBVar (.or A B)
+  | mu {T}        : HasBVar T → HasBVar (.mu T)
+  | allb {A}      : HasBVar A → HasBVar (.allb A)
 
 -- Expressions.  Deviation from λE (forced, see DESIGN.md (f)): lambdas and closures carry
 -- the codomain annotation, because Casting-arrow must check and rewrite it and beta must
@@ -107,7 +150,45 @@ inductive Exp where
   -- there is no subsumption to absorb a widened self-entry.
   | flam   : Typ → Typ → Exp → Exp
   | fclos  : Exp → Typ → Typ → Typ → Exp → Exp
+  -- Brand polymorphism: `blam e` abstracts over a brand (∀β-introduction; steps to
+  -- `bclos ρ e`, capturing the ambient environment — the lam→clos pattern), and
+  -- `bapp e n` instantiates at the concrete brand n.
+  | blam   : Exp → Exp
+  | bclos  : Exp → Exp → Exp
+  | bapp   : Exp → Nat → Exp
   deriving Repr
+
+-- `bsubstExp d n e` pushes the ∀β-instantiation into every type annotation of `e`,
+-- bumping `d` under `blam`/`bclos` (their bodies sit under one more brand binder).
+def bsubstExp (d n : Nat) : Exp → Exp
+  | .query        => .query
+  | .proj e k     => .proj (bsubstExp d n e) k
+  | .lit k        => .lit k
+  | .unit         => .unit
+  | .lam A B e    => .lam (bsubst d n A) (bsubst d n B) (bsubstExp d n e)
+  | .box e₁ e₂    => .box (bsubstExp d n e₁) (bsubstExp d n e₂)
+  | .clos v A B e => .clos (bsubstExp d n v) (bsubst d n A) (bsubst d n B) (bsubstExp d n e)
+  | .app e₁ e₂    => .app (bsubstExp d n e₁) (bsubstExp d n e₂)
+  | .mrg e₁ e₂    => .mrg (bsubstExp d n e₁) (bsubstExp d n e₂)
+  | .lrec l e     => .lrec l (bsubstExp d n e)
+  | .rproj e l    => .rproj (bsubstExp d n e) l
+  | .anno e A     => .anno (bsubstExp d n e) (bsubst d n A)
+  | .wrap m v     => .wrap m (bsubstExp d n v)
+  | .seal m R S e   => .seal m (bsubst d n R) (bsubst d n S) (bsubstExp d n e)
+  | .unseal m R S e => .unseal m (bsubst d n R) (bsubst d n S) (bsubstExp d n e)
+  | .inl B e      => .inl (bsubst d n B) (bsubstExp d n e)
+  | .inr A e      => .inr (bsubst d n A) (bsubstExp d n e)
+  | .case e e₁ e₂ => .case (bsubstExp d n e) (bsubstExp d n e₁) (bsubstExp d n e₂)
+  | .fold T e     => .fold (bsubst d n T) (bsubstExp d n e)
+  | .unfold e     => .unfold (bsubstExp d n e)
+  | .flam A B e   => .flam (bsubst d n A) (bsubst d n B) (bsubstExp d n e)
+  | .fclos v A B Bx e =>
+    .fclos (bsubstExp d n v) (bsubst d n A) (bsubst d n B) (bsubst d n Bx) (bsubstExp d n e)
+  | .blam e       => .blam (bsubstExp (d + 1) n e)
+  -- The captured environment was the AMBIENT value at capture time — it sits outside
+  -- the binder, so it substitutes at d; only the body is one binder deeper.
+  | .bclos ρ e    => .bclos (bsubstExp d n ρ) (bsubstExp (d + 1) n e)
+  | .bapp e m     => .bapp (bsubstExp d n e) m
 
 inductive Value : Exp → Prop where
   | vint  {n}       : Value (.lit n)
@@ -120,12 +201,16 @@ inductive Value : Exp → Prop where
   | vinr  {v A}     : Value v → Value (.inr A v)
   | vfold {v T}     : Value v → Value (.fold T v)
   | vfclos {v A B Bx e} : Value v → Value (.fclos v A B Bx e)
+  | vbclos {ρ e}    : Value ρ → Value (.bclos ρ e)
 
 theorem value_clos_env {v : Exp} {A B : Typ} {e : Exp} (h : Value (.clos v A B e))
     : Value v := by cases h with | vclos h' => exact h'
 
 theorem value_fclos_env {v : Exp} {A B Bx : Typ} {e : Exp} (h : Value (.fclos v A B Bx e))
     : Value v := by cases h with | vfclos h' => exact h'
+
+theorem value_bclos_env {ρ e : Exp} (h : Value (.bclos ρ e)) : Value ρ := by
+  cases h with | vbclos h' => exact h'
 
 theorem value_inl_payload {v : Exp} {B : Typ} (h : Value (.inl B v)) : Value v := by
   cases h with | vinl h' => exact h'
@@ -205,6 +290,8 @@ inductive Ordinary : Typ → Prop where
   | oor {A B}    : Ordinary (.or A B)
   | ovar {n}     : Ordinary (.var n)
   | omu {T}      : Ordinary (.mu T)
+  | obvar {i}    : Ordinary (.bvar i)
+  | oallb {A}    : Ordinary (.allb A)
 
 -- Top-like types ⌉A⌈ (Eᵢ, with ε playing Top).
 inductive TopLike : Typ → Prop where
@@ -225,6 +312,8 @@ def genVal : Typ → Exp
   | .or _ _  => .unit
   | .var _   => .unit
   | .mu _    => .unit
+  | .bvar _  => .unit
+  | .allb _  => .unit
 
 theorem genVal_value : (A : Typ) → Value (genVal A)
   | .int     => Value.vunit
@@ -236,6 +325,8 @@ theorem genVal_value : (A : Typ) → Value (genVal A)
   | .or _ _  => Value.vunit
   | .var _   => Value.vunit
   | .mu _    => Value.vunit
+  | .bvar _  => Value.vunit
+  | .allb _  => Value.vunit
 
 -- Top-likeness is decidable (constructively, by inversion at each shape).
 theorem toplike_dec : (A : Typ) → TopLike A ∨ ¬ TopLike A
@@ -244,6 +335,8 @@ theorem toplike_dec : (A : Typ) → TopLike A ∨ ¬ TopLike A
   | .or _ _ => Or.inr (fun h => nomatch h)
   | .var _ => Or.inr (fun h => nomatch h)
   | .mu _ => Or.inr (fun h => nomatch h)
+  | .bvar _ => Or.inr (fun h => nomatch h)
+  | .allb _ => Or.inr (fun h => nomatch h)
   | .top => Or.inl TopLike.tltop
   | .arr _ B =>
     match toplike_dec B with

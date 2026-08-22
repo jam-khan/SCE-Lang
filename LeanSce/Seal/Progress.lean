@@ -34,6 +34,8 @@ theorem sealv_progress {n : Nat} {R : Typ} : (S : Typ) → ∀ {Γ : Typ} {v : E
   | .arr _ _, _, _, _, _ => ⟨_, SealV.arr⟩
   | .var _, _, _, _, _ => ⟨_, SealV.var⟩
   | .mu _, _, _, _, _ => ⟨_, SealV.mu⟩
+  | .bvar _, _, _, _, _ => ⟨_, SealV.bvar⟩
+  | .allb _, _, _, _, _ => ⟨_, SealV.allb⟩
   | .rcd l A, _, _, hv, ht => by
     simp only [substBrand] at ht
     cases ht with
@@ -138,6 +140,8 @@ theorem unsealv_progress {n : Nat} {R : Typ} : (S : Typ) → ∀ {Γ : Typ} {v :
   | .arr _ _, _, _, _, _ => ⟨_, UnsealV.arr⟩
   | .var _, _, _, _, _ => ⟨_, UnsealV.var⟩
   | .mu _, _, _, _, _ => ⟨_, UnsealV.mu⟩
+  | .bvar _, _, _, _, _ => ⟨_, UnsealV.bvar⟩
+  | .allb _, _, _, _, _ => ⟨_, UnsealV.allb⟩
   | .rcd l A, _, _, hv, ht => by
     cases ht with
     | trcd h =>

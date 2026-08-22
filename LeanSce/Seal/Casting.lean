@@ -70,6 +70,10 @@ inductive Cast : Exp → Typ → Exp → Prop where
     → Sub C A
     → Sub Bx D
     → Cast (.fclos v A B Bx e) (.arr C D) (.clos .unit C D (genVal D))
+  -- Casting at a ∀-type is the identity on brand closures (the cwrap/cfold pattern):
+  -- ∀ is opaque, subtyping at it is reflexive only, and the closure is untouched.
+  | cbclos {ρ e A}
+    : Cast (.bclos ρ e) (.allb A) (.bclos ρ e)
 
 -- Eᵢ Definition 3.
 def Consistent (v₁ v₂ : Exp) : Prop :=
@@ -91,6 +95,7 @@ theorem cast_value {v : Exp} {A : Typ} {w : Exp} (hv : Value v) (h : Cast v A w)
   | cfold => exact hv
   | cfarrow _ _ _ => cases hv with | vfclos hv' => exact Value.vfclos hv'
   | cfarrowtl _ _ _ => exact Value.vclos Value.vunit
+  | cbclos => exact hv
 
 -- Casting at a top-like type always yields the canonical generated value — the collapse
 -- that keeps casting deterministic at top-like targets (Eᵢ's Casting-arrowtl rationale).
@@ -115,5 +120,6 @@ theorem cast_toplike_gen {v : Exp} {A : Typ} {w : Exp} (htl : TopLike A) (h : Ca
   | cfold => nomatch htl
   | cfarrow hntl _ _ => cases htl with | tlarr hD => exact absurd hD hntl
   | cfarrowtl _ _ _ => rfl
+  | cbclos => nomatch htl
 
 end Seal

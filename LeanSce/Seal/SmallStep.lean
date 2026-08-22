@@ -53,6 +53,12 @@ inductive SealV (n : Nat) (R : Typ) : Typ → Exp → Exp → Prop where
     : SealV n R (.var m) v v
   | mu {T v}
     : SealV n R (.mu T) v v
+  -- Brand variables and ∀ are opaque to sealing, exactly like var/μ: WfSig admits
+  -- ∀-signatures only brand-free (and never a bvar leaf), so identity is type-correct.
+  | bvar {i v}
+    : SealV n R (.bvar i) v v
+  | allb {A v}
+    : SealV n R (.allb A) v v
 
 -- UnsealV n R S v w: the converse coercion S ⇒ S[n:=R].
 inductive UnsealV (n : Nat) (R : Typ) : Typ → Exp → Exp → Prop where
@@ -86,6 +92,10 @@ inductive UnsealV (n : Nat) (R : Typ) : Typ → Exp → Exp → Prop where
     : UnsealV n R (.var m) v v
   | mu {T v}
     : UnsealV n R (.mu T) v v
+  | bvar {i v}
+    : UnsealV n R (.bvar i) v v
+  | allb {A v}
+    : UnsealV n R (.allb A) v v
 
 inductive Step : Exp → Exp → Exp → Prop where
   | squery {v}
@@ -267,6 +277,7 @@ theorem value_not_step {e : Exp} (hv : Value e) : ∀ {v e' : Exp}, Step v e e' 
   | vinr _ ih => intro _ _ h; cases h with | sinr _ hs => exact ih hs
   | vfold _ ih => intro _ _ h; cases h with | sfold _ hs => exact ih hs
   | vfclos _ => intro _ _ h; nomatch h
+  | vbclos _ => intro _ _ h; nomatch h
 
 -- The coercions produce values from values.
 theorem sealv_value {n : Nat} {R S : Typ} {v w : Exp} (hv : Value v) (h : SealV n R S v w)
@@ -283,6 +294,8 @@ theorem sealv_value {n : Nat} {R S : Typ} {v w : Exp} (hv : Value v) (h : SealV 
   | inr _ ih => cases hv with | vinr h' => exact Value.vinr (ih h')
   | var => exact hv
   | mu => exact hv
+  | bvar => exact hv
+  | allb => exact hv
 
 theorem unsealv_value {n : Nat} {R S : Typ} {v w : Exp} (hv : Value v) (h : UnsealV n R S v w)
     : Value w := by
@@ -298,6 +311,8 @@ theorem unsealv_value {n : Nat} {R S : Typ} {v w : Exp} (hv : Value v) (h : Unse
   | inr _ ih => cases hv with | vinr h' => exact Value.vinr (ih h')
   | var => exact hv
   | mu => exact hv
+  | bvar => exact hv
+  | allb => exact hv
 
 -- The coercions are deterministic as relations (no typing needed: the shape of the
 -- source type picks the rule).
@@ -315,6 +330,8 @@ theorem sealv_det {n : Nat} {R S : Typ} {v w₁ : Exp} (h₁ : SealV n R S v w�
   | inr _ ih => intro _ h₂; cases h₂ with | inr a => rw [ih a]
   | var => intro _ h₂; cases h₂; rfl
   | mu => intro _ h₂; cases h₂; rfl
+  | bvar => intro _ h₂; cases h₂; rfl
+  | allb => intro _ h₂; cases h₂; rfl
 
 theorem unsealv_det {n : Nat} {R S : Typ} {v w₁ : Exp} (h₁ : UnsealV n R S v w₁)
     : ∀ {w₂ : Exp}, UnsealV n R S v w₂ → w₁ = w₂ := by
@@ -330,6 +347,8 @@ theorem unsealv_det {n : Nat} {R S : Typ} {v w₁ : Exp} (h₁ : UnsealV n R S v
   | inr _ ih => intro _ h₂; cases h₂ with | inr a => rw [ih a]
   | var => intro _ h₂; cases h₂; rfl
   | mu => intro _ h₂; cases h₂; rfl
+  | bvar => intro _ h₂; cases h₂; rfl
+  | allb => intro _ h₂; cases h₂; rfl
 
 theorem mstep_value_eq {v e e' : Exp} (hv : Value e) (h : MStep v e e') : e = e' := by
   cases h with

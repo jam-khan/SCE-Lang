@@ -90,6 +90,13 @@ def LRg (Δ₁ Δ₂ : BrandStore) (η : Nat → Exp → Exp → Prop) (o : Bran
   | .mu T, v₁, v₂ =>
       Value v₁ ∧ Value v₂ ∧
       HasType Δ₁ .top v₁ (viewL o (.mu T)) ∧ HasType Δ₂ .top v₂ (viewR o (.mu T)) ∧ v₁ = v₂
+  -- Brand variables never close-type a value (like μ-vars).  ∀ is opaque to the relation
+  -- for now, exactly like μ: the real ∀-clause quantifying over η-extensions is the
+  -- relational milestone (HANDOFF §3.7, milestone 4).
+  | .bvar _, _, _ => False
+  | .allb A, v₁, v₂ =>
+      Value v₁ ∧ Value v₂ ∧
+      HasType Δ₁ .top v₁ (viewL o (.allb A)) ∧ HasType Δ₂ .top v₂ (viewR o (.allb A)) ∧ v₁ = v₂
 
 -- The client-facing relation: every brand abstract.
 abbrev LR (Δ₁ Δ₂ : BrandStore) (η : Nat → Exp → Exp → Prop) : Typ → Exp → Exp → Prop :=
@@ -132,6 +139,10 @@ theorem viewL_mu {o : BrandOpen} {T : Typ} : viewL o (.mu T) = .mu (viewL o T) :
   cases o with | none => rfl | some p => rfl
 theorem viewR_mu {o : BrandOpen} {T : Typ} : viewR o (.mu T) = .mu (viewR o T) := by
   cases o with | none => rfl | some p => rfl
+theorem viewL_allb {o : BrandOpen} {A : Typ} : viewL o (.allb A) = .allb (viewL o A) := by
+  cases o with | none => rfl | some p => rfl
+theorem viewR_allb {o : BrandOpen} {A : Typ} : viewR o (.allb A) = .allb (viewR o A) := by
+  cases o with | none => rfl | some p => rfl
 
 -- Substitution preserves subtyping (brands are subtypes only of themselves and ε).
 theorem sub_subst {n : Nat} {R : Typ} {A B : Typ} (h : Sub A B)
@@ -148,6 +159,8 @@ theorem sub_subst {n : Nat} {R : Typ} {A B : Typ} (h : Sub A B)
   | sor _ _ ih₁ ih₂ => exact Sub.sor ih₁ ih₂
   | svar => exact sub_refl _
   | smu => exact sub_refl _
+  | sbvar => exact sub_refl _
+  | sallb => exact sub_refl _
 
 theorem sub_viewL {o : BrandOpen} {A B : Typ} (h : Sub A B) : Sub (viewL o A) (viewL o B) := by
   cases o with
@@ -248,6 +261,8 @@ theorem lr_value {o : BrandOpen} : {T : Typ} → {v₁ v₂ : Exp} → LRg Δ₁
       exact ⟨Value.vinr (lr_value hB).1, Value.vinr (lr_value hB).2⟩
   | .var _, _, _, h => h.elim
   | .mu T, _, _, h => ⟨h.1, h.2.1⟩
+  | .bvar _, _, _, h => h.elim
+  | .allb _, _, _, h => ⟨h.1, h.2.1⟩
 
 theorem lr_typed {o : BrandOpen} : {T : Typ} → {v₁ v₂ : Exp} → LRg Δ₁ Δ₂ η o T v₁ v₂
     → HasType Δ₁ .top v₁ (viewL o T) ∧ HasType Δ₂ .top v₂ (viewR o T)
@@ -286,6 +301,8 @@ theorem lr_typed {o : BrandOpen} : {T : Typ} → {v₁ v₂ : Exp} → LRg Δ₁
       exact ⟨HasType.tinr (lr_typed hB).1, HasType.tinr (lr_typed hB).2⟩
   | .var _, _, _, h => h.elim
   | .mu T, _, _, h => ⟨h.2.2.1, h.2.2.2.1⟩
+  | .bvar _, _, _, h => h.elim
+  | .allb _, _, _, h => ⟨h.2.2.1, h.2.2.2.1⟩
 
 -- ── MStep congruence toolkit ─────────────────────────────────────────────────────────
 
@@ -566,6 +583,12 @@ theorem cast_merge_eq_l {a b : Exp} {Γ B₁ B₂ : Typ} : ∀ {T : Typ} {w w' :
   | mu _ _ =>
     intro w w' hv ht hc hc'
     exact cast_merge_eq_l_ord Ordinary.omu hv ht hc hc'
+  | bvar _ =>
+    intro w w' hv ht hc hc'
+    exact cast_merge_eq_l_ord Ordinary.obvar hv ht hc hc'
+  | allb _ _ =>
+    intro w w' hv ht hc hc'
+    exact cast_merge_eq_l_ord Ordinary.oallb hv ht hc hc'
 
 theorem cast_merge_eq_r_ord {a b : Exp} {Γ B₁ B₂ T : Typ} {w w' : Exp}
     (hord : Ordinary T) (hv : Value (.mrg a b)) (ht : HasType Δ Γ (.mrg a b) (.and B₁ B₂))
@@ -632,6 +655,12 @@ theorem cast_merge_eq_r {a b : Exp} {Γ B₁ B₂ : Typ} : ∀ {T : Typ} {w w' :
   | mu _ _ =>
     intro w w' hv ht hc hc'
     exact cast_merge_eq_r_ord Ordinary.omu hv ht hc hc'
+  | bvar _ =>
+    intro w w' hv ht hc hc'
+    exact cast_merge_eq_r_ord Ordinary.obvar hv ht hc hc'
+  | allb _ _ =>
+    intro w w' hv ht hc hc'
+    exact cast_merge_eq_r_ord Ordinary.oallb hv ht hc hc'
 
 -- ── The generator is self-related at top-like types ──────────────────────────────────
 
@@ -693,6 +722,13 @@ theorem toplike_lr_gen {o : BrandOpen} (hadm : OpenAdm η o) {D : Typ} (htl : To
 theorem cast_mu_id {Δ' : BrandStore} : {v w : Exp} → {T : Typ} → {Γ : Typ} → Cast v (.mu T) w
     → Value v → HasType Δ' Γ v (.mu T) → w = v
   | _, _, _, _, .cfold, _, _ => rfl
+  | _, _, _, _, .cmrgl _ _, _, ht => absurd ht (by intro h; nomatch h)
+  | _, _, _, _, .cmrgr _ _, _, ht => absurd ht (by intro h; nomatch h)
+
+-- Casting at a ∀-type is the identity on ∀-typed values (the same argument).
+theorem cast_allb_id {Δ' : BrandStore} : {v w : Exp} → {A : Typ} → {Γ : Typ}
+    → Cast v (.allb A) w → Value v → HasType Δ' Γ v (.allb A) → w = v
+  | _, _, _, _, .cbclos, _, _ => rfl
   | _, _, _, _, .cmrgl _ _, _, ht => absurd ht (by intro h; nomatch h)
   | _, _, _, _, .cmrgr _ _, _, ht => absurd ht (by intro h; nomatch h)
 
@@ -796,6 +832,13 @@ theorem cast_lr {o : BrandOpen} (hadm : OpenAdm η o) {B A : Typ} (hs : Sub B A)
     rw [viewL_mu] at c₁ ht₁; rw [viewR_mu] at c₂ ht₂
     rw [cast_mu_id c₁ hv₁ ht₁, cast_mu_id c₂ hv₂ ht₂]
     exact ⟨hv₁, hv₂, by rw [viewL_mu]; exact ht₁, by rw [viewR_mu]; exact ht₂, rfl⟩
+  | sbvar => exact hlr.elim
+  | sallb =>
+    obtain ⟨hv₁, hv₂, ht₁, ht₂, heq⟩ := hlr
+    subst heq
+    rw [viewL_allb] at c₁ ht₁; rw [viewR_allb] at c₂ ht₂
+    rw [cast_allb_id c₁ hv₁ ht₁, cast_allb_id c₂ hv₂ ht₂]
+    exact ⟨hv₁, hv₂, by rw [viewL_allb]; exact ht₁, by rw [viewR_allb]; exact ht₂, rfl⟩
   | sor hsA hsB ihA ihB =>
     rw [viewL_or] at c₁; rw [viewR_or] at c₂
     cases hlr with
