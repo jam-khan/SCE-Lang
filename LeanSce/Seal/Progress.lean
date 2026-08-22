@@ -24,8 +24,8 @@ theorem sealv_progress {n : Nat} {R : Typ} : (S : Typ) → ∀ {Γ : Typ} {v : E
     | tanno _ _ => nomatch hv
     | tcase _ _ _ _ _ => nomatch hv
     | tunfold _ _ => nomatch hv
-    | tseal _ _ _ _ => nomatch hv
-    | tunseal _ _ _ _ _ => nomatch hv
+    | tseal _ _ _ _ _ => nomatch hv
+    | tunseal _ _ _ _ _ _ => nomatch hv
   | .top, _, _, _, _ => ⟨_, SealV.top⟩
   | .brand m, _, _, _, _ => by
     by_cases h : m = n
@@ -52,8 +52,8 @@ theorem sealv_progress {n : Nat} {R : Typ} : (S : Typ) → ∀ {Γ : Typ} {v : E
     | tanno _ _ => nomatch hv
     | tcase _ _ _ _ _ => nomatch hv
     | tunfold _ _ => nomatch hv
-    | tseal _ _ _ _ => nomatch hv
-    | tunseal _ _ _ _ _ => nomatch hv
+    | tseal _ _ _ _ _ => nomatch hv
+    | tunseal _ _ _ _ _ _ => nomatch hv
   | .and A B, _, _, hv, ht => by
     simp only [substBrand] at ht
     cases ht with
@@ -79,8 +79,8 @@ theorem sealv_progress {n : Nat} {R : Typ} : (S : Typ) → ∀ {Γ : Typ} {v : E
     | tanno _ _ => nomatch hv
     | tcase _ _ _ _ _ => nomatch hv
     | tunfold _ _ => nomatch hv
-    | tseal _ _ _ _ => nomatch hv
-    | tunseal _ _ _ _ _ => nomatch hv
+    | tseal _ _ _ _ _ => nomatch hv
+    | tunseal _ _ _ _ _ _ => nomatch hv
   | .or A B, _, _, hv, ht => by
     simp only [substBrand] at ht
     cases ht with
@@ -102,8 +102,8 @@ theorem sealv_progress {n : Nat} {R : Typ} : (S : Typ) → ∀ {Γ : Typ} {v : E
     | tanno _ _ => nomatch hv
     | tcase _ _ _ _ _ => nomatch hv
     | tunfold _ _ => nomatch hv
-    | tseal _ _ _ _ => nomatch hv
-    | tunseal _ _ _ _ _ => nomatch hv
+    | tseal _ _ _ _ _ => nomatch hv
+    | tunseal _ _ _ _ _ _ => nomatch hv
 
 theorem unsealv_progress {n : Nat} {R : Typ} : (S : Typ) → ∀ {Γ : Typ} {v : Exp},
     Value v → HasType Δ Γ v S → ∃ w, UnsealV n R S v w
@@ -118,8 +118,8 @@ theorem unsealv_progress {n : Nat} {R : Typ} : (S : Typ) → ∀ {Γ : Typ} {v :
     | tanno _ _ => nomatch hv
     | tcase _ _ _ _ _ => nomatch hv
     | tunfold _ _ => nomatch hv
-    | tseal _ _ _ _ => nomatch hv
-    | tunseal _ _ _ _ _ => nomatch hv
+    | tseal _ _ _ _ _ => nomatch hv
+    | tunseal _ _ _ _ _ _ => nomatch hv
   | .top, _, _, _, _ => ⟨_, UnsealV.top⟩
   | .brand m, _, _, hv, ht => by
     by_cases h : m = n
@@ -134,8 +134,8 @@ theorem unsealv_progress {n : Nat} {R : Typ} : (S : Typ) → ∀ {Γ : Typ} {v :
       | tanno _ _ => nomatch hv
       | tcase _ _ _ _ _ => nomatch hv
       | tunfold _ _ => nomatch hv
-      | tseal _ _ _ _ => nomatch hv
-      | tunseal _ _ _ _ _ => nomatch hv
+      | tseal _ _ _ _ _ => nomatch hv
+      | tunseal _ _ _ _ _ _ => nomatch hv
     · exact ⟨_, UnsealV.brand_ne h⟩
   | .arr _ _, _, _, _, _ => ⟨_, UnsealV.arr⟩
   | .var _, _, _, _, _ => ⟨_, UnsealV.var⟩
@@ -157,8 +157,8 @@ theorem unsealv_progress {n : Nat} {R : Typ} : (S : Typ) → ∀ {Γ : Typ} {v :
     | tanno _ _ => nomatch hv
     | tcase _ _ _ _ _ => nomatch hv
     | tunfold _ _ => nomatch hv
-    | tseal _ _ _ _ => nomatch hv
-    | tunseal _ _ _ _ _ => nomatch hv
+    | tseal _ _ _ _ _ => nomatch hv
+    | tunseal _ _ _ _ _ _ => nomatch hv
   | .and A B, _, _, hv, ht => by
     cases ht with
     | tmrg h₁ h₂ _ _ =>
@@ -183,8 +183,8 @@ theorem unsealv_progress {n : Nat} {R : Typ} : (S : Typ) → ∀ {Γ : Typ} {v :
     | tanno _ _ => nomatch hv
     | tcase _ _ _ _ _ => nomatch hv
     | tunfold _ _ => nomatch hv
-    | tseal _ _ _ _ => nomatch hv
-    | tunseal _ _ _ _ _ => nomatch hv
+    | tseal _ _ _ _ _ => nomatch hv
+    | tunseal _ _ _ _ _ _ => nomatch hv
   | .or A B, _, _, hv, ht => by
     cases ht with
     | tinl h =>
@@ -205,8 +205,8 @@ theorem unsealv_progress {n : Nat} {R : Typ} : (S : Typ) → ∀ {Γ : Typ} {v :
     | tanno _ _ => nomatch hv
     | tcase _ _ _ _ _ => nomatch hv
     | tunfold _ _ => nomatch hv
-    | tseal _ _ _ _ => nomatch hv
-    | tunseal _ _ _ _ _ => nomatch hv
+    | tseal _ _ _ _ _ => nomatch hv
+    | tunseal _ _ _ _ _ _ => nomatch hv
 
 theorem gprogress {Γ A : Typ} {e : Exp} (ht : HasType Δ Γ e A)
     {v : Exp} (hv : Value v) (henv : HasType Δ .top v Γ)
@@ -245,8 +245,8 @@ theorem gprogress {Γ A : Typ} {e : Exp} (ht : HasType Δ Γ e A)
         | tlam _ _ => nomatch hv₁
         | tcase _ _ _ _ _ => nomatch hv₁
         | tunfold _ _ => nomatch hv₁
-        | tseal _ _ _ _ => nomatch hv₁
-        | tunseal _ _ _ _ _ => nomatch hv₁
+        | tseal _ _ _ _ _ => nomatch hv₁
+        | tunseal _ _ _ _ _ _ => nomatch hv₁
   | tbox h₁ _ ih₁ ih₂ =>
     cases ih₁ hv henv with
     | inr hs =>
@@ -321,8 +321,8 @@ theorem gprogress {Γ A : Typ} {e : Exp} (ht : HasType Δ Γ e A)
       | tanno _ _ => nomatch hve
       | tcase _ _ _ _ _ => nomatch hve
       | tunfold _ _ => nomatch hve
-      | tseal _ _ _ _ => nomatch hve
-      | tunseal _ _ _ _ _ => nomatch hve
+      | tseal _ _ _ _ _ => nomatch hve
+      | tunseal _ _ _ _ _ _ => nomatch hve
   | tinl _ ih =>
     cases ih hv henv with
     | inr hs =>
@@ -356,8 +356,8 @@ theorem gprogress {Γ A : Typ} {e : Exp} (ht : HasType Δ Γ e A)
       | tanno _ _ => nomatch hve
       | tcase _ _ _ _ _ => nomatch hve
       | tunfold _ _ => nomatch hve
-      | tseal _ _ _ _ => nomatch hve
-      | tunseal _ _ _ _ _ => nomatch hve
+      | tseal _ _ _ _ _ => nomatch hve
+      | tunseal _ _ _ _ _ _ => nomatch hve
   | tanno h hsub ih =>
     cases ih hv henv with
     | inr hs =>
@@ -367,7 +367,7 @@ theorem gprogress {Γ A : Typ} {e : Exp} (ht : HasType Δ Γ e A)
       obtain ⟨w, hc⟩ := cast_progress hve h hsub
       exact Or.inr ⟨_, Step.sannov hv hve hc⟩
   | twrap _ hv' _ _ => exact Or.inl (Value.vwrap hv')
-  | tseal _ _ _ h ih =>
+  | tseal _ _ _ _ h ih =>
     cases ih hv henv with
     | inr hs =>
       obtain ⟨e', hs'⟩ := hs
@@ -375,7 +375,7 @@ theorem gprogress {Γ A : Typ} {e : Exp} (ht : HasType Δ Γ e A)
     | inl hve =>
       obtain ⟨w, hw⟩ := sealv_progress _ hve h
       exact Or.inr ⟨_, Step.ssealv hv hve hw⟩
-  | tunseal _ _ _ h _ ih =>
+  | tunseal _ _ _ _ h _ ih =>
     cases ih hv henv with
     | inr hs =>
       obtain ⟨e', hs'⟩ := hs

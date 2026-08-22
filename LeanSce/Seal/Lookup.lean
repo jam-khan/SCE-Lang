@@ -42,8 +42,8 @@ theorem lookup_prog {A : Typ} {n : Nat} {B : Typ} (hl : Lookup A n B)
     | tanno _ _ => nomatch hv
     | tcase _ _ _ _ _ => nomatch hv
     | tunfold _ _ => nomatch hv
-    | tseal _ _ _ _ => nomatch hv
-    | tunseal _ _ _ _ _ => nomatch hv
+    | tseal _ _ _ _ _ => nomatch hv
+    | tunseal _ _ _ _ _ _ => nomatch hv
   | succ _ ih =>
     cases ht with
     | tmrg h₁ _ _ _ =>
@@ -65,8 +65,8 @@ theorem lookup_prog {A : Typ} {n : Nat} {B : Typ} (hl : Lookup A n B)
     | tanno _ _ => nomatch hv
     | tcase _ _ _ _ _ => nomatch hv
     | tunfold _ _ => nomatch hv
-    | tseal _ _ _ _ => nomatch hv
-    | tunseal _ _ _ _ _ => nomatch hv
+    | tseal _ _ _ _ _ => nomatch hv
+    | tunseal _ _ _ _ _ _ => nomatch hv
 
 theorem lookup_pres {A : Typ} {n : Nat} {B : Typ} (hl : Lookup A n B)
     {v v' : Exp} {Γ : Typ} (hv : Value v) (ht : HasType Δ Γ v A) (hlv : LookupV v n v')
@@ -129,8 +129,8 @@ theorem rlookup_prog {B : Typ} {l : String} {A : Typ} (hl : RLookup B l A)
     | tanno _ _ => nomatch hv
     | tcase _ _ _ _ _ => nomatch hv
     | tunfold _ _ => nomatch hv
-    | tseal _ _ _ _ => nomatch hv
-    | tunseal _ _ _ _ _ => nomatch hv
+    | tseal _ _ _ _ _ => nomatch hv
+    | tunseal _ _ _ _ _ _ => nomatch hv
   | landl _ _ ih =>
     cases ht with
     | tmrg h₁ _ _ _ =>
@@ -152,8 +152,8 @@ theorem rlookup_prog {B : Typ} {l : String} {A : Typ} (hl : RLookup B l A)
     | tanno _ _ => nomatch hv
     | tcase _ _ _ _ _ => nomatch hv
     | tunfold _ _ => nomatch hv
-    | tseal _ _ _ _ => nomatch hv
-    | tunseal _ _ _ _ _ => nomatch hv
+    | tseal _ _ _ _ _ => nomatch hv
+    | tunseal _ _ _ _ _ _ => nomatch hv
   | landr _ _ ih =>
     cases ht with
     | tmrg _ h₂ _ _ =>
@@ -175,8 +175,8 @@ theorem rlookup_prog {B : Typ} {l : String} {A : Typ} (hl : RLookup B l A)
     | tanno _ _ => nomatch hv
     | tcase _ _ _ _ _ => nomatch hv
     | tunfold _ _ => nomatch hv
-    | tseal _ _ _ _ => nomatch hv
-    | tunseal _ _ _ _ _ => nomatch hv
+    | tseal _ _ _ _ _ => nomatch hv
+    | tunseal _ _ _ _ _ _ => nomatch hv
 
 theorem rlookup_pres {B : Typ} {l : String} {A : Typ} (hl : RLookup B l A)
     {v v' : Exp} {Γ : Typ} (hv : Value v) (ht : HasType Δ Γ v B) (hlv : RLookupV v l v')

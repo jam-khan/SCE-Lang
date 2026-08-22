@@ -69,6 +69,43 @@ theorem sealStore_le {Δ Δ' : SCE.BrandStore} (h : SCE.StoreLe Δ Δ')
   obtain ⟨R₀, h₀, rfl⟩ := hn
   exact ⟨R₀, h _ _ h₀, rfl⟩
 
+-- sealTyp images are brand-variable-free: the source has no brand variables, and
+-- sealTyp never produces one.  This discharges the ¬HasBVar premises of tseal/tunseal
+-- and the strengthened WfSig at every elaboration site.
+mutual
+theorem sealTyp_no_hasbvar : (S : SCE.Typ) → ¬ HasBVar (sealTyp S)
+  | .int => fun h => nomatch h
+  | .top => fun h => nomatch h
+  | .arr A B => fun h => by
+    cases h with
+    | arrl h' => exact sealTyp_no_hasbvar A h'
+    | arrr h' => exact sealTyp_no_hasbvar B h'
+  | .and A B => fun h => by
+    cases h with
+    | andl h' => exact sealTyp_no_hasbvar A h'
+    | andr h' => exact sealTyp_no_hasbvar B h'
+  | .or A B => fun h => by
+    cases h with
+    | orl h' => exact sealTyp_no_hasbvar A h'
+    | orr h' => exact sealTyp_no_hasbvar B h'
+  | .rcd _ A => fun h => by
+    cases h with
+    | rcd h' => exact sealTyp_no_hasbvar A h'
+  | .sig mt => sealModTyp_no_hasbvar mt
+  | .var _ => fun h => nomatch h
+  | .mu T => fun h => by
+    cases h with
+    | mu h' => exact sealTyp_no_hasbvar T h'
+  | .brand _ => fun h => nomatch h
+
+theorem sealModTyp_no_hasbvar : (mt : SCE.ModTyp) → ¬ HasBVar (sealModTyp mt)
+  | .TyIntf T => sealTyp_no_hasbvar T
+  | .TyArrM T mt => fun h => by
+    cases h with
+    | arrl h' => exact sealTyp_no_hasbvar T h'
+    | arrr h' => exact sealModTyp_no_hasbvar mt h'
+end
+
 -- sealTyp commutes with brand substitution (the representation view of a signature is
 -- sealed pointwise).
 mutual
@@ -591,10 +628,11 @@ theorem seal_type_preservation {Γ : SCE.Typ} {es : SCE.Exp} {A : SCE.Typ} {ce :
     exact HasType.twrap (sealStore_some hΔ) (elabSeal_value h hv) ih
   | emseal hΔ hnr hwf _ ih =>
     rw [sealTyp_substBrand] at ih
-    exact HasType.tseal (sealStore_some hΔ) hnr hwf ih
+    exact HasType.tseal (sealStore_some hΔ) hnr (sealTyp_no_hasbvar _) hwf ih
   | emunseal hΔ hnr hwf _ heq ih =>
     subst heq
-    exact HasType.tunseal (sealStore_some hΔ) hnr hwf ih (sealTyp_substBrand _ _ _)
+    exact HasType.tunseal (sealStore_some hΔ) hnr (sealTyp_no_hasbvar _) hwf ih
+      (sealTyp_substBrand _ _ _)
   | einl _ ih =>
     exact HasType.tinl ih
   | einr _ ih =>

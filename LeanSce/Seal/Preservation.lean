@@ -19,7 +19,8 @@ theorem wfsig_nores {n : Nat} {R S : Typ} (h : WfSig n R S) : NoRes S := by
   | rcd hne _ ih => exact NoRes.rcd hne ih
   | and _ _ _ _ ih₁ ih₂ => exact NoRes.and ih₁ ih₂
   | or _ _ ih₁ ih₂ => exact NoRes.or ih₁ ih₂
-  | mu _ hnr => exact hnr
+  | mu _ hnr _ => exact hnr
+  | allb _ hnr _ => exact hnr
 
 theorem nores_subst {n : Nat} {R S : Typ} (hR : NoRes R) (hS : NoRes S)
     : NoRes (substBrand n R S) := by
@@ -37,6 +38,8 @@ theorem nores_subst {n : Nat} {R S : Typ} (hR : NoRes R) (hS : NoRes S)
   | or _ _ ih₁ ih₂ => exact NoRes.or ih₁ ih₂
   | var => exact NoRes.var
   | mu _ ih => exact NoRes.mu ih
+  | bvar => exact NoRes.bvar
+  | allb _ ih => exact NoRes.allb ih
 
 -- A record under the reserved label is disjoint from every type that avoids the label.
 theorem cost_reserved {T X : Typ} (hX : NoRes X) (hc : Cost (.rcd reservedLabel T) X) : False := by
@@ -49,6 +52,8 @@ theorem cost_reserved {T X : Typ} (hX : NoRes X) (hc : Cost (.rcd reservedLabel 
   | or _ _ _ _ => nomatch hc
   | var => nomatch hc
   | mu _ _ => nomatch hc
+  | bvar => nomatch hc
+  | allb _ _ => nomatch hc
   | and _ _ ih₁ ih₂ =>
     cases hc with
     | crandl h => exact ih₁ h
@@ -80,6 +85,14 @@ theorem cost_proxyEnv {T X : Typ} (hX : NoRes X) (hc : Cost (.and .top (.rcd res
     cases hc with
     | candl h' => exact cost_top_l h'
     | candr h' => exact cost_reserved (NoRes.mu h) h'
+  | bvar =>
+    cases hc with
+    | candl h => exact cost_top_l h
+    | candr h => exact cost_reserved NoRes.bvar h
+  | allb h _ =>
+    cases hc with
+    | candl h' => exact cost_top_l h'
+    | candr h' => exact cost_reserved (NoRes.allb h) h'
   | and h₁ h₂ ih₁ ih₂ =>
     cases hc with
     | candl h => exact cost_top_l h
@@ -105,7 +118,7 @@ theorem proxyEnv_value {c : Exp} (hc : Value c) : Value (proxyEnv c) :=
 -- environment is disjoint from the input type because signatures avoid the reserved
 -- label, and its body is typed by the very rules tseal/tunseal.
 theorem sealv_preservation {n : Nat} {R : Typ} (hΔ : Δ n = some R) (hR : NoRes R)
-    {S : Typ} {v w : Exp} (hsv : SealV n R S v w)
+    (hRb : ¬ HasBVar R) {S : Typ} {v w : Exp} (hsv : SealV n R S v w)
     : ∀ {Γ : Typ}, WfSig n R S → Value v → HasType Δ Γ v (substBrand n R S)
     → HasType Δ Γ w S := by
   induction hsv with
@@ -176,12 +189,13 @@ theorem sealv_preservation {n : Nat} {R : Typ} (hΔ : Δ n = some R) (hR : NoRes
     intro Γ hwf _ _
     nomatch hwf
   | allb =>
-    intro Γ hwf _ _
-    nomatch hwf
+    intro Γ hwf hv ht
+    cases hwf with
+    | allb hnin _ _ => rwa [substBrand_notin hnin] at ht
   | mu =>
     intro Γ hwf hv ht
     cases hwf with
-    | mu hnin _ => rwa [substBrand_notin hnin] at ht
+    | mu hnin _ _ => rwa [substBrand_notin hnin] at ht
   | arr =>
     intro Γ hwf hv ht
     cases hwf with
@@ -189,16 +203,16 @@ theorem sealv_preservation {n : Nat} {R : Typ} (hΔ : Δ n = some R) (hR : NoRes
       simp only [substBrand] at ht
       apply HasType.tclos (proxyEnv_value hv) (proxyEnv_typed hv (value_weaken ht hv))
         (disj_proxyEnv (wfsig_nores hwfA)) _ (sub_refl _) (sub_refl _)
-      apply HasType.tseal hΔ hR hwfB
+      apply HasType.tseal hΔ hR hRb hwfB
       apply HasType.tapp
       · exact HasType.trproj (HasType.tproj HasType.tquery (Lookup.succ Lookup.zero))
           RLookup.zero
-      · exact HasType.tunseal hΔ hR hwfA (HasType.tproj HasType.tquery Lookup.zero) rfl
+      · exact HasType.tunseal hΔ hR hRb hwfA (HasType.tproj HasType.tquery Lookup.zero) rfl
 
 -- Unsealing preserves types: a value of the abstract view S unseals to a value of the
 -- representation view S[n:=R].
 theorem unsealv_preservation {n : Nat} {R : Typ} (hΔ : Δ n = some R) (hR : NoRes R)
-    {S : Typ} {v w : Exp} (hsv : UnsealV n R S v w)
+    (hRb : ¬ HasBVar R) {S : Typ} {v w : Exp} (hsv : UnsealV n R S v w)
     : ∀ {Γ : Typ}, WfSig n R S → Value v → HasType Δ Γ v S
     → HasType Δ Γ w (substBrand n R S) := by
   induction hsv with
@@ -268,17 +282,18 @@ theorem unsealv_preservation {n : Nat} {R : Typ} (hΔ : Δ n = some R) (hR : NoR
   | var =>
     intro Γ hwf _ _
     nomatch hwf
-  -- WfSig has no bvar case (signatures are bvar-free), and no allb case yet.
+  -- WfSig has no bvar case (signatures are bvar-free); ∀ is opaque — identity coercion.
   | bvar =>
     intro Γ hwf _ _
     nomatch hwf
   | allb =>
-    intro Γ hwf _ _
-    nomatch hwf
+    intro Γ hwf hv ht
+    cases hwf with
+    | allb hnin _ _ => rw [substBrand_notin hnin]; exact ht
   | mu =>
     intro Γ hwf hv ht
     cases hwf with
-    | mu hnin _ => rw [substBrand_notin hnin]; exact ht
+    | mu hnin _ _ => rw [substBrand_notin hnin]; exact ht
   | arr =>
     intro Γ hwf hv ht
     cases hwf with
@@ -286,11 +301,11 @@ theorem unsealv_preservation {n : Nat} {R : Typ} (hΔ : Δ n = some R) (hR : NoR
       simp only [substBrand]
       apply HasType.tclos (proxyEnv_value hv) (proxyEnv_typed hv (value_weaken ht hv))
         (disj_proxyEnv (nores_subst hR (wfsig_nores hwfA))) _ (sub_refl _) (sub_refl _)
-      apply HasType.tunseal hΔ hR hwfB _ rfl
+      apply HasType.tunseal hΔ hR hRb hwfB _ rfl
       apply HasType.tapp
       · exact HasType.trproj (HasType.tproj HasType.tquery (Lookup.succ Lookup.zero))
           RLookup.zero
-      · exact HasType.tseal hΔ hR hwfA (HasType.tproj HasType.tquery Lookup.zero)
+      · exact HasType.tseal hΔ hR hRb hwfA (HasType.tproj HasType.tquery Lookup.zero)
 
 theorem gpreservation {venv e e' : Exp} (hstep : Step venv e e')
     {Γ A : Typ} (ht : HasType Δ Γ e A) (henv : HasType Δ .top venv Γ)
@@ -429,18 +444,18 @@ theorem gpreservation {venv e e' : Exp} (hstep : Step venv e e')
     | twrap _ hv _ => exact (value_not_step hv hs).elim
   | sseal _ _ ih =>
     cases ht with
-    | tseal hΔ hnr hwf h => exact HasType.tseal hΔ hnr hwf (ih h henv)
+    | tseal hΔ hnr hnb hwf h => exact HasType.tseal hΔ hnr hnb hwf (ih h henv)
   | ssealv _ hv₁ hsv =>
     cases ht with
-    | tseal hΔ hnr hwf h => exact sealv_preservation hΔ hnr hsv hwf hv₁ h
+    | tseal hΔ hnr hnb hwf h => exact sealv_preservation hΔ hnr hnb hsv hwf hv₁ h
   | sunseal _ _ ih =>
     cases ht with
-    | tunseal hΔ hnr hwf h heq => exact HasType.tunseal hΔ hnr hwf (ih h henv) heq
+    | tunseal hΔ hnr hnb hwf h heq => exact HasType.tunseal hΔ hnr hnb hwf (ih h henv) heq
   | sunsealv _ hv₁ hsv =>
     cases ht with
-    | tunseal hΔ hnr hwf h heq =>
+    | tunseal hΔ hnr hnb hwf h heq =>
       subst heq
-      exact unsealv_preservation hΔ hnr hsv hwf hv₁ h
+      exact unsealv_preservation hΔ hnr hnb hsv hwf hv₁ h
 
 -- Whole-program corollary.
 theorem preservation {e e' : Exp} {A : Typ} (ht : HasType Δ .top e A)

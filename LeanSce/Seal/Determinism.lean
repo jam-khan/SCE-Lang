@@ -175,7 +175,7 @@ theorem gdeterminism {venv e e₁ : Exp} (h₁ : Step venv e e₁)
     cases h₂ with
     | sseal _ hs₂ =>
       cases ht with
-      | tseal _ _ _ ha => rw [ih ha henv hs₂]
+      | tseal _ _ _ _ ha => rw [ih ha henv hs₂]
     | ssealv _ hv₁ _ => exact (value_not_step hv₁ hs).elim
   | ssealv _ hv₁ hsv =>
     cases h₂ with
@@ -185,7 +185,7 @@ theorem gdeterminism {venv e e₁ : Exp} (h₁ : Step venv e e₁)
     cases h₂ with
     | sunseal _ hs₂ =>
       cases ht with
-      | tunseal _ _ _ ha _ => rw [ih ha henv hs₂]
+      | tunseal _ _ _ _ ha _ => rw [ih ha henv hs₂]
     | sunsealv _ hv₁ _ => exact (value_not_step hv₁ hs).elim
   | sunsealv _ hv₁ hsv =>
     cases h₂ with

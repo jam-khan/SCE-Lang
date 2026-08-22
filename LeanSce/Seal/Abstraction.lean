@@ -24,6 +24,8 @@ structure OpenBrand (Δ₁ Δ₂ : BrandStore) (η : Nat → Exp → Exp → Pro
   st₂ : Δ₂ n = some R₂
   nores₁ : NoRes R₁
   nores₂ : NoRes R₂
+  nobvar₁ : ¬ HasBVar R₁
+  nobvar₂ : ¬ HasBVar R₂
   ntl₁ : ¬ TopLike R₁
   ntl₂ : ¬ TopLike R₂
   cast_closed : ∀ w₁ w₂, η n w₁ w₂ → ∀ w₁' w₂', Cast w₁ R₁ w₁' → Cast w₂ R₂ w₂' → η n w₁' w₂'
@@ -174,11 +176,41 @@ theorem coe_lr {n : Nat} {R₁ R₂ : Typ} (hb : OpenBrand Δ₁ Δ₂ η n R₁
               | inr hu₂ =>
                 exact Or.inr ⟨_, _, rfl, rfl, (coe_lr hb B hwfB₁ hwfB₂).2 hp hu₁ hu₂⟩
   | .var _, hwf₁, _ => nomatch hwf₁
+  | .bvar _, hwf₁, _ => nomatch hwf₁
+  | .allb A, hwf₁, hwf₂ => by
+    cases hwf₁ with
+    | allb hnin₁ _ _ =>
+      cases hwf₂ with
+      | allb hnin₂ _ _ =>
+        constructor
+        · intro v₁ v₂ w₁ w₂ hlr h₁ h₂
+          obtain ⟨hv₁, hv₂, ht₁, ht₂, heq⟩ := hlr
+          subst heq
+          cases h₁ with
+          | allb =>
+            cases h₂ with
+            | allb =>
+              exact ⟨hv₁, hv₂, substBrand_notin hnin₁ ▸ ht₁, substBrand_notin hnin₂ ▸ ht₂,
+                rfl⟩
+        · intro v₁ v₂ w₁ w₂ hlr h₁ h₂
+          obtain ⟨hv₁, hv₂, ht₁, ht₂, heq⟩ := hlr
+          subst heq
+          cases h₁ with
+          | allb =>
+            cases h₂ with
+            | allb =>
+              refine ⟨hv₁, hv₂, ?_, ?_, rfl⟩
+              · show HasType Δ₁ .top v₁ (substBrand n R₁ (.allb A))
+                rw [substBrand_notin hnin₁]
+                exact ht₁
+              · show HasType Δ₂ .top v₁ (substBrand n R₂ (.allb A))
+                rw [substBrand_notin hnin₂]
+                exact ht₂
   | .mu T, hwf₁, hwf₂ => by
     cases hwf₁ with
-    | mu hnin₁ _ =>
+    | mu hnin₁ _ _ =>
       cases hwf₂ with
-      | mu hnin₂ _ =>
+      | mu hnin₂ _ _ =>
         constructor
         · intro v₁ v₂ w₁ w₂ hlr h₁ h₂
           obtain ⟨hv₁, hv₂, ht₁, ht₂, heq⟩ := hlr
@@ -296,8 +328,8 @@ theorem coe_lr {n : Nat} {R₁ R₂ : Typ} (hb : OpenBrand Δ₁ Δ₂ η n R₁
       subst e₁; subst e₂
       have hv₁ := Value.vmrg (lr_value hA).1 (lr_value hB).1
       have hv₂ := Value.vmrg (lr_value hA).2 (lr_value hB).2
-      have hw₁ := sealv_preservation hb.st₁ hb.nores₁ h₁ hwf₁ hv₁ ht₁
-      have hw₂ := sealv_preservation hb.st₂ hb.nores₂ h₂ hwf₂ hv₂ ht₂
+      have hw₁ := sealv_preservation hb.st₁ hb.nores₁ hb.nobvar₁ h₁ hwf₁ hv₁ ht₁
+      have hw₂ := sealv_preservation hb.st₂ hb.nores₂ hb.nobvar₂ h₂ hwf₂ hv₂ ht₂
       cases h₁ with | and h₁a h₁b =>
       cases h₂ with | and h₂a h₂b =>
       exact ⟨hw₁, hw₂, _, _, _, _, rfl, rfl, ihA.1 hA h₁a h₂a, ihB.1 hB h₁b h₂b⟩
@@ -306,8 +338,8 @@ theorem coe_lr {n : Nat} {R₁ R₂ : Typ} (hb : OpenBrand Δ₁ Δ₂ η n R₁
       subst e₁; subst e₂
       have hv₁ := Value.vmrg (lr_value hA).1 (lr_value hB).1
       have hv₂ := Value.vmrg (lr_value hA).2 (lr_value hB).2
-      have hw₁ := unsealv_preservation hb.st₁ hb.nores₁ h₁ hwf₁ hv₁ ht₁
-      have hw₂ := unsealv_preservation hb.st₂ hb.nores₂ h₂ hwf₂ hv₂ ht₂
+      have hw₁ := unsealv_preservation hb.st₁ hb.nores₁ hb.nobvar₁ h₁ hwf₁ hv₁ ht₁
+      have hw₂ := unsealv_preservation hb.st₂ hb.nores₂ hb.nobvar₂ h₂ hwf₂ hv₂ ht₂
       cases h₁ with | and h₁a h₁b =>
       cases h₂ with | and h₂a h₂b =>
       exact ⟨hw₁, hw₂, _, _, _, _, rfl, rfl, ihA.2 hA h₁a h₂a, ihB.2 hB h₁b h₂b⟩
@@ -322,8 +354,8 @@ theorem coe_lr {n : Nat} {R₁ R₂ : Typ} (hb : OpenBrand Δ₁ Δ₂ η n R₁
     -- sealing an arrow: the proxies are related at A → B (abstract)
     · intro v₁ v₂ w₁ w₂ hlr h₁ h₂
       obtain ⟨hv₁, hv₂, ht₁, ht₂, CL⟩ := hlr
-      have hw₁ := sealv_preservation hb.st₁ hb.nores₁ h₁ hwf₁ hv₁ ht₁
-      have hw₂ := sealv_preservation hb.st₂ hb.nores₂ h₂ hwf₂ hv₂ ht₂
+      have hw₁ := sealv_preservation hb.st₁ hb.nores₁ hb.nobvar₁ h₁ hwf₁ hv₁ ht₁
+      have hw₂ := sealv_preservation hb.st₂ hb.nores₂ hb.nobvar₂ h₂ hwf₂ hv₂ ht₂
       cases h₁ with | arr =>
       cases h₂ with | arr =>
       refine ⟨Value.vclos (Value.vmrg Value.vunit (Value.vrcd hv₁)),
@@ -366,8 +398,8 @@ theorem coe_lr {n : Nat} {R₁ R₂ : Typ} (hb : OpenBrand Δ₁ Δ₂ η n R₁
     -- unsealing an arrow: the proxies are related at A[R] → B[R] (representation view)
     · intro v₁ v₂ w₁ w₂ hlr h₁ h₂
       obtain ⟨hv₁, hv₂, ht₁, ht₂, CL⟩ := hlr
-      have hw₁ := unsealv_preservation hb.st₁ hb.nores₁ h₁ hwf₁ hv₁ ht₁
-      have hw₂ := unsealv_preservation hb.st₂ hb.nores₂ h₂ hwf₂ hv₂ ht₂
+      have hw₁ := unsealv_preservation hb.st₁ hb.nores₁ hb.nobvar₁ h₁ hwf₁ hv₁ ht₁
+      have hw₂ := unsealv_preservation hb.st₂ hb.nores₂ hb.nobvar₂ h₂ hwf₂ hv₂ ht₂
       cases h₁ with | arr =>
       cases h₂ with | arr =>
       refine ⟨Value.vclos (Value.vmrg Value.vunit (Value.vrcd hv₁)),

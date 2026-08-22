@@ -30,6 +30,8 @@ inductive NoRes : Typ → Prop where
   | or {A B}     : NoRes A → NoRes B → NoRes (.or A B)
   | var {n}      : NoRes (.var n)
   | mu {T}       : NoRes T → NoRes (.mu T)
+  | bvar {i}     : NoRes (.bvar i)
+  | allb {A}     : NoRes A → NoRes (.allb A)
 
 -- Signature well-formedness for sealing at S abstracting α_n over R: every intersection
 -- inside S is disjoint in *both* views (abstract, so sealed merges re-type via tmergev;
@@ -47,8 +49,47 @@ inductive WfSig (n : Nat) (R : Typ) : Typ → Prop where
                    → WfSig n R (.and A B)
   | or {A B}     : WfSig n R A → WfSig n R B → WfSig n R (.or A B)
   -- μ in a signature must be brand-free: sealing does not reach under μ (the coercion is
-  -- the identity there), so an abstract type cannot hide inside a recursive type.
-  | mu {T}       : ¬ BrandIn n (.mu T) → NoRes (.mu T) → WfSig n R (.mu T)
+  -- the identity there), so an abstract type cannot hide inside a recursive type.  It
+  -- must also be brand-VARIABLE-free: bsubst introduces a concrete brand, which could
+  -- collide with the ¬BrandIn condition under a later instantiation — bvar-freeness
+  -- makes μ (and ∀) signature bodies bsubst-invariant (wfsig_bsubst needs this).
+  | mu {T}       : ¬ BrandIn n (.mu T) → NoRes (.mu T) → ¬ HasBVar (.mu T)
+                   → WfSig n R (.mu T)
+  -- ∀ in a signature is opaque under sealing (the μ pattern): brand-free, bvar-free,
+  -- the coercion is the identity there.  Note there is NO WfSig.bvar case: sealing
+  -- signatures are bvar-free entirely (a bvar leaf would make substBrand and bsubst
+  -- fail to commute when the instantiation brand collides with the sealed one).
+  | allb {A}     : ¬ BrandIn n (.allb A) → NoRes (.allb A) → ¬ HasBVar (.allb A)
+                   → WfSig n R (.allb A)
+
+-- Signatures are brand-variable-free: the leaves are bvar-less, μ/∀ carry it, and the
+-- structural cases recurse.  This is what keeps sealing signatures bsubst-invariant.
+theorem wfsig_no_hasbvar {n : Nat} {R S : Typ} (h : WfSig n R S) : ¬ HasBVar S := by
+  induction h with
+  | int => exact fun hb => nomatch hb
+  | top => exact fun hb => nomatch hb
+  | brand => exact fun hb => nomatch hb
+  | arr _ _ ih₁ ih₂ =>
+    intro hb
+    cases hb with
+    | arrl h' => exact ih₁ h'
+    | arrr h' => exact ih₂ h'
+  | rcd _ _ ih =>
+    intro hb
+    cases hb with
+    | rcd h' => exact ih h'
+  | and _ _ _ _ ih₁ ih₂ =>
+    intro hb
+    cases hb with
+    | andl h' => exact ih₁ h'
+    | andr h' => exact ih₂ h'
+  | or _ _ ih₁ ih₂ =>
+    intro hb
+    cases hb with
+    | orl h' => exact ih₁ h'
+    | orr h' => exact ih₂ h'
+  | mu _ _ hnb => exact hnb
+  | allb _ _ hnb => exact hnb
 
 inductive HasType : BrandStore → Typ → Exp → Typ → Prop where
   | tquery {Δ : BrandStore} {Γ : Typ}
@@ -140,9 +181,13 @@ inductive HasType : BrandStore → Typ → Exp → Typ → Prop where
     → HasType Δ Γ (.wrap n v) (.brand n)
   -- The sealing coercion S[n:=R] ⇒ S.  Its operand is typed at the *representation view*
   -- of the signature; the result is typed at the abstract view.
+  -- Both coercions require the representation to be brand-variable-free (alongside
+  -- NoRes): provider stores are concrete, and bvar-freeness of R and S is what makes
+  -- the seal/unseal annotations invariant under ∀β-instantiation (hastype_bsubst).
   | tseal {Δ : BrandStore} {Γ R S : Typ} {n : Nat} {e : Exp}
     : Δ n = some R
     → NoRes R
+    → ¬ HasBVar R
     → WfSig n R S
     → HasType Δ Γ e (substBrand n R S)
     → HasType Δ Γ (.seal n R S e) S
@@ -152,6 +197,7 @@ inductive HasType : BrandStore → Typ → Exp → Typ → Prop where
   | tunseal {Δ : BrandStore} {Γ R S T : Typ} {n : Nat} {e : Exp}
     : Δ n = some R
     → NoRes R
+    → ¬ HasBVar R
     → WfSig n R S
     → HasType Δ Γ e S
     → T = substBrand n R S
@@ -232,8 +278,8 @@ theorem hastype_weaken_store {Δ Δ' : BrandStore} (hle : StoreLe Δ Δ') {Γ : 
   | tclos hv _ hd _ hs₁ hs₂ ih₁ ih₂ => exact HasType.tclos hv ih₁ hd ih₂ hs₁ hs₂
   | tanno _ hs ih => exact HasType.tanno ih hs
   | twrap hΔ hv _ ih => exact HasType.twrap (hle _ _ hΔ) hv ih
-  | tseal hΔ hnr hwf _ ih => exact HasType.tseal (hle _ _ hΔ) hnr hwf ih
-  | tunseal hΔ hnr hwf _ heq ih => exact HasType.tunseal (hle _ _ hΔ) hnr hwf ih heq
+  | tseal hΔ hnr hnb hwf _ ih => exact HasType.tseal (hle _ _ hΔ) hnr hnb hwf ih
+  | tunseal hΔ hnr hnb hwf _ heq ih => exact HasType.tunseal (hle _ _ hΔ) hnr hnb hwf ih heq
   | tinl _ ih => exact HasType.tinl ih
   | tinr _ ih => exact HasType.tinr ih
   | tcase _ hd₁ hd₂ _ _ ih ih₁ ih₂ => exact HasType.tcase ih hd₁ hd₂ ih₁ ih₂

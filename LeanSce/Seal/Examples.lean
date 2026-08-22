@@ -108,6 +108,8 @@ theorem openbrand_ex : OpenBrand store₁ store₂ ηex 0 .int R₂ where
   st₂ := rfl
   nores₁ := NoRes.int
   nores₂ := NoRes.rcd (by decide) NoRes.int
+  nobvar₁ := fun h => nomatch h
+  nobvar₂ := fun h => by cases h with | rcd h' => nomatch h'
   ntl₁ := fun h => nomatch h
   ntl₂ := fun h => by cases h with | tlrcd h' => nomatch h'
   cast_closed := by
