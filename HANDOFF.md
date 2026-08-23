@@ -417,9 +417,17 @@ Typ pull the Sub/Cost leaves in immediately), D-prep (`d94e193`), E
     This is what connects tbapp's conclusion type to the ∀-clause.  Budget it
     like cost_bsubst_inv.
   - Fundamental: add blam/bclos/bapp to `Finitary` (sbappbeta never duplicates
-    subterms → SN preserved); tblam intro assumes RelAdm and recurses under
-    cons; tbapp picks `rel := brandRel n` (RelAdm via cast_brand_id / OpenAdm)
-    and finishes by lrg_bsubst.  Then `generic_client_representation_independence`.
+    subterms → SN preserved); tbapp picks `rel := brandRel n` (RelAdm via
+    cast_brand_id / OpenAdm) and finishes by lrg_bsubst.  **The tblam case
+    CANNOT use the structural IH**: the ∀-clause runs `.bapp v m`, whose beta
+    yields the SUBSTITUTED body `bsubstExp 0 m body` — and the UNsubstituted
+    body cannot even run (bvar annotations make every cast stuck, by
+    cast_bvar_empty), so relating its runs is the wrong statement.  The case
+    must recurse on `hastype_bsubst hb` — non-structural.  FIX: `bsubstExp`
+    preserves expression size (it rewrites only annotations), so restructure
+    `fundamental` to STRONG INDUCTION ON EXPRESSION SIZE (define `esize`,
+    prove `esize_bsubstExp : esize (bsubstExp d n e) = esize e`), with inner
+    case analysis on the typing derivation.  Then `generic_client_representation_independence`.
   - Commit order: M4a infrastructure (cast_bvar_empty, cast_brand_id,
     bsubstEnv + lemmas) → M4b LRg refactor + call-site repair (δ∅ everywhere)
     → M4c cast_lr/coe_lr with DeltaAdm → M4d lrg_bsubst → M4e Finitary +
