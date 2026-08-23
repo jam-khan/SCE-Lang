@@ -23,11 +23,17 @@ commit `1a79fcd`); `grep -rn "Core\." LeanSce` and `grep -rn "elabExp" LeanSce`
 are empty.
 
 **▶ WHERE TO CONTINUE: Phase 3 milestones 1–3 (target-side ∀β with the FULL
-safety layer) are COMPLETE (session 3, commits `49dbca0..`, see §3.6 statuses
-and §3.9 for the session-3 design corrections).  Next work = §3.7: milestone 4
-(the real relational ∀-clause over η-extensions) or milestone 5 (source-side
-`mfunctor`-generic + elabSeal + sepcomp).  Also open: the §2 examples/doc
-items.  Do not re-derive the design; §3 was checked against the compiler.**
+safety layer) are COMPLETE, including the two target-level examples
+(`BrandPolyExample`, `GenericClientExample`) — session 3, commits
+`49dbca0..d7a549f`; §3.6 has per-commit statuses, §3.9 the design corrections
+that supersede the §3.1–§3.5 sketches.  Milestone 4 (the relational ∀-clause)
+is DESIGNED (§3.7) and its infrastructure is landed (M4a `9892ce1`, M4b-prep
+`d7a549f`), but the LRg clause rewrite itself was attempted and ROLLED BACK on
+two open design problems (§3.7 ⚠ block: the demp-degeneracy problem and the
+tclos-slack leak).  FIRST ACTION NEXT SESSION = resolve that design choice
+(candidate fixes (i)/(ii)/(iii) in the ⚠ block; (i) is recommended), then
+resume the M4b–M4f commit order.  Alternative independent work: milestone 5
+(source-side generics, §3.7) or the §2 items.**
 
 ---
 
@@ -75,26 +81,53 @@ Still-open 2f items (optional, not blocking): ModTyp collapse into `Typ.mfun`;
 merge `mlink` into `mlinkn`; `innerCtx : Sandbox → Typ → Typ`; (`letb`/`openm`
 stay primitive).
 
+### Phase 3 milestones 1–3 — target-side ∀β safety layer ✅ (session 3)
+Commits `49dbca0..b36e51f`: hardened+split runtime merge rules
+(tmergev/tmergevc), bvar/allb syntax with conservative COST, the bvar-free
+sealing discipline, `Seal/BrandSubst.lean` (the full instantiation suite,
+keystone `hastype_bsubst`), progress/preservation/determinism for
+blam/bclos/bapp, LR fences, and two target-level examples.  Details, design
+corrections, and premise orders: §3 (esp. §3.6 statuses and §3.9).  Milestone
+4 in progress (blocked on a design choice, §3.7 ⚠); milestone 5 not started.
+
 ---
 
 ## 2. Other open items (not the next step)
 
-- Phase 3 milestones 4–5 (see §3.7) after the safety layer lands.
+- Phase 3 milestone 4 (blocked on the §3.7 ⚠ design choice) and milestone 5
+  (source-side generics; independent of milestone 4).
 - μ/fix examples in `Seal/Examples.lean` (sealed-interface factorial via flam;
-  a tagged-union run; a μ-stream); later a generic-functor example (§3.7).
+  a tagged-union run; a μ-stream).  The target-level generic examples are DONE
+  (`BrandPolyExample`, `GenericClientExample`); the SOURCE-level ∀-functor
+  example belongs to milestone 5.
+- `DESIGN.md` §(h): document the §3.2/§3.3/§3.9 decisions (conservative COST,
+  tmergevc, the three fences: ¬AllbIn on μ, BClosed 1 on tbapp, ¬HasBVar on
+  contexts/representations).
 - `doc/system.tex` stale w.r.t. Phases 1–3 (update or flag).
 - Step-indexed LR to lift the Finitary/SFinitary fence (future work).
-- `origin` has NOT been pushed by either session; push only when the user says so.
+- Liftable fences (future work): ∀ inside μ-bodies (needs a bvar-shifting
+  substTyp); nested/multi-binder generics (needs shifting in bsubstExp/beta).
+- `origin` has NOT been pushed by any session; push only when the user says so.
 
 ---
 
-## 3. Phase 3 — brand polymorphism.  DESIGN DONE (session 2); ▶ CONTINUE HERE
+## 3. Phase 3 — brand polymorphism.  Milestones 1–3 ✅ DONE (session 3)
 
-Scope of the next increment = plan milestones 1–3: **target-side ∀β with the full
-safety layer** (syntax → subtyping → COST → casting → typing → small-step →
-CastingLemmas → determinism/progress/preservation), relational layer fenced.
-Milestones 4 (LR ∀-clause over η-extensions) and 5 (source-side `mfunctor`-generic +
-elabSeal) come after, in later sessions (§3.7).
+Milestones 1–3 — **target-side ∀β with the full safety layer** (syntax →
+subtyping → COST → casting → typing → small-step → CastingLemmas →
+determinism/progress/preservation), relational layer fenced — are implemented
+and green.  Milestone 4 (relational) is in progress, milestone 5 (source-side
+generics) not started: see §3.7.
+
+**⚠ §3.1–§3.5 below are the session-2 DESIGN notes, kept for rationale.  They
+were implemented WITH CORRECTIONS: wherever they conflict with §3.9 (or with
+the code), §3.9 and the code win.  Known stale points in the sketches: §3.1's
+blam/bclos have NO annotation (they DO carry the ∀-body type, §3.9.2) and its
+bsubstExp maps the bclos ENV at d+1 (it maps it at d); §3.4 adds WfSig.bvar
+(it was DROPPED, §3.9.7) and its tseal/tunseal/twrap/tfold premise lists lack
+the added fences (§3.9.3–5, §3.9.8 has the real premise orders); §3.5.6's
+commutation analysis is resolved by bvar-free signatures, not a commutation
+lemma.**
 
 ### 3.1 Syntax design (Seal/Syntax.lean)
 
@@ -374,11 +407,16 @@ Typ pull the Sub/Cost leaves in immediately), D-prep (`d94e193`), E
   fallout.  `Finitary` needs NO change (inductive whitelist; no blam/bclos/bapp
   constructors → generic terms are outside the normalizing fragment, `fundamental`
   discharges the new typing cases by the absent-Finitary pattern used for flam).
-- **Commit I ✅ (this commit)**: Examples.BrandPolyExample — the generic
-  identity Λβ.λ(x:β).x typed at ∀β.β→β, instantiated at ANY brand (genId_inst),
-  with a 4-step run to the concrete closure (genId_run).  The full two-provider
-  sealed ∀-functor example moves to milestone 5.  DESIGN.md §(h) still TODO
-  (document §3.2/§3.3/§3.9 decisions).
+- **Commit I ✅ (`8e9446e`, `b36e51f`)**: Examples.BrandPolyExample — the
+  generic identity Λβ.λ(x:β).x typed at ∀β.β→β, instantiated at ANY brand
+  (genId_inst), with a 4-step run to the concrete closure (genId_run) — AND
+  GenericClientExample: `Sig β = {mk : Int → β} & {get : β → Int}`, one
+  polymorphic client `Λβ.λ(s : Sig β). s.get (s.mk 5)` typed once at
+  `∀β. Sig β → Int` and applied well-typedly to TWO sealed providers under one
+  store (brand 0 ≈ Int = impl₁, brand 1 ≈ {v : Int} = impl₂), instantiation
+  reducing by rfl, plus the sealing coercion firing on impl₁.  This validated
+  the BClosed-1/¬HasBVar-Γ fences on the intended use case.  The SOURCE-level
+  ∀-functor version belongs to milestone 5.  DESIGN.md §(h) still TODO.
 
 ### 3.7 Deferred (after the safety layer)
 
@@ -428,11 +466,15 @@ Typ pull the Sub/Cost leaves in immediately), D-prep (`d94e193`), E
     `fundamental` to STRONG INDUCTION ON EXPRESSION SIZE (define `esize`,
     prove `esize_bsubstExp : esize (bsubstExp d n e) = esize e`), with inner
     case analysis on the typing derivation.  Then `generic_client_representation_independence`.
-  - Commit order: M4a infrastructure (cast_bvar_empty, cast_brand_id,
-    bsubstEnv + lemmas) → M4b LRg refactor + call-site repair (δ∅ everywhere)
-    → M4c cast_lr/coe_lr with DeltaAdm → M4d lrg_bsubst → M4e Finitary +
-    fundamental → M4f RI corollary + example + docs.  Green after each.
-  - **⚠ M4b ATTEMPTED AND ROLLED BACK (session 3): two open design problems.**
+  - Commit order: M4a ✅ (`9892ce1`) infrastructure (cast_bvar_empty,
+    cast_brand_id, bsubstEnv + bvInsert + bsubstEnv_notin + bclosed_bsubstEnv +
+    bsubstEnv_insert) → M4b-prep ✅ (`d7a549f`: sub_bsubstEnv + the δ-env
+    definitions, LRg untouched) → M4b LRg refactor + call-site repair (BLOCKED,
+    see ⚠) → M4c cast_lr/coe_lr with DeltaAdm → M4d lrg_bsubst → M4e Finitary +
+    fundamental (size induction) → M4f RI corollary + example + docs.  Green
+    after each.
+  - **⚠ ▶ FIRST ACTION NEXT SESSION.  M4b ATTEMPTED AND ROLLED BACK
+    (session 3): two open design problems to resolve BEFORE writing code.**
     M4a landed (`9892ce1`), plus sub_bsubstEnv (BrandSubst) and the δ-env
     definitions DEnv/dbrands/demp/RelAdm/DeltaAdm/deltaAdm_demp/deltaAdm_insert
     (Sealing, defined but NOT yet consumed by LRg).  The LRg-with-δ clause
@@ -476,39 +518,48 @@ Typ pull the Sub/Cost leaves in immediately), D-prep (`d94e193`), E
   concrete brand is where freshness is genuinely needed;
   `seal_separate_compilation_generic`).
 
-### 3.8 File facts gathered for Phase 3 (save re-reading)
+### 3.8 File facts (updated end of session 3; save re-reading)
 
-- `Cost` constructors: cint, candl/candr/crandl/crandr, carr (codomain only!),
-  crcd, cbrand (refl), coror (UNCONDITIONAL), cvar/cmu (refl).  `Disj A B :=
-  ¬ Cost A B`.  Key lemmas: cost_symm, cost_top_l, cost_compose (Sub-left),
-  sub_disj, disj_and_inv_l/r, disj_rcd_ne, disj_brand_ne, disj_brand_notin,
-  substBrand_notin, sub_cost, cost_{int,brand,var,mu}_compose, sub_sub_cost.
-- `Sub` refl-only leaves: sbrand/svar/smu (+ new sbvar/sallb).  sub_trans is a
-  big nested induction: each middle-type case has an inner `induction C` listing
-  EVERY constructor — adding 2 type formers touches every block (mechanical).
-- `Cast` constructors: cint, ctop, carrow/carrowtl (TopLike split, genVal),
+- `Cost` constructors NOW: cint, candl/candr/crandl/crandr, carr (codomain
+  only!), crcd, cbrand (refl), coror (UNCONDITIONAL), cvar/cmu (refl), and the
+  conservative brand-variable rules cbvar/cbvarbrand/cbrandbvar (unconditional),
+  callb (refl) + callbbv (HasBVar-Or), cmubv (HasBVar-Or).  `Disj A B :=
+  ¬ Cost A B`.  Key lemmas: cost_symm, cost_top_l, toplike_disj, cost_compose
+  (Sub-left), sub_disj, disj_and_inv_l/r, disj_rcd_ne, disj_brand_ne,
+  disj_brand_notin (NOW takes ¬HasBVar B too), substBrand_notin, sub_cost,
+  cost_int_compose, the refl-leaf peels sub_{brand,var,mu,bvar,allb}_peel
+  (the former cost_{brand,var,mu}_compose are DELETED — false with cmubv),
+  sub_sub_cost.
+- `Sub` refl-only leaves: sbrand/svar/smu/sbvar/sallb.  sub_trans is a big
+  nested induction: each middle-type case has an inner `induction C` listing
+  EVERY constructor — adding a type former touches every block (mechanical).
+- `Cast` constructors NOW: cint, ctop, carrow/carrowtl (TopLike split, genVal),
   cmrgl/cmrgr (Ordinary), cand, crcd, cwrap (identity), cinl/cinr, cfold
-  (identity), cfarrow/cfarrowtl.  `Consistent v₁ v₂ := ∀ {A w₁ w₂}, Cast v₁ A w₁
-  → Cast v₂ A w₂ → w₁ = w₂`.
-- `HasType.tmergev` premise order TODAY: `hv₁ hv₂ ht₁ ht₂ hd hcons` (components
-  at `.top`, Disj before Consistent).  `HasType.tmergevc` premise order:
-  `hv₁ hv₂ ht₁ ht₂ hv ht hc₁ hc₂ hcons` (first four mirror tmergev; then origin
-  value/typing, the two casts, Consistent).  Inversion arms:
-  `| tmergev _ _ hp hq hd hcons` / `| tmergevc _ _ hp hq hv ht hc₁ hc₂ hcons`.  `tclos`: `hv henv hd hbody hsub₁ hsub₂` with slacks `Sub B' B`,
-  `Sub C A`.  `tflam`: `hd₁ hd₂ hbody`.  `tfclos`: `hv henv hd₁ hd₂ hbody
-  hs₁ hs₂ hs₃`.  `tseal`: `hΔ hnr hwf h`.  `tunseal`: `hΔ hnr hwf h heq`.
-- `SealV`/`UnsealV` + `proxyEnv`/`proxyFun` + `Step`/`MStep` + `value_not_step` +
-  `sealv_value`/`sealv_det` etc. all live in **Seal/SmallStep.lean**.
-- `disjoint_consistent` lives at **CastingLemmas.lean:434**, signature
+  (identity), cfarrow/cfarrowtl, cbclos (identity at ∀, keyed on the closure's
+  stored body type).  `Consistent v₁ v₂ := ∀ {A w₁ w₂}, Cast v₁ A w₁
+  → Cast v₂ A w₂ → w₁ = w₂`.  Cast at `.bvar` is uninhabited
+  (cast_bvar_empty, Sealing.lean); cast_brand_id/cast_mu_id/cast_allb_id are
+  the identity lemmas (Sealing.lean).
+- Typing premise orders: see §3.9 item 8 (the authoritative list).  Slacks:
+  `tclos … Sub B' B, Sub C A`; `tfclos … Sub B' B, Sub B Bx, Sub C A` — note
+  these slacks are where the M4 "slack leak" lives (§3.7 ⚠).
+- `SealV`/`UnsealV` (identity at var/mu/bvar/allb) + `proxyEnv`/`proxyFun` +
+  `Step`/`MStep` + `value_not_step` + `sealv_value`/`sealv_det` etc. all live
+  in **Seal/SmallStep.lean**.  New steps: sblam (capture), sbappl
+  (congruence), sbappbeta (reduct `.box ρ (bsubstExp 0 n e)` — NO anno-reseal,
+  unlike sbeta).
+- `disjoint_consistent` lives at **CastingLemmas.lean:500**, signature
   `(hv₁)(hv₂)(ht₁ : HasType Δ Γ₁ v₁ A)(ht₂ : HasType Δ Γ₂ v₂ B)(hd : Disj A B) :
-  Consistent v₁ v₂` (contexts arbitrary!).
+  Consistent v₁ v₂` (contexts arbitrary!).  `consistent_after_cast` (same
+  file) is what rebuilds tmergevc's consistency.
 - `sbeta` reduct: `.box (.mrg v₁ v₂') (.anno e B)` — note the `anno`-reseal;
   `sfbeta` reduct: `.box (.mrg (.mrg v₁ (.fclos v₁ A B B e)) v₂') (.anno e Bx)`.
-- WfSig TODAY: int/top/brand/arr/rcd(l ≠ reservedLabel)/and(+ both-view Disj)/or/
-  mu(¬BrandIn + NoRes) — NO var case exists (μ-vars can't be sealed at) — so NOT
-  adding WfSig.bvar (per §3.5.6) is consistent with the var precedent ✓.
-- Sizes: CastingLemmas 1202, Sealing 1365, Correctness ~1640 (post 2-pre),
-  Preservation 433, Progress 379, Determinism 198 lines.
+- WfSig NOW: int/top/brand/arr/rcd(l ≠ reservedLabel)/and(+ both-view Disj)/or/
+  mu(¬BrandIn + NoRes + ¬HasBVar)/allb(¬BrandIn + NoRes + ¬HasBVar) — NO var
+  case and NO bvar case (signatures are bvar-free; wfsig_no_hasbvar).
+- Sizes NOW: CastingLemmas 1522, Sealing 1469, Correctness 1646,
+  Preservation 490, Progress 427, Determinism 213, BrandSubst 946 (new),
+  Examples 525.
 
 ### 3.9 Session-3 design corrections (all implemented; trust these over §3.1–§3.5)
 
@@ -549,8 +600,14 @@ Typ pull the Sub/Cost leaves in immediately), D-prep (`d94e193`), E
    cost_bsubst_inv → disj_bsubst, sub/lookup/rlookup/toplike/ordinary/nores
    _bsubst, bsubstExp_value, bsubstExp_genVal, cast_bsubst,
    hasbvar_substBrand, allbin_bsubst_inv, bsubst_substTyp_comm,
-   bclosed_bsubst(_lower), hastype_bsubst.  CastingLemmas: cast_allb_cost;
-   Sealing: cast_allb_id, viewL/R_allb; Examples: BrandPolyExample.
+   bclosed_bsubst(_lower), hastype_bsubst; plus the M4a/M4b-prep layer:
+   bvInsert, bsubstEnv_notin, bclosed_bsubstEnv, bsubstEnv_insert,
+   sub_bsubstEnv.  CastingLemmas: cast_allb_cost.  Sealing: cast_allb_id,
+   cast_brand_id, cast_bvar_empty, viewL/R_allb, and the (not-yet-consumed)
+   δ-env layer DEnv/dbrands/demp/RelAdm/DeltaAdm/deltaAdm_demp/deltaAdm_insert.
+   Examples: BrandPolyExample (genId, genId_inst, genId_run) and
+   GenericClientExample (SigB/SigAt, genClient, providers at brands 0/1,
+   client₀/client₁_typed).
 
 ---
 
@@ -596,18 +653,41 @@ Typ pull the Sub/Cost leaves in immediately), D-prep (`d94e193`), E
   `ewrap hΔ hv h`, `emseal hΔ hnr hwf h`, `emunseal hΔ hnr hwf h heq`,
   `einl h`, `einr h`, `ecase h h₁ h₂ hd₁ hd₂`, `eflam h hd₁ hd₂`,
   `efclos hv h₁ h₂ hd₁ hd₂`, `efold h`, `eunfold h heq`.
-- Build: `lake build` ≈ 60 jobs; single module `lake build LeanSce.SCE.Foo`;
+- **Partial binder lists are legal** in `cases/induction with` alternatives
+  (remaining args auto-named inaccessible) — after a rule gains premises, old
+  arms with fewer binders may still compile; only arms whose named binder now
+  sits at a shifted position break.  Use minimal binders in new arms.
+- `rw [viewL_int]`-style rewrites do NOT see through `bsubstEnv σ 0 .int`
+  (defeq but syntactically stuck) — run `simp only [bsubstEnv]` (or [bsubst])
+  first.
+- Nat-addition reassociation (`p + 1 + d + 1` vs `p + 1 + (d + 1)`) is defeq
+  but blocks IMPLICIT-arg unification in recursive calls — pass the implicits
+  explicitly (`foo (p := p) (d := d + 1) h`) and finish with `rfl`.
+- `induction hc` after `generalize h… : … = X at hc` re-introduces the
+  generalized equations per case automatically (do NOT `intro` them) — the
+  cost_bsubst_inv pattern.
+- Batch-editing scripts: `str.replace` on a 4-space-indented pattern also
+  matches INSIDE a 6-space-indented line (substring!) — anchor patterns with
+  leading newline or full-line content.
+- Build: `lake build` ≈ 62 jobs; single module `lake build LeanSce.SCE.Foo`;
   errors: `lake build 2>&1 | grep -E "^error" -A 6`.
 
-## 5. Commit log (newest first; session 2 above the line)
+## 5. Commit log (newest first; sessions 3 / 2 separated by lines)
 
 ```
+d7a549f Seal: M4b-prep — δ-env definitions + sub_bsubstEnv; LRg refactor ROLLED BACK (see §3.7 ⚠)
+b69909e HANDOFF: M4e correction — fundamental's tblam case needs size induction
+9892ce1 Seal: M4a infrastructure — bsubstEnv, bvInsert, cast_brand_id, cast_bvar_empty
+d477ac9 HANDOFF: milestone 4 design fixed — bvar-interpretation environments
+b36e51f Examples: GenericClientExample — one generic client, two sealed providers
+8e9446e Examples: BrandPolyExample + HANDOFF milestones 1–3 complete (Commit I)
 2b2b849 Seal: ∀β typing + steps + hastype_bsubst — safety layer complete (F′c, session 3)
 bcc930b Seal: blam/bclos carry the ∀-body annotation (F′b)
 82474d5 Seal: twrap ¬HasBVar R + tfold/tunfold ¬AllbIn μ-fence (F′a)
 005e5c8 Seal/BrandSubst: the ∀β-instantiation substitution suite (E)
 d94e193 Seal: bvar-free sealing discipline — WfSig/NoRes/tseal (D-prep)
 05b657a Seal: brand-polymorphism syntax + conservative COST/Sub/Cast (B+C)
+6c3fdcc HANDOFF: Commit A done with tmergevc design revision
 49dbca0 Seal: harden tmergev with Disj; split off tmergevc — Phase 3 Commit A (session 3)
 3a28c98 HANDOFF.md: Phase 3 design complete
 3b799d9 HANDOFF.md: work lives on lambdae-sub; main stays clean
