@@ -443,6 +443,12 @@ theorem mstep_unfold {v e e' : Exp} (hv : Value v) (h : MStep v e e')
   | refl => exact MStep.refl
   | step hs _ ih => exact MStep.step (Step.sunfold hv hs) ih
 
+theorem mstep_bapp {v e e' : Exp} {n : Nat} (hv : Value v) (h : MStep v e e')
+    : MStep v (.bapp e n) (.bapp e' n) := by
+  induction h with
+  | refl => exact MStep.refl
+  | step hs _ ih => exact MStep.step (Step.sbappl hv hs) ih
+
 -- ── Run inversions (for the surgery inside cast_lr's arrow case) ─────────────────────
 
 -- The first step of a terminating run of an application of values is beta.
@@ -1137,6 +1143,8 @@ theorem lr_rlookup {B : Typ} {l : String} {A : Typ} (hl : RLookup B l A)
 -- termination-flavored fundamental lemma below is simply false.  The SAFETY layer
 -- (determinism, progress, preservation) covers fixpoints unconditionally.  Restoring the
 -- relational results over fixpoints would need a step-indexed relation (future work).
+-- Generic terms (blam/bclos/bapp) ARE in the fragment: sbappbeta substitutes only
+-- annotations, so it never duplicates subterms and normalization is preserved.
 inductive Finitary : Exp → Prop where
   | query : Finitary .query
   | proj {e : Exp} {n : Nat} : Finitary e → Finitary (.proj e n)
@@ -1156,6 +1164,9 @@ inductive Finitary : Exp → Prop where
   | inl {B : Typ} {e : Exp} : Finitary e → Finitary (.inl B e)
   | inr {A : Typ} {e : Exp} : Finitary e → Finitary (.inr A e)
   | case {e e₁ e₂ : Exp} : Finitary e → Finitary e₁ → Finitary e₂ → Finitary (.case e e₁ e₂)
+  | blam {A : Typ} {e : Exp} : Finitary e → Finitary (.blam A e)
+  | bclos {ρ : Exp} {A : Typ} {e : Exp} : Finitary ρ → Finitary e → Finitary (.bclos ρ A e)
+  | bapp {e : Exp} {n : Nat} : Finitary e → Finitary (.bapp e n)
 
 theorem Finitary.proj_inv {e : Exp} {n : Nat} (h : Finitary (.proj e n)) : Finitary e := by
   cases h with | proj h' => exact h'
@@ -1182,303 +1193,434 @@ theorem Finitary.inr_inv {A : Typ} {e : Exp} (h : Finitary (.inr A e)) : Finitar
 theorem Finitary.case_inv {e e₁ e₂ : Exp} (h : Finitary (.case e e₁ e₂))
     : Finitary e ∧ Finitary e₁ ∧ Finitary e₂ := by
   cases h with | case h' h₁ h₂ => exact ⟨h', h₁, h₂⟩
+theorem Finitary.blam_inv {A : Typ} {e : Exp} (h : Finitary (.blam A e)) : Finitary e := by
+  cases h with | blam h' => exact h'
+theorem Finitary.bclos_inv {ρ : Exp} {A : Typ} {e : Exp} (h : Finitary (.bclos ρ A e))
+    : Finitary ρ ∧ Finitary e := by cases h with | bclos h₁ h₂ => exact ⟨h₁, h₂⟩
+theorem Finitary.bapp_inv {e : Exp} {n : Nat} (h : Finitary (.bapp e n)) : Finitary e := by
+  cases h with | bapp h' => exact h'
+
+-- Instantiation stays inside the normalizing fragment (it rewrites only annotations).
+theorem finitary_bsubstExp {n d : Nat} {e : Exp} (h : Finitary e)
+    : Finitary (bsubstExp d n e) := by
+  induction h generalizing d with
+  | query => exact Finitary.query
+  | proj _ ih => exact Finitary.proj ih
+  | lit => exact Finitary.lit
+  | unit => exact Finitary.unit
+  | lam _ ih => exact Finitary.lam ih
+  | box _ _ ih₁ ih₂ => exact Finitary.box ih₁ ih₂
+  | clos _ _ ih₁ ih₂ => exact Finitary.clos ih₁ ih₂
+  | app _ _ ih₁ ih₂ => exact Finitary.app ih₁ ih₂
+  | mrg _ _ ih₁ ih₂ => exact Finitary.mrg ih₁ ih₂
+  | lrec _ ih => exact Finitary.lrec ih
+  | rproj _ ih => exact Finitary.rproj ih
+  | anno _ ih => exact Finitary.anno ih
+  | wrap _ ih => exact Finitary.wrap ih
+  | «seal» _ ih => exact Finitary.seal ih
+  | «unseal» _ ih => exact Finitary.unseal ih
+  | inl _ ih => exact Finitary.inl ih
+  | inr _ ih => exact Finitary.inr ih
+  | «case» _ _ _ ih ih₁ ih₂ => exact Finitary.case ih ih₁ ih₂
+  | blam _ ih => exact Finitary.blam ih
+  | bclos _ _ ih₁ ih₂ => exact Finitary.bclos ih₁ ih₂
+  | bapp _ ih => exact Finitary.bapp ih
+
+-- The fundamental lemma proper, by strong induction on expression size (fuel k): the
+-- tblam/tbclos cases recurse at the INSTANTIATED body, which is not a subterm — its
+-- typing comes from hastype_bsubst and its size is unchanged (esize_bsubstExp).
+theorem fundamental_size : (k : Nat) → ∀ {Γ : Typ} {e : Exp} {A : Typ}, esize e ≤ k
+    → HasType noBrands Γ e A → Finitary e → SemTyp Δ₁ Δ₂ η Γ e e A := by
+  intro k
+  induction k with
+  | zero => intro Γ e A hk _ _; exact absurd (Nat.lt_of_lt_of_le esize_pos hk) (Nat.lt_irrefl 0)
+  | succ k ihk =>
+    intro Γ e A hk ht hfin
+    cases ht with
+    | tquery =>
+      intro ρ₁ ρ₂ hρ
+      have hv := lr_value hρ
+      exact ⟨ρ₁, ρ₂, mstep_one (Step.squery hv.1), mstep_one (Step.squery hv.2), hρ⟩
+    | tint =>
+      intro ρ₁ ρ₂ _
+      refine ⟨_, _, MStep.refl, MStep.refl, ?_⟩
+      simp only [LR, LRg]
+      exact ⟨_, rfl, rfl⟩
+    | tunit =>
+      intro ρ₁ ρ₂ _
+      refine ⟨_, _, MStep.refl, MStep.refl, ?_⟩
+      simp [LR, LRg]
+    | tapp he₁ he₂ =>
+      have ih₁ := ihk (by simp only [esize] at hk; omega) he₁
+      have ih₂ := ihk (by simp only [esize] at hk; omega) he₂
+      intro ρ₁ ρ₂ hρ
+      obtain ⟨hf₁, hf₂⟩ := Finitary.app_inv hfin
+      have hvρ := lr_value hρ
+      obtain ⟨f₁, f₂, rf₁, rf₂, hf⟩ := ih₁ hf₁ hρ
+      obtain ⟨a₁, a₂, ra₁, ra₂, ha⟩ := ih₂ hf₂ hρ
+      simp only [LR, LRg] at hf
+      obtain ⟨hvf₁, hvf₂, _, _, CL⟩ := hf
+      obtain ⟨w₁, w₂, rw₁, rw₂, hw⟩ := CL a₁ a₂ ha ρ₁ ρ₂ hvρ.1 hvρ.2
+      refine ⟨w₁, w₂, ?_, ?_, hw⟩
+      · exact mstep_trans (mstep_appl hvρ.1 rf₁)
+          (mstep_trans (mstep_appr hvρ.1 hvf₁ ra₁) rw₁)
+      · exact mstep_trans (mstep_appl hvρ.2 rf₂)
+          (mstep_trans (mstep_appr hvρ.2 hvf₂ ra₂) rw₂)
+    | tbox he₁ he₂ =>
+      have ih₁ := ihk (by simp only [esize] at hk; omega) he₁
+      have ih₂ := ihk (by simp only [esize] at hk; omega) he₂
+      intro ρ₁ ρ₂ hρ
+      obtain ⟨hf₁, hf₂⟩ := Finitary.box_inv hfin
+      have hvρ := lr_value hρ
+      obtain ⟨g₁, g₂, rg₁, rg₂, hg⟩ := ih₁ hf₁ hρ
+      have hvg := lr_value hg
+      obtain ⟨w₁, w₂, rw₁, rw₂, hw⟩ := ih₂ hf₂ hg
+      have hvw := lr_value hw
+      refine ⟨w₁, w₂, ?_, ?_, hw⟩
+      · exact mstep_trans (mstep_boxl hvρ.1 rg₁)
+          (mstep_trans (mstep_boxr hvρ.1 hvg.1 rw₁)
+            (mstep_one (Step.sboxv hvρ.1 hvg.1 hvw.1)))
+      · exact mstep_trans (mstep_boxl hvρ.2 rg₂)
+          (mstep_trans (mstep_boxr hvρ.2 hvg.2 rw₂)
+            (mstep_one (Step.sboxv hvρ.2 hvg.2 hvw.2)))
+    | tproj he hl =>
+      have ih := ihk (by simp only [esize] at hk; omega) he
+      intro ρ₁ ρ₂ hρ
+      have hvρ := lr_value hρ
+      obtain ⟨r₁, r₂, rr₁, rr₂, hr⟩ := ih (Finitary.proj_inv hfin) hρ
+      have hvr := lr_value hr
+      obtain ⟨s₁, s₂, l₁, l₂, hs⟩ := lr_lookup hl hr
+      refine ⟨s₁, s₂, ?_, ?_, hs⟩
+      · exact mstep_trans (mstep_proj hvρ.1 rr₁) (mstep_one (Step.sprojv hvρ.1 hvr.1 l₁))
+      · exact mstep_trans (mstep_proj hvρ.2 rr₂) (mstep_one (Step.sprojv hvρ.2 hvr.2 l₂))
+    | trcd he =>
+      have ih := ihk (by simp only [esize] at hk; omega) he
+      intro ρ₁ ρ₂ hρ
+      have hvρ := lr_value hρ
+      obtain ⟨w₁, w₂, rw₁, rw₂, hw⟩ := ih (Finitary.lrec_inv hfin) hρ
+      refine ⟨_, _, mstep_lrec hvρ.1 rw₁, mstep_lrec hvρ.2 rw₂, ?_⟩
+      simp only [LR, LRg]
+      exact ⟨_, _, rfl, rfl, hw⟩
+    | trproj he hl =>
+      have ih := ihk (by simp only [esize] at hk; omega) he
+      intro ρ₁ ρ₂ hρ
+      have hvρ := lr_value hρ
+      obtain ⟨r₁, r₂, rr₁, rr₂, hr⟩ := ih (Finitary.rproj_inv hfin) hρ
+      have hvr := lr_value hr
+      obtain ⟨s₁, s₂, l₁, l₂, hs⟩ := lr_rlookup hl hr
+      refine ⟨s₁, s₂, ?_, ?_, hs⟩
+      · exact mstep_trans (mstep_rproj hvρ.1 rr₁) (mstep_one (Step.srprojv hvρ.1 hvr.1 l₁))
+      · exact mstep_trans (mstep_rproj hvρ.2 rr₂) (mstep_one (Step.srprojv hvρ.2 hvr.2 l₂))
+    | tmrg he₁ he₂ hd₁ hd₂ =>
+      have ih₁ := ihk (by simp only [esize] at hk; omega) he₁
+      have ih₂ := ihk (by simp only [esize] at hk; omega) he₂
+      intro ρ₁ ρ₂ hρ
+      obtain ⟨hf₁, hf₂⟩ := Finitary.mrg_inv hfin
+      have hvρ := lr_value hρ
+      have htρ := lr_typed hρ
+      obtain ⟨a₁, a₂, ra₁, ra₂, ha⟩ := ih₁ hf₁ hρ
+      have hva := lr_value ha
+      have hta := lr_typed ha
+      have hρ' : LR Δ₁ Δ₂ η (.and _ _) (.mrg ρ₁ a₁) (.mrg ρ₂ a₂) :=
+        lr_and_intro
+          (HasType.tmergev hvρ.1 hva.1 htρ.1 hta.1 (disj_symm hd₁)
+            (disjoint_consistent hvρ.1 hva.1 htρ.1 hta.1 (disj_symm hd₁)))
+          (HasType.tmergev hvρ.2 hva.2 htρ.2 hta.2 (disj_symm hd₁)
+            (disjoint_consistent hvρ.2 hva.2 htρ.2 hta.2 (disj_symm hd₁))) hρ ha
+      obtain ⟨b₁, b₂, rb₁, rb₂, hb⟩ := ih₂ hf₂ hρ'
+      have hvb := lr_value hb
+      have htb := lr_typed hb
+      refine ⟨.mrg a₁ b₁, .mrg a₂ b₂, ?_, ?_, ?_⟩
+      · exact mstep_trans (mstep_mrgl hvρ.1 ra₁) (mstep_mrgr hvρ.1 hva.1 rb₁)
+      · exact mstep_trans (mstep_mrgl hvρ.2 ra₂) (mstep_mrgr hvρ.2 hva.2 rb₂)
+      · exact lr_and_intro
+          (HasType.tmergev hva.1 hvb.1 hta.1 htb.1 hd₂
+            (disjoint_consistent hva.1 hvb.1 hta.1 htb.1 hd₂))
+          (HasType.tmergev hva.2 hvb.2 hta.2 htb.2 hd₂
+            (disjoint_consistent hva.2 hvb.2 hta.2 htb.2 hd₂)) ha hb
+    | tmergev hv₁ hv₂ hp hq hd hcons =>
+      have ih₁ := ihk (by simp only [esize] at hk; omega) hp
+      have ih₂ := ihk (by simp only [esize] at hk; omega) hq
+      intro ρ₁ ρ₂ _
+      obtain ⟨hf₁, hf₂⟩ := Finitary.mrg_inv hfin
+      refine ⟨_, _, MStep.refl, MStep.refl, ?_⟩
+      exact lr_and_intro
+        (HasType.tmergev hv₁ hv₂ (hastype_weaken_store storele_noBrands hp)
+          (hastype_weaken_store storele_noBrands hq) hd hcons)
+        (HasType.tmergev hv₁ hv₂ (hastype_weaken_store storele_noBrands hp)
+          (hastype_weaken_store storele_noBrands hq) hd hcons)
+        (semtyp_value_self (ih₁ hf₁) hv₁) (semtyp_value_self (ih₂ hf₂) hv₂)
+    | tmergevc hv₁ hv₂ hp hq hv ht hc₁ hc₂ hcons =>
+      have ih₁ := ihk (by simp only [esize] at hk; omega) hp
+      have ih₂ := ihk (by simp only [esize] at hk; omega) hq
+      intro ρ₁ ρ₂ _
+      obtain ⟨hf₁, hf₂⟩ := Finitary.mrg_inv hfin
+      refine ⟨_, _, MStep.refl, MStep.refl, ?_⟩
+      exact lr_and_intro
+        (HasType.tmergevc hv₁ hv₂ (hastype_weaken_store storele_noBrands hp)
+          (hastype_weaken_store storele_noBrands hq) hv
+          (hastype_weaken_store storele_noBrands ht) hc₁ hc₂ hcons)
+        (HasType.tmergevc hv₁ hv₂ (hastype_weaken_store storele_noBrands hp)
+          (hastype_weaken_store storele_noBrands hq) hv
+          (hastype_weaken_store storele_noBrands ht) hc₁ hc₂ hcons)
+        (semtyp_value_self (ih₁ hf₁) hv₁) (semtyp_value_self (ih₂ hf₂) hv₂)
+    | tlam hd hb =>
+      have ih := ihk (by simp only [esize] at hk; omega) hb
+      intro ρ₁ ρ₂ hρ
+      have hfb := Finitary.lam_inv hfin
+      have hvρ := lr_value hρ
+      have htρ := lr_typed hρ
+      refine ⟨_, _, mstep_one (Step.sclos hvρ.1), mstep_one (Step.sclos hvρ.2), ?_⟩
+      simp only [LR, LRg]
+      refine ⟨Value.vclos hvρ.1, Value.vclos hvρ.2,
+        HasType.tclos hvρ.1 htρ.1 hd (hastype_weaken_store storele_noBrands hb)
+          (sub_refl _) (sub_refl _),
+        HasType.tclos hvρ.2 htρ.2 hd (hastype_weaken_store storele_noBrands hb)
+          (sub_refl _) (sub_refl _), ?_⟩
+      intro u₁ u₂ hu σ₁ σ₂ hσ₁ hσ₂
+      have hvu := lr_value hu
+      have htu := lr_typed hu
+      obtain ⟨u₁', cu₁⟩ := cast_progress hvu.1 htu.1 (sub_refl _)
+      obtain ⟨u₂', cu₂⟩ := cast_progress hvu.2 htu.2 (sub_refl _)
+      have hu' := cast_lr openadm_none (sub_refl _) hu cu₁ cu₂
+      have hvu' := lr_value hu'
+      have htu' := lr_typed hu'
+      have hρ' : LR Δ₁ Δ₂ η (.and _ _) (.mrg ρ₁ u₁') (.mrg ρ₂ u₂') :=
+        lr_and_intro
+          (HasType.tmergev hvρ.1 hvu'.1 htρ.1 htu'.1 hd
+            (disjoint_consistent hvρ.1 hvu'.1 htρ.1 htu'.1 hd))
+          (HasType.tmergev hvρ.2 hvu'.2 htρ.2 htu'.2 hd
+            (disjoint_consistent hvρ.2 hvu'.2 htρ.2 htu'.2 hd)) hρ hu'
+      obtain ⟨b₁, b₂, rb₁, rb₂, hbb⟩ := ih hfb hρ'
+      have hvb := lr_value hbb
+      have htb := lr_typed hbb
+      obtain ⟨s₁, cs₁⟩ := cast_progress hvb.1 htb.1 (sub_refl _)
+      obtain ⟨s₂, cs₂⟩ := cast_progress hvb.2 htb.2 (sub_refl _)
+      have hvm₁ : Value (.mrg ρ₁ u₁') := Value.vmrg hvρ.1 hvu'.1
+      have hvm₂ : Value (.mrg ρ₂ u₂') := Value.vmrg hvρ.2 hvu'.2
+      refine ⟨s₁, s₂, ?_, ?_, cast_lr openadm_none (sub_refl _) hbb cs₁ cs₂⟩
+      · refine MStep.step (Step.sbeta hσ₁ hvρ.1 hvu.1 cu₁) ?_
+        refine mstep_trans (mstep_boxr hσ₁ hvm₁ (mstep_anno hvm₁ rb₁)) ?_
+        refine MStep.step (Step.sboxr hσ₁ hvm₁ (Step.sannov hvm₁ hvb.1 cs₁)) ?_
+        exact MStep.step (Step.sboxv hσ₁ hvm₁ (cast_value hvb.1 cs₁)) MStep.refl
+      · refine MStep.step (Step.sbeta hσ₂ hvρ.2 hvu.2 cu₂) ?_
+        refine mstep_trans (mstep_boxr hσ₂ hvm₂ (mstep_anno hvm₂ rb₂)) ?_
+        refine MStep.step (Step.sboxr hσ₂ hvm₂ (Step.sannov hvm₂ hvb.2 cs₂)) ?_
+        exact MStep.step (Step.sboxv hσ₂ hvm₂ (cast_value hvb.2 cs₂)) MStep.refl
+    | tclos hv henv₁ hd hb hs₁ hs₂ =>
+      have ih_env := ihk (by simp only [esize] at hk; omega) henv₁
+      have ih_b := ihk (by simp only [esize] at hk; omega) hb
+      intro ρ₁ ρ₂ _
+      obtain ⟨hfv, hfb⟩ := Finitary.clos_inv hfin
+      have hgg := semtyp_value_self (ih_env hfv) hv
+      refine ⟨_, _, MStep.refl, MStep.refl, ?_⟩
+      simp only [LR, LRg]
+      refine ⟨Value.vclos hv, Value.vclos hv,
+        HasType.tclos hv (hastype_weaken_store storele_noBrands henv₁) hd
+          (hastype_weaken_store storele_noBrands hb) hs₁ hs₂,
+        HasType.tclos hv (hastype_weaken_store storele_noBrands henv₁) hd
+          (hastype_weaken_store storele_noBrands hb) hs₁ hs₂, ?_⟩
+      intro u₁ u₂ hu σ₁ σ₂ hσ₁ hσ₂
+      have hvu := lr_value hu
+      have htu := lr_typed hu
+      obtain ⟨u₁', cu₁⟩ := cast_progress hvu.1 htu.1 hs₂
+      obtain ⟨u₂', cu₂⟩ := cast_progress hvu.2 htu.2 hs₂
+      have hu' := cast_lr openadm_none hs₂ hu cu₁ cu₂
+      have hvu' := lr_value hu'
+      have htu' := lr_typed hu'
+      have hgv := lr_value hgg
+      have hgt := lr_typed hgg
+      have hρ' : LR Δ₁ Δ₂ η (.and _ _) (.mrg _ u₁') (.mrg _ u₂') :=
+        lr_and_intro
+          (HasType.tmergev hgv.1 hvu'.1 hgt.1 htu'.1 hd
+            (disjoint_consistent hgv.1 hvu'.1 hgt.1 htu'.1 hd))
+          (HasType.tmergev hgv.2 hvu'.2 hgt.2 htu'.2 hd
+            (disjoint_consistent hgv.2 hvu'.2 hgt.2 htu'.2 hd)) hgg hu'
+      obtain ⟨b₁, b₂, rb₁, rb₂, hbb⟩ := ih_b hfb hρ'
+      have hvb := lr_value hbb
+      have htb := lr_typed hbb
+      obtain ⟨s₁, cs₁⟩ := cast_progress hvb.1 htb.1 hs₁
+      obtain ⟨s₂, cs₂⟩ := cast_progress hvb.2 htb.2 hs₁
+      have hvm₁ : Value (.mrg _ u₁') := Value.vmrg hv hvu'.1
+      have hvm₂ : Value (.mrg _ u₂') := Value.vmrg hv hvu'.2
+      refine ⟨s₁, s₂, ?_, ?_, cast_lr openadm_none hs₁ hbb cs₁ cs₂⟩
+      · refine MStep.step (Step.sbeta hσ₁ hv hvu.1 cu₁) ?_
+        refine mstep_trans (mstep_boxr hσ₁ hvm₁ (mstep_anno hvm₁ rb₁)) ?_
+        refine MStep.step (Step.sboxr hσ₁ hvm₁ (Step.sannov hvm₁ hvb.1 cs₁)) ?_
+        exact MStep.step (Step.sboxv hσ₁ hvm₁ (cast_value hvb.1 cs₁)) MStep.refl
+      · refine MStep.step (Step.sbeta hσ₂ hv hvu.2 cu₂) ?_
+        refine mstep_trans (mstep_boxr hσ₂ hvm₂ (mstep_anno hvm₂ rb₂)) ?_
+        refine MStep.step (Step.sboxr hσ₂ hvm₂ (Step.sannov hvm₂ hvb.2 cs₂)) ?_
+        exact MStep.step (Step.sboxv hσ₂ hvm₂ (cast_value hvb.2 cs₂)) MStep.refl
+    | tanno he hsub =>
+      have ih := ihk (by simp only [esize] at hk; omega) he
+      intro ρ₁ ρ₂ hρ
+      have hvρ := lr_value hρ
+      obtain ⟨r₁, r₂, rr₁, rr₂, hr⟩ := ih (Finitary.anno_inv hfin) hρ
+      have hvr := lr_value hr
+      have htr := lr_typed hr
+      obtain ⟨s₁, cs₁⟩ := cast_progress hvr.1 htr.1 hsub
+      obtain ⟨s₂, cs₂⟩ := cast_progress hvr.2 htr.2 hsub
+      refine ⟨s₁, s₂, ?_, ?_, cast_lr openadm_none hsub hr cs₁ cs₂⟩
+      · exact mstep_trans (mstep_anno hvρ.1 rr₁) (mstep_one (Step.sannov hvρ.1 hvr.1 cs₁))
+      · exact mstep_trans (mstep_anno hvρ.2 rr₂) (mstep_one (Step.sannov hvρ.2 hvr.2 cs₂))
+    | tinl he =>
+      have ih := ihk (by simp only [esize] at hk; omega) he
+      intro ρ₁ ρ₂ hρ
+      have hvρ := lr_value hρ
+      obtain ⟨w₁, w₂, rw₁, rw₂, hw⟩ := ih (Finitary.inl_inv hfin) hρ
+      refine ⟨_, _, mstep_inl hvρ.1 rw₁, mstep_inl hvρ.2 rw₂, ?_⟩
+      simp only [LR, LRg]
+      exact Or.inl ⟨w₁, w₂, rfl, rfl, hw⟩
+    | tinr he =>
+      have ih := ihk (by simp only [esize] at hk; omega) he
+      intro ρ₁ ρ₂ hρ
+      have hvρ := lr_value hρ
+      obtain ⟨w₁, w₂, rw₁, rw₂, hw⟩ := ih (Finitary.inr_inv hfin) hρ
+      refine ⟨_, _, mstep_inr hvρ.1 rw₁, mstep_inr hvρ.2 rw₂, ?_⟩
+      simp only [LR, LRg]
+      exact Or.inr ⟨w₁, w₂, rfl, rfl, hw⟩
+    | tcase he hd₁ hd₂ hb₁ hb₂ =>
+      have ih := ihk (by simp only [esize] at hk; omega) he
+      have ih₁ := ihk (by simp only [esize] at hk; omega) hb₁
+      have ih₂ := ihk (by simp only [esize] at hk; omega) hb₂
+      intro ρ₁ ρ₂ hρ
+      obtain ⟨hfe, hfe₁, hfe₂⟩ := Finitary.case_inv hfin
+      have hvρ := lr_value hρ
+      have htρ := lr_typed hρ
+      obtain ⟨r₁, r₂, rr₁, rr₂, hr⟩ := ih hfe hρ
+      simp only [LR, LRg] at hr
+      cases hr with
+      | inl h' =>
+        obtain ⟨w₁, w₂, e₁eq, e₂eq, hA⟩ := h'
+        subst e₁eq; subst e₂eq
+        have hvw := lr_value hA
+        have htw := lr_typed hA
+        have hρ' : LR Δ₁ Δ₂ η (.and _ _) (.mrg ρ₁ w₁) (.mrg ρ₂ w₂) :=
+          lr_and_intro
+            (HasType.tmergev hvρ.1 hvw.1 htρ.1 htw.1 hd₁
+              (disjoint_consistent hvρ.1 hvw.1 htρ.1 htw.1 hd₁))
+            (HasType.tmergev hvρ.2 hvw.2 htρ.2 htw.2 hd₁
+              (disjoint_consistent hvρ.2 hvw.2 htρ.2 htw.2 hd₁)) hρ hA
+        obtain ⟨s₁, s₂, rs₁, rs₂, hs⟩ := ih₁ hfe₁ hρ'
+        have hvs := lr_value hs
+        refine ⟨s₁, s₂, ?_, ?_, hs⟩
+        · refine mstep_trans (mstep_case hvρ.1 rr₁) ?_
+          refine MStep.step (Step.scasel hvρ.1 hvw.1) ?_
+          refine mstep_trans (mstep_boxr hvρ.1 (Value.vmrg hvρ.1 hvw.1) rs₁) ?_
+          exact mstep_one (Step.sboxv hvρ.1 (Value.vmrg hvρ.1 hvw.1) hvs.1)
+        · refine mstep_trans (mstep_case hvρ.2 rr₂) ?_
+          refine MStep.step (Step.scasel hvρ.2 hvw.2) ?_
+          refine mstep_trans (mstep_boxr hvρ.2 (Value.vmrg hvρ.2 hvw.2) rs₂) ?_
+          exact mstep_one (Step.sboxv hvρ.2 (Value.vmrg hvρ.2 hvw.2) hvs.2)
+      | inr h' =>
+        obtain ⟨w₁, w₂, e₁eq, e₂eq, hB⟩ := h'
+        subst e₁eq; subst e₂eq
+        have hvw := lr_value hB
+        have htw := lr_typed hB
+        have hρ' : LR Δ₁ Δ₂ η (.and _ _) (.mrg ρ₁ w₁) (.mrg ρ₂ w₂) :=
+          lr_and_intro
+            (HasType.tmergev hvρ.1 hvw.1 htρ.1 htw.1 hd₂
+              (disjoint_consistent hvρ.1 hvw.1 htρ.1 htw.1 hd₂))
+            (HasType.tmergev hvρ.2 hvw.2 htρ.2 htw.2 hd₂
+              (disjoint_consistent hvρ.2 hvw.2 htρ.2 htw.2 hd₂)) hρ hB
+        obtain ⟨s₁, s₂, rs₁, rs₂, hs⟩ := ih₂ hfe₂ hρ'
+        have hvs := lr_value hs
+        refine ⟨s₁, s₂, ?_, ?_, hs⟩
+        · refine mstep_trans (mstep_case hvρ.1 rr₁) ?_
+          refine MStep.step (Step.scaser hvρ.1 hvw.1) ?_
+          refine mstep_trans (mstep_boxr hvρ.1 (Value.vmrg hvρ.1 hvw.1) rs₁) ?_
+          exact mstep_one (Step.sboxv hvρ.1 (Value.vmrg hvρ.1 hvw.1) hvs.1)
+        · refine mstep_trans (mstep_case hvρ.2 rr₂) ?_
+          refine MStep.step (Step.scaser hvρ.2 hvw.2) ?_
+          refine mstep_trans (mstep_boxr hvρ.2 (Value.vmrg hvρ.2 hvw.2) rs₂) ?_
+          exact mstep_one (Step.sboxv hvρ.2 (Value.vmrg hvρ.2 hvw.2) hvs.2)
+    -- Clients cannot brand, seal or unseal: these rules need a known representation.
+    | twrap hΔ => nomatch hΔ
+    | tseal hΔ => nomatch hΔ
+    | tunseal hΔ => nomatch hΔ
+    -- Fixpoints and iso-recursive folds are outside the normalizing fragment.
+    | tflam => nomatch hfin
+    | tfclos => nomatch hfin
+    -- Λβ: capture the run environment; every instantiation runs the INSTANTIATED body —
+    -- the unsubstituted one cannot run (casts at bvar annotations are stuck) — whose
+    -- typing is hastype_bsubst hb, not a subderivation: the size fuel pays for it
+    -- (bsubstExp preserves esize).
+    | tblam hnb hb =>
+      intro ρ₁ ρ₂ hρ
+      have hfb := Finitary.blam_inv hfin
+      have hvρ := lr_value hρ
+      have htρ := lr_typed hρ
+      refine ⟨_, _, mstep_one (Step.sblam hvρ.1), mstep_one (Step.sblam hvρ.2), ?_⟩
+      simp only [LR, LRg]
+      refine ⟨Value.vbclos hvρ.1, Value.vbclos hvρ.2,
+        HasType.tbclos hvρ.1 htρ.1 hnb (hastype_weaken_store storele_noBrands hb),
+        HasType.tbclos hvρ.2 htρ.2 hnb (hastype_weaken_store storele_noBrands hb), ?_⟩
+      intro m σ₁ σ₂ hσ₁ hσ₂
+      have hb' := hastype_bsubst (d := 0) (n := m) hb
+      rw [bsubst_notin hnb] at hb'
+      obtain ⟨w₁, w₂, r₁, r₂, hw⟩ :=
+        ihk (by rw [esize_bsubstExp]; simp only [esize] at hk; omega) hb'
+          (finitary_bsubstExp hfb) hρ
+      have hvw := lr_value hw
+      refine ⟨w₁, w₂, ?_, ?_, hw⟩
+      · refine MStep.step (Step.sbappbeta hσ₁ hvρ.1) ?_
+        refine mstep_trans (mstep_boxr hσ₁ hvρ.1 r₁) ?_
+        exact mstep_one (Step.sboxv hσ₁ hvρ.1 hvw.1)
+      · refine MStep.step (Step.sbappbeta hσ₂ hvρ.2) ?_
+        refine mstep_trans (mstep_boxr hσ₂ hvρ.2 r₂) ?_
+        exact mstep_one (Step.sboxv hσ₂ hvρ.2 hvw.2)
+    -- A brand-closure value: the captured environment is self-related through its own
+    -- (smaller) derivation, and instantiations run the instantiated body under it.
+    | tbclos hv henv hnb hb =>
+      intro ρ₁ ρ₂ _
+      obtain ⟨hfρ, hfb⟩ := Finitary.bclos_inv hfin
+      have hgg := semtyp_value_self (ihk (by simp only [esize] at hk; omega) henv hfρ) hv
+      refine ⟨_, _, MStep.refl, MStep.refl, ?_⟩
+      simp only [LR, LRg]
+      refine ⟨Value.vbclos hv, Value.vbclos hv,
+        HasType.tbclos hv (hastype_weaken_store storele_noBrands henv) hnb
+          (hastype_weaken_store storele_noBrands hb),
+        HasType.tbclos hv (hastype_weaken_store storele_noBrands henv) hnb
+          (hastype_weaken_store storele_noBrands hb), ?_⟩
+      intro m σ₁ σ₂ hσ₁ hσ₂
+      have hb' := hastype_bsubst (d := 0) (n := m) hb
+      rw [bsubst_notin hnb] at hb'
+      obtain ⟨w₁, w₂, r₁, r₂, hw⟩ :=
+        ihk (by rw [esize_bsubstExp]; simp only [esize] at hk; omega) hb'
+          (finitary_bsubstExp hfb) hgg
+      have hvw := lr_value hw
+      refine ⟨w₁, w₂, ?_, ?_, hw⟩
+      · refine MStep.step (Step.sbappbeta hσ₁ hv) ?_
+        refine mstep_trans (mstep_boxr hσ₁ hv r₁) ?_
+        exact mstep_one (Step.sboxv hσ₁ hv hvw.1)
+      · refine MStep.step (Step.sbappbeta hσ₂ hv) ?_
+        refine mstep_trans (mstep_boxr hσ₂ hv r₂) ?_
+        exact mstep_one (Step.sboxv hσ₂ hv hvw.2)
+    -- Instantiation: run the generic to a brand closure, then use its
+    -- instantiation-closure clause at this concrete brand.
+    | @tbapp _ A' T eb m he hbc heq =>
+      intro ρ₁ ρ₂ hρ
+      subst heq
+      have hfe := Finitary.bapp_inv hfin
+      have ih := ihk (by simp only [esize] at hk; omega) he
+      have hvρ := lr_value hρ
+      obtain ⟨v₁, v₂, rv₁, rv₂, hv⟩ := ih hfe hρ
+      simp only [LR, LRg] at hv
+      obtain ⟨hvv₁, hvv₂, _, _, hinst⟩ := hv
+      obtain ⟨w₁, w₂, rw₁, rw₂, hw⟩ := hinst m ρ₁ ρ₂ hvρ.1 hvρ.2
+      refine ⟨w₁, w₂, ?_, ?_, hw⟩
+      · exact mstep_trans (mstep_bapp hvρ.1 rv₁) rw₁
+      · exact mstep_trans (mstep_bapp hvρ.2 rv₂) rw₂
+    | tfold => nomatch hfin
+    | tunfold => nomatch hfin
 
 -- The fundamental lemma: every well-typed term of the normalizing fragment is
 -- semantically self-related.  Strong normalization of that fragment is an immediate
 -- corollary.
 theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A)
-    (hfin : Finitary e) : SemTyp Δ₁ Δ₂ η Γ e e A := by
-  induction ht with
-  | tquery =>
-    intro ρ₁ ρ₂ hρ
-    have hv := lr_value hρ
-    exact ⟨ρ₁, ρ₂, mstep_one (Step.squery hv.1), mstep_one (Step.squery hv.2), hρ⟩
-  | tint =>
-    intro ρ₁ ρ₂ _
-    refine ⟨_, _, MStep.refl, MStep.refl, ?_⟩
-    simp only [LR, LRg]
-    exact ⟨_, rfl, rfl⟩
-  | tunit =>
-    intro ρ₁ ρ₂ _
-    refine ⟨_, _, MStep.refl, MStep.refl, ?_⟩
-    simp [LR, LRg]
-  | tapp _ _ ih₁ ih₂ =>
-    intro ρ₁ ρ₂ hρ
-    obtain ⟨hf₁, hf₂⟩ := Finitary.app_inv hfin
-    have hvρ := lr_value hρ
-    obtain ⟨f₁, f₂, rf₁, rf₂, hf⟩ := ih₁ hf₁ hρ
-    obtain ⟨a₁, a₂, ra₁, ra₂, ha⟩ := ih₂ hf₂ hρ
-    simp only [LR, LRg] at hf
-    obtain ⟨hvf₁, hvf₂, _, _, CL⟩ := hf
-    obtain ⟨w₁, w₂, rw₁, rw₂, hw⟩ := CL a₁ a₂ ha ρ₁ ρ₂ hvρ.1 hvρ.2
-    refine ⟨w₁, w₂, ?_, ?_, hw⟩
-    · exact mstep_trans (mstep_appl hvρ.1 rf₁)
-        (mstep_trans (mstep_appr hvρ.1 hvf₁ ra₁) rw₁)
-    · exact mstep_trans (mstep_appl hvρ.2 rf₂)
-        (mstep_trans (mstep_appr hvρ.2 hvf₂ ra₂) rw₂)
-  | tbox _ _ ih₁ ih₂ =>
-    intro ρ₁ ρ₂ hρ
-    obtain ⟨hf₁, hf₂⟩ := Finitary.box_inv hfin
-    have hvρ := lr_value hρ
-    obtain ⟨g₁, g₂, rg₁, rg₂, hg⟩ := ih₁ hf₁ hρ
-    have hvg := lr_value hg
-    obtain ⟨w₁, w₂, rw₁, rw₂, hw⟩ := ih₂ hf₂ hg
-    have hvw := lr_value hw
-    refine ⟨w₁, w₂, ?_, ?_, hw⟩
-    · exact mstep_trans (mstep_boxl hvρ.1 rg₁)
-        (mstep_trans (mstep_boxr hvρ.1 hvg.1 rw₁)
-          (mstep_one (Step.sboxv hvρ.1 hvg.1 hvw.1)))
-    · exact mstep_trans (mstep_boxl hvρ.2 rg₂)
-        (mstep_trans (mstep_boxr hvρ.2 hvg.2 rw₂)
-          (mstep_one (Step.sboxv hvρ.2 hvg.2 hvw.2)))
-  | tproj _ hl ih =>
-    intro ρ₁ ρ₂ hρ
-    have hvρ := lr_value hρ
-    obtain ⟨r₁, r₂, rr₁, rr₂, hr⟩ := ih (Finitary.proj_inv hfin) hρ
-    have hvr := lr_value hr
-    obtain ⟨s₁, s₂, l₁, l₂, hs⟩ := lr_lookup hl hr
-    refine ⟨s₁, s₂, ?_, ?_, hs⟩
-    · exact mstep_trans (mstep_proj hvρ.1 rr₁) (mstep_one (Step.sprojv hvρ.1 hvr.1 l₁))
-    · exact mstep_trans (mstep_proj hvρ.2 rr₂) (mstep_one (Step.sprojv hvρ.2 hvr.2 l₂))
-  | trcd _ ih =>
-    intro ρ₁ ρ₂ hρ
-    have hvρ := lr_value hρ
-    obtain ⟨w₁, w₂, rw₁, rw₂, hw⟩ := ih (Finitary.lrec_inv hfin) hρ
-    refine ⟨_, _, mstep_lrec hvρ.1 rw₁, mstep_lrec hvρ.2 rw₂, ?_⟩
-    simp only [LR, LRg]
-    exact ⟨_, _, rfl, rfl, hw⟩
-  | trproj _ hl ih =>
-    intro ρ₁ ρ₂ hρ
-    have hvρ := lr_value hρ
-    obtain ⟨r₁, r₂, rr₁, rr₂, hr⟩ := ih (Finitary.rproj_inv hfin) hρ
-    have hvr := lr_value hr
-    obtain ⟨s₁, s₂, l₁, l₂, hs⟩ := lr_rlookup hl hr
-    refine ⟨s₁, s₂, ?_, ?_, hs⟩
-    · exact mstep_trans (mstep_rproj hvρ.1 rr₁) (mstep_one (Step.srprojv hvρ.1 hvr.1 l₁))
-    · exact mstep_trans (mstep_rproj hvρ.2 rr₂) (mstep_one (Step.srprojv hvρ.2 hvr.2 l₂))
-  | tmrg _ _ hd₁ hd₂ ih₁ ih₂ =>
-    intro ρ₁ ρ₂ hρ
-    obtain ⟨hf₁, hf₂⟩ := Finitary.mrg_inv hfin
-    have hvρ := lr_value hρ
-    have htρ := lr_typed hρ
-    obtain ⟨a₁, a₂, ra₁, ra₂, ha⟩ := ih₁ hf₁ hρ
-    have hva := lr_value ha
-    have hta := lr_typed ha
-    have hρ' : LR Δ₁ Δ₂ η (.and _ _) (.mrg ρ₁ a₁) (.mrg ρ₂ a₂) :=
-      lr_and_intro
-        (HasType.tmergev hvρ.1 hva.1 htρ.1 hta.1 (disj_symm hd₁)
-          (disjoint_consistent hvρ.1 hva.1 htρ.1 hta.1 (disj_symm hd₁)))
-        (HasType.tmergev hvρ.2 hva.2 htρ.2 hta.2 (disj_symm hd₁)
-          (disjoint_consistent hvρ.2 hva.2 htρ.2 hta.2 (disj_symm hd₁))) hρ ha
-    obtain ⟨b₁, b₂, rb₁, rb₂, hb⟩ := ih₂ hf₂ hρ'
-    have hvb := lr_value hb
-    have htb := lr_typed hb
-    refine ⟨.mrg a₁ b₁, .mrg a₂ b₂, ?_, ?_, ?_⟩
-    · exact mstep_trans (mstep_mrgl hvρ.1 ra₁) (mstep_mrgr hvρ.1 hva.1 rb₁)
-    · exact mstep_trans (mstep_mrgl hvρ.2 ra₂) (mstep_mrgr hvρ.2 hva.2 rb₂)
-    · exact lr_and_intro
-        (HasType.tmergev hva.1 hvb.1 hta.1 htb.1 hd₂
-          (disjoint_consistent hva.1 hvb.1 hta.1 htb.1 hd₂))
-        (HasType.tmergev hva.2 hvb.2 hta.2 htb.2 hd₂
-          (disjoint_consistent hva.2 hvb.2 hta.2 htb.2 hd₂)) ha hb
-  | tmergev hv₁ hv₂ hp hq hd hcons ih₁ ih₂ =>
-    intro ρ₁ ρ₂ _
-    obtain ⟨hf₁, hf₂⟩ := Finitary.mrg_inv hfin
-    refine ⟨_, _, MStep.refl, MStep.refl, ?_⟩
-    exact lr_and_intro
-      (HasType.tmergev hv₁ hv₂ (hastype_weaken_store storele_noBrands hp)
-        (hastype_weaken_store storele_noBrands hq) hd hcons)
-      (HasType.tmergev hv₁ hv₂ (hastype_weaken_store storele_noBrands hp)
-        (hastype_weaken_store storele_noBrands hq) hd hcons)
-      (semtyp_value_self (ih₁ hf₁) hv₁) (semtyp_value_self (ih₂ hf₂) hv₂)
-  | tmergevc hv₁ hv₂ hp hq hv ht hc₁ hc₂ hcons ih₁ ih₂ _ =>
-    intro ρ₁ ρ₂ _
-    obtain ⟨hf₁, hf₂⟩ := Finitary.mrg_inv hfin
-    refine ⟨_, _, MStep.refl, MStep.refl, ?_⟩
-    exact lr_and_intro
-      (HasType.tmergevc hv₁ hv₂ (hastype_weaken_store storele_noBrands hp)
-        (hastype_weaken_store storele_noBrands hq) hv
-        (hastype_weaken_store storele_noBrands ht) hc₁ hc₂ hcons)
-      (HasType.tmergevc hv₁ hv₂ (hastype_weaken_store storele_noBrands hp)
-        (hastype_weaken_store storele_noBrands hq) hv
-        (hastype_weaken_store storele_noBrands ht) hc₁ hc₂ hcons)
-      (semtyp_value_self (ih₁ hf₁) hv₁) (semtyp_value_self (ih₂ hf₂) hv₂)
-  | tlam hd hb ih =>
-    intro ρ₁ ρ₂ hρ
-    have hfb := Finitary.lam_inv hfin
-    have hvρ := lr_value hρ
-    have htρ := lr_typed hρ
-    refine ⟨_, _, mstep_one (Step.sclos hvρ.1), mstep_one (Step.sclos hvρ.2), ?_⟩
-    simp only [LR, LRg]
-    refine ⟨Value.vclos hvρ.1, Value.vclos hvρ.2,
-      HasType.tclos hvρ.1 htρ.1 hd (hastype_weaken_store storele_noBrands hb)
-        (sub_refl _) (sub_refl _),
-      HasType.tclos hvρ.2 htρ.2 hd (hastype_weaken_store storele_noBrands hb)
-        (sub_refl _) (sub_refl _), ?_⟩
-    intro u₁ u₂ hu σ₁ σ₂ hσ₁ hσ₂
-    have hvu := lr_value hu
-    have htu := lr_typed hu
-    obtain ⟨u₁', cu₁⟩ := cast_progress hvu.1 htu.1 (sub_refl _)
-    obtain ⟨u₂', cu₂⟩ := cast_progress hvu.2 htu.2 (sub_refl _)
-    have hu' := cast_lr openadm_none (sub_refl _) hu cu₁ cu₂
-    have hvu' := lr_value hu'
-    have htu' := lr_typed hu'
-    have hρ' : LR Δ₁ Δ₂ η (.and _ _) (.mrg ρ₁ u₁') (.mrg ρ₂ u₂') :=
-      lr_and_intro
-        (HasType.tmergev hvρ.1 hvu'.1 htρ.1 htu'.1 hd
-          (disjoint_consistent hvρ.1 hvu'.1 htρ.1 htu'.1 hd))
-        (HasType.tmergev hvρ.2 hvu'.2 htρ.2 htu'.2 hd
-          (disjoint_consistent hvρ.2 hvu'.2 htρ.2 htu'.2 hd)) hρ hu'
-    obtain ⟨b₁, b₂, rb₁, rb₂, hbb⟩ := ih hfb hρ'
-    have hvb := lr_value hbb
-    have htb := lr_typed hbb
-    obtain ⟨s₁, cs₁⟩ := cast_progress hvb.1 htb.1 (sub_refl _)
-    obtain ⟨s₂, cs₂⟩ := cast_progress hvb.2 htb.2 (sub_refl _)
-    have hvm₁ : Value (.mrg ρ₁ u₁') := Value.vmrg hvρ.1 hvu'.1
-    have hvm₂ : Value (.mrg ρ₂ u₂') := Value.vmrg hvρ.2 hvu'.2
-    refine ⟨s₁, s₂, ?_, ?_, cast_lr openadm_none (sub_refl _) hbb cs₁ cs₂⟩
-    · refine MStep.step (Step.sbeta hσ₁ hvρ.1 hvu.1 cu₁) ?_
-      refine mstep_trans (mstep_boxr hσ₁ hvm₁ (mstep_anno hvm₁ rb₁)) ?_
-      refine MStep.step (Step.sboxr hσ₁ hvm₁ (Step.sannov hvm₁ hvb.1 cs₁)) ?_
-      exact MStep.step (Step.sboxv hσ₁ hvm₁ (cast_value hvb.1 cs₁)) MStep.refl
-    · refine MStep.step (Step.sbeta hσ₂ hvρ.2 hvu.2 cu₂) ?_
-      refine mstep_trans (mstep_boxr hσ₂ hvm₂ (mstep_anno hvm₂ rb₂)) ?_
-      refine MStep.step (Step.sboxr hσ₂ hvm₂ (Step.sannov hvm₂ hvb.2 cs₂)) ?_
-      exact MStep.step (Step.sboxv hσ₂ hvm₂ (cast_value hvb.2 cs₂)) MStep.refl
-  | tclos hv henv₁ hd hb hs₁ hs₂ ih_env ih_b =>
-    intro ρ₁ ρ₂ _
-    obtain ⟨hfv, hfb⟩ := Finitary.clos_inv hfin
-    have hgg := semtyp_value_self (ih_env hfv) hv
-    refine ⟨_, _, MStep.refl, MStep.refl, ?_⟩
-    simp only [LR, LRg]
-    refine ⟨Value.vclos hv, Value.vclos hv,
-      HasType.tclos hv (hastype_weaken_store storele_noBrands henv₁) hd
-        (hastype_weaken_store storele_noBrands hb) hs₁ hs₂,
-      HasType.tclos hv (hastype_weaken_store storele_noBrands henv₁) hd
-        (hastype_weaken_store storele_noBrands hb) hs₁ hs₂, ?_⟩
-    intro u₁ u₂ hu σ₁ σ₂ hσ₁ hσ₂
-    have hvu := lr_value hu
-    have htu := lr_typed hu
-    obtain ⟨u₁', cu₁⟩ := cast_progress hvu.1 htu.1 hs₂
-    obtain ⟨u₂', cu₂⟩ := cast_progress hvu.2 htu.2 hs₂
-    have hu' := cast_lr openadm_none hs₂ hu cu₁ cu₂
-    have hvu' := lr_value hu'
-    have htu' := lr_typed hu'
-    have hgv := lr_value hgg
-    have hgt := lr_typed hgg
-    have hρ' : LR Δ₁ Δ₂ η (.and _ _) (.mrg _ u₁') (.mrg _ u₂') :=
-      lr_and_intro
-        (HasType.tmergev hgv.1 hvu'.1 hgt.1 htu'.1 hd
-          (disjoint_consistent hgv.1 hvu'.1 hgt.1 htu'.1 hd))
-        (HasType.tmergev hgv.2 hvu'.2 hgt.2 htu'.2 hd
-          (disjoint_consistent hgv.2 hvu'.2 hgt.2 htu'.2 hd)) hgg hu'
-    obtain ⟨b₁, b₂, rb₁, rb₂, hbb⟩ := ih_b hfb hρ'
-    have hvb := lr_value hbb
-    have htb := lr_typed hbb
-    obtain ⟨s₁, cs₁⟩ := cast_progress hvb.1 htb.1 hs₁
-    obtain ⟨s₂, cs₂⟩ := cast_progress hvb.2 htb.2 hs₁
-    have hvm₁ : Value (.mrg _ u₁') := Value.vmrg hv hvu'.1
-    have hvm₂ : Value (.mrg _ u₂') := Value.vmrg hv hvu'.2
-    refine ⟨s₁, s₂, ?_, ?_, cast_lr openadm_none hs₁ hbb cs₁ cs₂⟩
-    · refine MStep.step (Step.sbeta hσ₁ hv hvu.1 cu₁) ?_
-      refine mstep_trans (mstep_boxr hσ₁ hvm₁ (mstep_anno hvm₁ rb₁)) ?_
-      refine MStep.step (Step.sboxr hσ₁ hvm₁ (Step.sannov hvm₁ hvb.1 cs₁)) ?_
-      exact MStep.step (Step.sboxv hσ₁ hvm₁ (cast_value hvb.1 cs₁)) MStep.refl
-    · refine MStep.step (Step.sbeta hσ₂ hv hvu.2 cu₂) ?_
-      refine mstep_trans (mstep_boxr hσ₂ hvm₂ (mstep_anno hvm₂ rb₂)) ?_
-      refine MStep.step (Step.sboxr hσ₂ hvm₂ (Step.sannov hvm₂ hvb.2 cs₂)) ?_
-      exact MStep.step (Step.sboxv hσ₂ hvm₂ (cast_value hvb.2 cs₂)) MStep.refl
-  | tanno _ hsub ih =>
-    intro ρ₁ ρ₂ hρ
-    have hvρ := lr_value hρ
-    obtain ⟨r₁, r₂, rr₁, rr₂, hr⟩ := ih (Finitary.anno_inv hfin) hρ
-    have hvr := lr_value hr
-    have htr := lr_typed hr
-    obtain ⟨s₁, cs₁⟩ := cast_progress hvr.1 htr.1 hsub
-    obtain ⟨s₂, cs₂⟩ := cast_progress hvr.2 htr.2 hsub
-    refine ⟨s₁, s₂, ?_, ?_, cast_lr openadm_none hsub hr cs₁ cs₂⟩
-    · exact mstep_trans (mstep_anno hvρ.1 rr₁) (mstep_one (Step.sannov hvρ.1 hvr.1 cs₁))
-    · exact mstep_trans (mstep_anno hvρ.2 rr₂) (mstep_one (Step.sannov hvρ.2 hvr.2 cs₂))
-  | tinl _ ih =>
-    intro ρ₁ ρ₂ hρ
-    have hvρ := lr_value hρ
-    obtain ⟨w₁, w₂, rw₁, rw₂, hw⟩ := ih (Finitary.inl_inv hfin) hρ
-    refine ⟨_, _, mstep_inl hvρ.1 rw₁, mstep_inl hvρ.2 rw₂, ?_⟩
-    simp only [LR, LRg]
-    exact Or.inl ⟨w₁, w₂, rfl, rfl, hw⟩
-  | tinr _ ih =>
-    intro ρ₁ ρ₂ hρ
-    have hvρ := lr_value hρ
-    obtain ⟨w₁, w₂, rw₁, rw₂, hw⟩ := ih (Finitary.inr_inv hfin) hρ
-    refine ⟨_, _, mstep_inr hvρ.1 rw₁, mstep_inr hvρ.2 rw₂, ?_⟩
-    simp only [LR, LRg]
-    exact Or.inr ⟨w₁, w₂, rfl, rfl, hw⟩
-  | tcase _ hd₁ hd₂ _ _ ih ih₁ ih₂ =>
-    intro ρ₁ ρ₂ hρ
-    obtain ⟨hfe, hfe₁, hfe₂⟩ := Finitary.case_inv hfin
-    have hvρ := lr_value hρ
-    have htρ := lr_typed hρ
-    obtain ⟨r₁, r₂, rr₁, rr₂, hr⟩ := ih hfe hρ
-    simp only [LR, LRg] at hr
-    cases hr with
-    | inl h' =>
-      obtain ⟨w₁, w₂, e₁eq, e₂eq, hA⟩ := h'
-      subst e₁eq; subst e₂eq
-      have hvw := lr_value hA
-      have htw := lr_typed hA
-      have hρ' : LR Δ₁ Δ₂ η (.and _ _) (.mrg ρ₁ w₁) (.mrg ρ₂ w₂) :=
-        lr_and_intro
-          (HasType.tmergev hvρ.1 hvw.1 htρ.1 htw.1 hd₁
-            (disjoint_consistent hvρ.1 hvw.1 htρ.1 htw.1 hd₁))
-          (HasType.tmergev hvρ.2 hvw.2 htρ.2 htw.2 hd₁
-            (disjoint_consistent hvρ.2 hvw.2 htρ.2 htw.2 hd₁)) hρ hA
-      obtain ⟨s₁, s₂, rs₁, rs₂, hs⟩ := ih₁ hfe₁ hρ'
-      have hvs := lr_value hs
-      refine ⟨s₁, s₂, ?_, ?_, hs⟩
-      · refine mstep_trans (mstep_case hvρ.1 rr₁) ?_
-        refine MStep.step (Step.scasel hvρ.1 hvw.1) ?_
-        refine mstep_trans (mstep_boxr hvρ.1 (Value.vmrg hvρ.1 hvw.1) rs₁) ?_
-        exact mstep_one (Step.sboxv hvρ.1 (Value.vmrg hvρ.1 hvw.1) hvs.1)
-      · refine mstep_trans (mstep_case hvρ.2 rr₂) ?_
-        refine MStep.step (Step.scasel hvρ.2 hvw.2) ?_
-        refine mstep_trans (mstep_boxr hvρ.2 (Value.vmrg hvρ.2 hvw.2) rs₂) ?_
-        exact mstep_one (Step.sboxv hvρ.2 (Value.vmrg hvρ.2 hvw.2) hvs.2)
-    | inr h' =>
-      obtain ⟨w₁, w₂, e₁eq, e₂eq, hB⟩ := h'
-      subst e₁eq; subst e₂eq
-      have hvw := lr_value hB
-      have htw := lr_typed hB
-      have hρ' : LR Δ₁ Δ₂ η (.and _ _) (.mrg ρ₁ w₁) (.mrg ρ₂ w₂) :=
-        lr_and_intro
-          (HasType.tmergev hvρ.1 hvw.1 htρ.1 htw.1 hd₂
-            (disjoint_consistent hvρ.1 hvw.1 htρ.1 htw.1 hd₂))
-          (HasType.tmergev hvρ.2 hvw.2 htρ.2 htw.2 hd₂
-            (disjoint_consistent hvρ.2 hvw.2 htρ.2 htw.2 hd₂)) hρ hB
-      obtain ⟨s₁, s₂, rs₁, rs₂, hs⟩ := ih₂ hfe₂ hρ'
-      have hvs := lr_value hs
-      refine ⟨s₁, s₂, ?_, ?_, hs⟩
-      · refine mstep_trans (mstep_case hvρ.1 rr₁) ?_
-        refine MStep.step (Step.scaser hvρ.1 hvw.1) ?_
-        refine mstep_trans (mstep_boxr hvρ.1 (Value.vmrg hvρ.1 hvw.1) rs₁) ?_
-        exact mstep_one (Step.sboxv hvρ.1 (Value.vmrg hvρ.1 hvw.1) hvs.1)
-      · refine mstep_trans (mstep_case hvρ.2 rr₂) ?_
-        refine MStep.step (Step.scaser hvρ.2 hvw.2) ?_
-        refine mstep_trans (mstep_boxr hvρ.2 (Value.vmrg hvρ.2 hvw.2) rs₂) ?_
-        exact mstep_one (Step.sboxv hvρ.2 (Value.vmrg hvρ.2 hvw.2) hvs.2)
-  -- Clients cannot brand, seal or unseal: these rules need a known representation.
-  | twrap hΔ _ _ _ => nomatch hΔ
-  | tseal hΔ _ _ _ _ => nomatch hΔ
-  | tunseal hΔ _ _ _ _ _ => nomatch hΔ
-  -- Fixpoints and iso-recursive folds are outside the normalizing fragment.
-  | tflam _ _ _ _ => nomatch hfin
-  | tfclos _ _ _ _ _ _ _ _ _ _ => nomatch hfin
-  -- Generic terms sit outside the normalizing fragment (no blam/bclos/bapp in
-  -- Finitary); the relational ∀-clause is milestone 4.
-  | tblam _ _ _ => nomatch hfin
-  | tbclos _ _ _ _ _ _ => nomatch hfin
-  | tbapp _ _ _ _ => nomatch hfin
-  | tfold _ _ _ => nomatch hfin
-  | tunfold _ _ _ _ => nomatch hfin
+    (hfin : Finitary e) : SemTyp Δ₁ Δ₂ η Γ e e A :=
+  fundamental_size (esize e) (Nat.le_refl _) ht hfin
 
 -- ── Corollaries ──────────────────────────────────────────────────────────────────────
 

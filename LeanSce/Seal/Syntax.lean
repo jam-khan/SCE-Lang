@@ -256,6 +256,67 @@ def bsubstExp (d n : Nat) : Exp → Exp
   | .bclos ρ A e  => .bclos (bsubstExp d n ρ) (bsubst (d + 1) n A) (bsubstExp (d + 1) n e)
   | .bapp e m     => .bapp (bsubstExp d n e) m
 
+-- Expression size, annotations excluded: `bsubstExp` rewrites only type annotations, so
+-- ∀β-instantiation preserves it.  This is the measure the fundamental lemma's strong
+-- induction descends on — its tblam/tbclos cases recurse at the INSTANTIATED body, which
+-- is not a subterm of the subject.
+def esize : Exp → Nat
+  | .query        => 1
+  | .proj e _     => esize e + 1
+  | .lit _        => 1
+  | .unit         => 1
+  | .lam _ _ e    => esize e + 1
+  | .box e₁ e₂    => esize e₁ + esize e₂ + 1
+  | .clos v _ _ e => esize v + esize e + 1
+  | .app e₁ e₂    => esize e₁ + esize e₂ + 1
+  | .mrg e₁ e₂    => esize e₁ + esize e₂ + 1
+  | .lrec _ e     => esize e + 1
+  | .rproj e _    => esize e + 1
+  | .anno e _     => esize e + 1
+  | .wrap _ v     => esize v + 1
+  | .seal _ _ _ e   => esize e + 1
+  | .unseal _ _ _ e => esize e + 1
+  | .inl _ e      => esize e + 1
+  | .inr _ e      => esize e + 1
+  | .case e e₁ e₂ => esize e + esize e₁ + esize e₂ + 1
+  | .fold _ e     => esize e + 1
+  | .unfold e     => esize e + 1
+  | .flam _ _ e   => esize e + 1
+  | .fclos v _ _ _ e => esize v + esize e + 1
+  | .blam _ e     => esize e + 1
+  | .bclos ρ _ e  => esize ρ + esize e + 1
+  | .bapp e _     => esize e + 1
+
+theorem esize_pos : ∀ {e : Exp}, 0 < esize e := by
+  intro e; cases e <;> simp only [esize] <;> omega
+
+theorem esize_bsubstExp {n : Nat} : {d : Nat} → {e : Exp} → esize (bsubstExp d n e) = esize e
+  | _, .query => rfl
+  | _, .proj e _ => by simp only [bsubstExp, esize, esize_bsubstExp]
+  | _, .lit _ => rfl
+  | _, .unit => rfl
+  | _, .lam _ _ e => by simp only [bsubstExp, esize, esize_bsubstExp]
+  | _, .box e₁ e₂ => by simp only [bsubstExp, esize, esize_bsubstExp]
+  | _, .clos v _ _ e => by simp only [bsubstExp, esize, esize_bsubstExp]
+  | _, .app e₁ e₂ => by simp only [bsubstExp, esize, esize_bsubstExp]
+  | _, .mrg e₁ e₂ => by simp only [bsubstExp, esize, esize_bsubstExp]
+  | _, .lrec _ e => by simp only [bsubstExp, esize, esize_bsubstExp]
+  | _, .rproj e _ => by simp only [bsubstExp, esize, esize_bsubstExp]
+  | _, .anno e _ => by simp only [bsubstExp, esize, esize_bsubstExp]
+  | _, .wrap _ v => by simp only [bsubstExp, esize, esize_bsubstExp]
+  | _, .seal _ _ _ e => by simp only [bsubstExp, esize, esize_bsubstExp]
+  | _, .unseal _ _ _ e => by simp only [bsubstExp, esize, esize_bsubstExp]
+  | _, .inl _ e => by simp only [bsubstExp, esize, esize_bsubstExp]
+  | _, .inr _ e => by simp only [bsubstExp, esize, esize_bsubstExp]
+  | _, .case e e₁ e₂ => by simp only [bsubstExp, esize, esize_bsubstExp]
+  | _, .fold _ e => by simp only [bsubstExp, esize, esize_bsubstExp]
+  | _, .unfold e => by simp only [bsubstExp, esize, esize_bsubstExp]
+  | _, .flam _ _ e => by simp only [bsubstExp, esize, esize_bsubstExp]
+  | _, .fclos v _ _ _ e => by simp only [bsubstExp, esize, esize_bsubstExp]
+  | _, .blam _ e => by simp only [bsubstExp, esize, esize_bsubstExp]
+  | _, .bclos ρ _ e => by simp only [bsubstExp, esize, esize_bsubstExp]
+  | _, .bapp e _ => by simp only [bsubstExp, esize, esize_bsubstExp]
+
 inductive Value : Exp → Prop where
   | vint  {n}       : Value (.lit n)
   | vunit           : Value .unit
