@@ -895,12 +895,12 @@ v &::=& i \mid \tp \mid \langle v, \lambda A.e \rangle \mid \langle v, \mathsf{f
 \sT{\tp} = \tp \quad
 \sT{A \to B} = \sT{A} \to \sT{B} \quad
 \sT{A \& B} = \sT{A} \,\&\, \sT{B} \quad
-\sT{A \vee B} = \tp \quad
-\sT{\{\ell:A\}} = \{\ell : \sT{A}\} \\
+\sT{A \vee B} = \sT{A} \vee \sT{B} \\
+\sT{\{\ell:A\}} = \{\ell : \sT{A}\} \quad
 \sT{\mathsf{sig}\,\langle T\rangle} = \sT{T} \quad
-\sT{\mathsf{sig}\,(T \Rightarrow \sigma)} = \sT{T} \to \sT{\mathsf{sig}\,\sigma} \quad
-\sT{X_k} = \tp \quad
-\sT{\mu T} = \tp \quad
+\sT{\mathsf{sig}\,(T \Rightarrow \sigma)} = \sT{T} \to \sT{\mathsf{sig}\,\sigma} \\
+\sT{X_k} = X_k \quad
+\sT{\mu T} = \mu\,\sT{T} \quad
 \sT{\bra{n}} = \bra{n}
 \end{array}
 \]
