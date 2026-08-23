@@ -3,9 +3,13 @@
 \usepackage{amsmath,amssymb,amsthm}
 \usepackage{mathpartir}
 \usepackage{array}
+\usepackage{xcolor}
 
 \newtheorem{theorem}{Theorem}[section]
 \newtheorem{definition}[theorem]{Definition}
+% planned results (stated, not yet mechanized) are typeset in red
+\newtheorem{plannedx}[theorem]{Theorem}
+\newenvironment{planned}[1]{\begin{plannedx}[{\color{red}\textsf{#1} \textnormal{(planned)}}]\color{red}}{\end{plannedx}}
 
 % ── shared ──
 \newcommand{\Int}{\mathsf{Int}}
@@ -49,6 +53,15 @@
 % ── LR ──
 \newcommand{\LRg}[2]{\mathcal{V}\sT{#2}^{#1}}
 \newcommand{\LRc}[1]{\mathcal{V}\sT{#1}}
+% ── brand polymorphism ──
+\newcommand{\bv}[1]{\beta_{#1}}
+\newcommand{\allb}[1]{\forall.\,#1}
+\newcommand{\blam}[2]{\Lambda_{#1}.\,#2}
+\newcommand{\bapp}[2]{#1\,[\bra{#2}]}
+\newcommand{\fclosx}[4]{\langle #1, \mu\lambda(#2{\to}#3).\,#4\rangle}
+\newcommand{\hbv}[1]{\mathsf{bv}(#1)}
+\newcommand{\hallb}[1]{\forall\!\in\!#1}
+\newcommand{\bcl}[2]{\mathsf{BClosed}\ #1\ #2}
 
 \begin{document}
 
@@ -58,24 +71,60 @@
 
 \[
 \begin{array}{r@{\;}c@{\;}l@{\qquad}l}
-A,B,C,R,S,\Gamma &::=& \Int \mid \tp \mid A \to B \mid A \,\&\, B \mid \{\ell : A\} \mid \bra{n} & \\
+A,B,C,R,S,T,\Gamma &::=& \Int \mid \tp \mid A \to B \mid A \,\&\, B \mid \{\ell : A\} \mid \bra{n} & \\
+  &\mid& A \vee B \mid X_k \mid \mu T \mid \bv{i} \mid \allb{A} & \\
 \Delta &\in& \mathbb{N} \rightharpoonup \mathsf{Typ} \qquad \emptyset \;=\; \lambda n.\ \mathsf{none} & \\[2pt]
 e &::=& \qry \mid e.k \mid i \mid \tp \mid \lambda(A{\to}B).\,e \mid e_1 \bx e_2 \mid \langle e_1, \lambda(A{\to}B).\,e_2\rangle \mid e_1\,e_2 & \\
-  &\mid& e_1 \mrg e_2 \mid \{\ell = e\} \mid e.\ell \mid (e : A) \mid \wrp{n}{e} \mid \sealE{n}{R}{S}{e} \mid \unsealE{n}{R}{S}{e} & \\[2pt]
-v &::=& i \mid \tp \mid \langle v, \lambda(A{\to}B).\,e\rangle \mid \{\ell = v\} \mid v_1 \mrg v_2 \mid \wrp{n}{v} &
+  &\mid& e_1 \mrg e_2 \mid \{\ell = e\} \mid e.\ell \mid (e : A) \mid \wrp{n}{e} \mid \sealE{n}{R}{S}{e} \mid \unsealE{n}{R}{S}{e} & \\
+  &\mid& \mathsf{inl}^{B}\,e \mid \mathsf{inr}^{A}\,e \mid \mathsf{case}\ e\ \mathsf{of}\ e_1 \mid e_2
+    \mid \mathsf{fold}^{T} e \mid \mathsf{unfold}\ e & \\
+  &\mid& \mu\lambda(A{\to}B).\,e \mid \fclosx{e_1}{A}{B}{e_2}^{B_x}
+    \mid \blam{A}{e} \mid \langle e_1, \blam{A}{e_2}\rangle \mid \bapp{e}{n} & \\[2pt]
+v &::=& i \mid \tp \mid \langle v, \lambda(A{\to}B).\,e\rangle \mid \{\ell = v\} \mid v_1 \mrg v_2 \mid \wrp{n}{v} & \\
+  &\mid& \mathsf{inl}^{B}\,v \mid \mathsf{inr}^{A}\,v \mid \mathsf{fold}^{T} v & \\
+  &\mid& \fclosx{v}{A}{B}{e}^{B_x} \mid \langle v, \blam{A}{e}\rangle &
 \end{array}
 \]
+$X_k$ is a $\mu$-bound type variable and $\bv{i}$ a $\forall$-bound \emph{brand}
+variable (both de Bruijn, disjoint namespaces from each other and from concrete brands
+$\bra{n}$); $\blam{A}{e}$ and its closure carry the $\forall$-body annotation $A$
+(casting at a $\forall$-type is an identity that the value must pin).
 
+\smallskip
+Three substitutions, all shift-free because the substitutend is closed in the relevant
+namespace: brand substitution $\subs{S}{n}{R}$ (replace $\bra{n}$ by $R$),
+$\mu$-unfolding $\subs{T}{X_d}{S}^{\mu}$ (replace $X_d$ by $S$; $d{+}1$ under $\mu$),
+and $\forall\beta$-instantiation $\subs{A}{\bv{d}}{\bra{n}}$ (replace $\bv{d}$ by the
+\emph{concrete} $\bra{n}$; $d{+}1$ under $\forall$; $\mu$ binds $X$, not $\beta$ — no
+bump).  Each is homomorphic on all other formers; the interesting leaves:
 \[
 \begin{array}{l}
-\subs{\Int}{n}{R} = \Int \qquad
-\subs{\tp}{n}{R} = \tp \qquad
-\subs{(A \to B)}{n}{R} = \subs{A}{n}{R} \to \subs{B}{n}{R} \\
-\subs{(A \& B)}{n}{R} = \subs{A}{n}{R} \,\&\, \subs{B}{n}{R} \qquad
-\subs{\{\ell : A\}}{n}{R} = \{\ell : \subs{A}{n}{R}\} \qquad
-\subs{\bra{m}}{n}{R} = \begin{cases} R & m = n \\ \bra{m} & m \neq n\end{cases}
+\subs{\bra{m}}{n}{R} = \begin{cases} R & m = n \\ \bra{m} & m \neq n\end{cases} \qquad
+\subs{X_k}{n}{R} = X_k \qquad
+\subs{\bv{i}}{n}{R} = \bv{i} \\[3pt]
+\subs{(\mu T)}{n}{R} = \mu\,\subs{T}{n}{R} \qquad
+\subs{(\allb{A})}{n}{R} = \allb{\subs{A}{n}{R}} \\[3pt]
+\subs{X_k}{X_d}{S}^{\mu} = \begin{cases} S & k = d \\ X_k & k \neq d\end{cases} \qquad
+\subs{\bv{i}}{X_d}{S}^{\mu} = \bv{i} \qquad
+\subs{\bra{m}}{X_d}{S}^{\mu} = \bra{m} \\[3pt]
+\subs{\bv{i}}{\bv{d}}{\bra{n}} = \begin{cases} \bra{n} & i = d \\ \bv{i} & i \neq d\end{cases} \qquad
+\subs{X_k}{\bv{d}}{\bra{n}} = X_k \\[3pt]
+\subs{(\mu T)}{\bv{d}}{\bra{n}} = \mu\,\subs{T}{\bv{d}}{\bra{n}} \qquad
+\subs{(\allb{A})}{\bv{d}}{\bra{n}} = \allb{\subs{A}{\bv{d{+}1}}{\bra{n}}}
 \end{array}
 \]
+$\subs{e}{\bv{d}}{\bra{n}}$ pushes the instantiation into every type annotation of $e$
+($d{+}1$ under $\Lambda$ and its closure's annotation/body; a captured environment sits
+outside the binder and substitutes at $d$).
+
+\smallskip
+Occurrence predicates: $\hbv{T}$ (some $\bv{i}$ occurs in $T$, index-blind);
+$\hallb{T}$ (some $\forall$ occurs in $T$); $\bcl{c}{T}$ (every $\bv{i}$ in $T$ is
+bound below the cutoff: $i < c$ plus the enclosing binders; $c{+}1$ under $\forall$).
+Size measures: $\mathsf{tsize}$ on types and $\mathsf{esize}$ on terms (annotations
+excluded); both are preserved by $\forall\beta$-instantiation, which only trades a
+$\bv{i}$ leaf for a $\bra{n}$ leaf — the well-foundedness of the logical relation and
+of the fundamental lemma's induction rests on this.
 
 \begin{mathpar}
 \inferrule*[right=zero]{ }{\lk{A \& B}{0}{B}}
@@ -104,6 +153,16 @@ v &::=& i \mid \tp \mid \langle v, \lambda(A{\to}B).\,e\rangle \mid \{\ell = v\}
 \and
 \inferrule*[right=obrand]{ }{\bra{n}\ \mathsf{ord}}
 \and
+\inferrule*[right=oor]{ }{A\vee B\ \mathsf{ord}}
+\and
+\inferrule*[right=ovar]{ }{X_k\ \mathsf{ord}}
+\and
+\inferrule*[right=omu]{ }{\mu T\ \mathsf{ord}}
+\and
+\inferrule*[right=obvar]{ }{\bv{i}\ \mathsf{ord}}
+\and
+\inferrule*[right=oallb]{ }{\allb{A}\ \mathsf{ord}}
+\and
 \inferrule*[right=tltop]{ }{\tl{\tp}}
 \and
 \inferrule*[right=tland]{\tl{A} \\ \tl{B}}{\tl{A\&B}}
@@ -114,12 +173,14 @@ v &::=& i \mid \tp \mid \langle v, \lambda(A{\to}B).\,e\rangle \mid \{\ell = v\}
 \end{mathpar}
 
 \[
+\begin{array}{l}
 \gen{\Int} = \tp \quad
 \gen{\tp} = \tp \quad
 \gen{(A\to B)} = \langle \tp, \lambda(A{\to}B).\,\gen{B}\rangle \quad
 \gen{(A\&B)} = \gen{A} \mrg \gen{B} \quad
-\gen{\{\ell:A\}} = \{\ell = \gen{A}\} \quad
-\gen{\bra{n}} = \tp
+\gen{\{\ell:A\}} = \{\ell = \gen{A}\} \\
+\gen{\bra{n}} = \gen{(A\vee B)} = \gen{X_k} = \gen{(\mu T)} = \gen{\bv{i}} = \gen{(\allb{A})} = \tp
+\end{array}
 \]
 
 \subsection{Typing}
@@ -141,7 +202,21 @@ v &::=& i \mid \tp \mid \langle v, \lambda(A{\to}B).\,e\rangle \mid \{\ell = v\}
 \inferrule*[right=srcd]{A <: B}{\{\ell : A\} <: \{\ell : B\}}
 \and
 \inferrule*[right=sbrand]{ }{\bra{n} <: \bra{n}}
+\and
+\inferrule*[right=sor]{A_1 <: B_1 \\ A_2 <: B_2}{A_1 \vee A_2 <: B_1 \vee B_2}
+\and
+\inferrule*[right=svar]{ }{X_k <: X_k}
+\and
+\inferrule*[right=smu]{ }{\mu T <: \mu T}
+\and
+\inferrule*[right=sbvar]{ }{\bv{i} <: \bv{i}}
+\and
+\inferrule*[right=sallb]{ }{\allb{A} <: \allb{A}}
 \end{mathpar}
+Unions are component-wise only (no injection $A <: A \vee B$: casting would have to
+invent a tag); $\mu$, $X$, $\beta$ and $\forall$ are opaque, reflexive-only.
+\emph{No} rule $\bra{n} <: R$: that would be translucency and kills representation
+independence.
 
 \subsubsection*{Common ordinary supertypes and disjointness \quad $A \sqcap B$, \; $A * B \;:=\; \neg (A \sqcap B)$}
 \begin{mathpar}
@@ -160,7 +235,36 @@ v &::=& i \mid \tp \mid \langle v, \lambda(A{\to}B).\,e\rangle \mid \{\ell = v\}
 \inferrule*[right=crcd]{A \sqcap B}{\{\ell:A\} \sqcap \{\ell:B\}}
 \and
 \inferrule*[right=cbrand]{ }{\bra{n} \sqcap \bra{n}}
+\and
+\inferrule*[right=coror]{ }{A \vee B \sqcap A' \vee B'}
+\and
+\inferrule*[right=cvar]{ }{X_k \sqcap X_k}
+\and
+\inferrule*[right=cmu]{ }{\mu T \sqcap \mu T}
+\and
+\inferrule*[right=cbvar]{ }{\bv{i} \sqcap \bv{j}}
+\and
+\inferrule*[right=cbvarbrand]{ }{\bv{i} \sqcap \bra{n}}
+\and
+\inferrule*[right=cbrandbvar]{ }{\bra{n} \sqcap \bv{i}}
+\and
+\inferrule*[right=callb]{ }{\allb{A} \sqcap \allb{A}}
+\and
+\inferrule*[right=callbbv]{\hbv{A} \vee \hbv{A'}}{\allb{A} \sqcap \allb{A'}}
+\and
+\inferrule*[right=cmubv]{\hbv{T} \vee \hbv{T'}}{\mu T \sqcap \mu T'}
 \end{mathpar}
+The brand-variable rules are deliberately \emph{conservative}: a $\bv{i}$ may be
+instantiated to any brand, so it costs every $\bv{j}$ and every $\bra{n}$
+(unconditionally, in both directions), and two syntactically distinct $\forall$- or
+$\mu$-bodies containing brand variables can become equal after instantiation
+(\textsc{callbbv}/\textsc{cmubv}).  This is exactly what makes disjointness stable
+under instantiation: $A * B \Rightarrow \subs{A}{\bv{d}}{\bra{n}} *
+\subs{B}{\bv{d}}{\bra{n}}$, with no freshness side condition anywhere
+(\textsf{disj\_bsubst}).  The price: nothing typed at a brand variable (or a
+$\bv{}$-containing $\mu$/$\forall$) can be \emph{merged} with anything brand- or
+$\bv{}$-typed — the same wrap-it-in-records discipline unions already impose via
+\textsc{coror}.
 
 \subsubsection*{Casting and consistency \quad $\cast{v}{A}{v'}$, \; $v_1 \approx v_2 \;:=\; \forall A\,w_1\,w_2.\ \cast{v_1}{A}{w_1} \Rightarrow \cast{v_2}{A}{w_2} \Rightarrow w_1 = w_2$}
 \begin{mathpar}
@@ -183,7 +287,27 @@ v &::=& i \mid \tp \mid \langle v, \lambda(A{\to}B).\,e\rangle \mid \{\ell = v\}
 \inferrule*[right=crcd]{\cast{v}{A}{v'}}{\cast{\{\ell = v\}}{\{\ell : A\}}{\{\ell = v'\}}}
 \and
 \inferrule*[right=cwrap]{ }{\cast{\wrp{n}{v}}{\bra{n}}{\wrp{n}{v}}}
+\and
+\inferrule*[right=cinl]{\cast{v}{A'}{v'}}{\cast{\mathsf{inl}^{B} v}{A' \vee B'}{\mathsf{inl}^{B'} v'}}
+\and
+\inferrule*[right=cinr]{\cast{v}{B'}{v'}}{\cast{\mathsf{inr}^{A} v}{A' \vee B'}{\mathsf{inr}^{A'} v'}}
+\and
+\inferrule*[right=cfold]{ }{\cast{\mathsf{fold}^{T} v}{\mu T}{\mathsf{fold}^{T} v}}
+\and
+\inferrule*[right=cfarrow]{\neg\tl{D} \\ C <: A \\ B_x <: D}
+  {\cast{\fclosx{v}{A}{B}{e}^{B_x}}{C \to D}{\fclosx{v}{A}{B}{e}^{D}}}
+\and
+\inferrule*[right=cfarrowtl]{\tl{D} \\ C <: A \\ B_x <: D}
+  {\cast{\fclosx{v}{A}{B}{e}^{B_x}}{C \to D}{\langle \tp, \lambda(C{\to}D).\gen{D}\rangle}}
+\and
+\inferrule*[right=cbclos]{ }{\cast{\langle \rho, \blam{A}{e}\rangle}{\allb{A}}{\langle \rho, \blam{A}{e}\rangle}}
 \end{mathpar}
+Casting follows the union tag; at $\mu$- and $\forall$-types it is the identity on
+folds of the same body resp.\ brand closures with the same annotation (the
+\textsc{cwrap} pattern), and \emph{undefined} at $X_k$ and $\bv{i}$ (no cast rule —
+a term whose redex casts at a brand variable is stuck until instantiated).  A fixpoint
+closure carries two codomains: casts rewrite only the external $B_x$; the internal $B$
+is pinned because beta reinstalls the self-reference at it.
 
 \subsubsection*{Reserved-label freedom and signature well-formedness \quad $\mathsf{NoRes}\ T$, \; $\mathsf{WfSig}\ n\ R\ S$}
 \begin{mathpar}
@@ -198,6 +322,16 @@ v &::=& i \mid \tp \mid \langle v, \lambda(A{\to}B).\,e\rangle \mid \{\ell = v\}
 \inferrule{\ell \neq \resl \\ \mathsf{NoRes}\ A}{\mathsf{NoRes}\ \{\ell : A\}}
 \and
 \inferrule{\mathsf{NoRes}\ A \\ \mathsf{NoRes}\ B}{\mathsf{NoRes}\ (A \& B)}
+\and
+\inferrule{\mathsf{NoRes}\ A \\ \mathsf{NoRes}\ B}{\mathsf{NoRes}\ (A \vee B)}
+\and
+\inferrule{ }{\mathsf{NoRes}\ X_k}
+\and
+\inferrule{\mathsf{NoRes}\ T}{\mathsf{NoRes}\ (\mu T)}
+\and
+\inferrule{ }{\mathsf{NoRes}\ \bv{i}}
+\and
+\inferrule{\mathsf{NoRes}\ A}{\mathsf{NoRes}\ (\allb{A})}
 \end{mathpar}
 \begin{mathpar}
 \inferrule{ }{\mathsf{WfSig}\ n\ R\ \Int}
@@ -212,7 +346,20 @@ v &::=& i \mid \tp \mid \langle v, \lambda(A{\to}B).\,e\rangle \mid \{\ell = v\}
 \and
 \inferrule{\mathsf{WfSig}\ n\ R\ A \\ \mathsf{WfSig}\ n\ R\ B \\ A * B \\ \subs{A}{n}{R} * \subs{B}{n}{R}}
   {\mathsf{WfSig}\ n\ R\ (A \& B)}
+\and
+\inferrule{\mathsf{WfSig}\ n\ R\ A \\ \mathsf{WfSig}\ n\ R\ B}{\mathsf{WfSig}\ n\ R\ (A \vee B)}
+\and
+\inferrule{\bra{n} \notin \mu T \\ \mathsf{NoRes}\ (\mu T) \\ \neg\hbv{\mu T}}
+  {\mathsf{WfSig}\ n\ R\ (\mu T)}
+\and
+\inferrule{\bra{n} \notin \allb{A} \\ \mathsf{NoRes}\ (\allb{A}) \\ \neg\hbv{\allb{A}}}
+  {\mathsf{WfSig}\ n\ R\ (\allb{A})}
 \end{mathpar}
+$\mathsf{WfSig}$ has \emph{no} $X_k$ and no $\bv{i}$ case: signatures are
+brand-variable-free throughout (\textsf{wfsig\_no\_hasbvar}), so sealing annotations
+are invariant under $\forall\beta$-instantiation.  $\mu$- and $\forall$-components of a
+signature are opaque under sealing (the coercion is the identity on them), hence must
+not mention the sealed brand $\bra{n}$.
 
 \subsubsection*{Typing \quad $\hast{\Delta}{\Gamma}{e}{A}$}
 \begin{mathpar}
@@ -240,7 +387,11 @@ v &::=& i \mid \tp \mid \langle v, \lambda(A{\to}B).\,e\rangle \mid \{\ell = v\}
 \inferrule*[right=tmrg]{\hast{\Delta}{\Gamma}{e_1}{A} \\ \hast{\Delta}{\Gamma \& A}{e_2}{B} \\ A * \Gamma \\ A * B}
   {\hast{\Delta}{\Gamma}{e_1 \mrg e_2}{A \& B}}
 \and
-\inferrule*[right=tmergev]{v_1\ \Val \\ v_2\ \Val \\ \hast{\Delta}{\tp}{v_1}{A} \\ \hast{\Delta}{\tp}{v_2}{B} \\ v_1 \approx v_2}
+\inferrule*[right=tmergev]{v_1\ \Val \\ v_2\ \Val \\ \hast{\Delta}{\tp}{v_1}{A} \\ \hast{\Delta}{\tp}{v_2}{B} \\ A * B \\ v_1 \approx v_2}
+  {\hast{\Delta}{\Gamma}{v_1 \mrg v_2}{A \& B}}
+\and
+\inferrule*[right=tmergevc]{v_1\ \Val \\ v_2\ \Val \\ \hast{\Delta}{\tp}{v_1}{A} \\ \hast{\Delta}{\tp}{v_2}{B} \\\\
+    v\ \Val \\ \hast{\Delta}{\tp}{v}{C} \\ \cast{v}{A}{v_1} \\ \cast{v}{B}{v_2} \\ v_1 \approx v_2}
   {\hast{\Delta}{\Gamma}{v_1 \mrg v_2}{A \& B}}
 \and
 \inferrule*[right=tlam]{\Gamma * A \\ \hast{\Delta}{\Gamma \& A}{e}{B}}
@@ -252,15 +403,56 @@ v &::=& i \mid \tp \mid \langle v, \lambda(A{\to}B).\,e\rangle \mid \{\ell = v\}
 \inferrule*[right=tanno]{\hast{\Delta}{\Gamma}{e}{B} \\ B <: A}
   {\hast{\Delta}{\Gamma}{(e : A)}{A}}
 \and
-\inferrule*[right=twrap]{\Delta\,n = R \\ v\ \Val \\ \hast{\Delta}{\tp}{v}{R}}
+\inferrule*[right=twrap]{\Delta\,n = R \\ \neg\hbv{R} \\ v\ \Val \\ \hast{\Delta}{\tp}{v}{R}}
   {\hast{\Delta}{\Gamma}{\wrp{n}{v}}{\bra{n}}}
 \and
-\inferrule*[right=tseal]{\Delta\,n = R \\ \mathsf{NoRes}\ R \\ \mathsf{WfSig}\ n\ R\ S \\ \hast{\Delta}{\Gamma}{e}{\subs{S}{n}{R}}}
+\inferrule*[right=tseal]{\Delta\,n = R \\ \mathsf{NoRes}\ R \\ \neg\hbv{R} \\ \mathsf{WfSig}\ n\ R\ S \\ \hast{\Delta}{\Gamma}{e}{\subs{S}{n}{R}}}
   {\hast{\Delta}{\Gamma}{\sealE{n}{R}{S}{e}}{S}}
 \and
-\inferrule*[right=tunseal]{\Delta\,n = R \\ \mathsf{NoRes}\ R \\ \mathsf{WfSig}\ n\ R\ S \\ \hast{\Delta}{\Gamma}{e}{S}}
+\inferrule*[right=tunseal]{\Delta\,n = R \\ \mathsf{NoRes}\ R \\ \neg\hbv{R} \\ \mathsf{WfSig}\ n\ R\ S \\ \hast{\Delta}{\Gamma}{e}{S}}
   {\hast{\Delta}{\Gamma}{\unsealE{n}{R}{S}{e}}{\subs{S}{n}{R}}}
+\and
+\inferrule*[right=tinl]{\hast{\Delta}{\Gamma}{e}{A}}
+  {\hast{\Delta}{\Gamma}{\mathsf{inl}^{B} e}{A \vee B}}
+\and
+\inferrule*[right=tinr]{\hast{\Delta}{\Gamma}{e}{B}}
+  {\hast{\Delta}{\Gamma}{\mathsf{inr}^{A} e}{A \vee B}}
+\and
+\inferrule*[right=tcase]{\hast{\Delta}{\Gamma}{e}{A \vee B} \\ \Gamma * A \\ \Gamma * B \\
+    \hast{\Delta}{\Gamma \& A}{e_1}{C} \\ \hast{\Delta}{\Gamma \& B}{e_2}{C}}
+  {\hast{\Delta}{\Gamma}{\mathsf{case}\ e\ \mathsf{of}\ e_1 \mid e_2}{C}}
+\and
+\inferrule*[right=tfold]{\neg\hallb{T} \\ \hast{\Delta}{\Gamma}{e}{\subs{T}{X_0}{\mu T}^{\mu}}}
+  {\hast{\Delta}{\Gamma}{\mathsf{fold}^{T} e}{\mu T}}
+\and
+\inferrule*[right=tunfold]{\neg\hallb{T} \\ \hast{\Delta}{\Gamma}{e}{\mu T} \\ A = \subs{T}{X_0}{\mu T}^{\mu}}
+  {\hast{\Delta}{\Gamma}{\mathsf{unfold}\ e}{A}}
+\and
+\inferrule*[right=tflam]{\Gamma * (A{\to}B) \\ (\Gamma \& (A{\to}B)) * A \\ \hast{\Delta}{(\Gamma \& (A{\to}B)) \& A}{e}{B}}
+  {\hast{\Delta}{\Gamma}{\mu\lambda(A{\to}B).e}{A \to B}}
+\and
+\inferrule*[right=tfclos]{v\ \Val \\ \hast{\Delta}{\tp}{v}{\Gamma_1} \\ \Gamma_1 * (A{\to}B) \\ (\Gamma_1 \& (A{\to}B)) * A \\\\
+    \hast{\Delta}{(\Gamma_1 \& (A{\to}B)) \& A}{e}{B'} \\ B' <: B \\ B <: B_x \\ C <: A}
+  {\hast{\Delta}{\Gamma}{\fclosx{v}{A}{B}{e}^{B_x}}{C \to B_x}}
+\and
+\inferrule*[right=tblam]{\neg\hbv{\Gamma} \\ \hast{\Delta}{\Gamma}{e}{A}}
+  {\hast{\Delta}{\Gamma}{\blam{A}{e}}{\allb{A}}}
+\and
+\inferrule*[right=tbclos]{\rho\ \Val \\ \hast{\Delta}{\tp}{\rho}{\Gamma_1} \\ \neg\hbv{\Gamma_1} \\ \hast{\Delta}{\Gamma_1}{e}{A}}
+  {\hast{\Delta}{\Gamma}{\langle \rho, \blam{A}{e}\rangle}{\allb{A}}}
+\and
+\inferrule*[right=tbapp]{\hast{\Delta}{\Gamma}{e}{\allb{A}} \\ \bcl{1}{A} \\ T = \subs{A}{\bv{0}}{\bra{n}}}
+  {\hast{\Delta}{\Gamma}{\bapp{e}{n}}{T}}
 \end{mathpar}
+\textsc{tmergev} is the module-composition merge (disjoint components);
+\textsc{tmergevc} is the cast-duplicated merge produced by casting one value at
+$A \,\&\, B$, recording the common origin $v$ — that record is what keeps the rule
+stable under $\forall\beta$-instantiation (consistency of the substituted components is
+rebuilt from casts of the substituted origin rather than assumed).  The three
+$\forall$-fences: $\neg\hallb{T}$ on \textsc{tfold}/\textsc{tunfold} ($\mu$-unfolding
+does not shift brand variables); $\bcl{1}{A}$ on \textsc{tbapp} (the shift-free beta is
+index-coherent only for single-binder bodies); $\neg\hbv{\cdot}$ on captured contexts
+and representations (they must be instantiation-invariant).
 
 \[
 \Delta \storele \Delta' \;:=\; \forall n\,R.\ \Delta\,n = R \Rightarrow \Delta'\,n = R
@@ -300,6 +492,20 @@ v &::=& i \mid \tp \mid \langle v, \lambda(A{\to}B).\,e\rangle \mid \{\ell = v\}
 \and
 \inferrule*[right=arr]{ }
   {\sealv{n}{R}{A \to B}{c}{\langle \mathsf{pxe}(c), \lambda(A{\to}B).\ \sealE{n}{R}{B}{(\mathsf{pxf}\;(\unsealE{n}{R}{A}{\qry.0}))}\rangle}}
+\and
+\inferrule*[right=inl]{\sealv{n}{R}{A}{v}{w}}
+  {\sealv{n}{R}{A \vee B}{\mathsf{inl}^{\subs{B}{n}{R}} v}{\mathsf{inl}^{B} w}}
+\and
+\inferrule*[right=inr]{\sealv{n}{R}{B}{v}{w}}
+  {\sealv{n}{R}{A \vee B}{\mathsf{inr}^{\subs{A}{n}{R}} v}{\mathsf{inr}^{A} w}}
+\and
+\inferrule*[right=var]{ }{\sealv{n}{R}{X_k}{v}{v}}
+\and
+\inferrule*[right=mu]{ }{\sealv{n}{R}{\mu T}{v}{v}}
+\and
+\inferrule*[right=bvar]{ }{\sealv{n}{R}{\bv{i}}{v}{v}}
+\and
+\inferrule*[right=allb]{ }{\sealv{n}{R}{\allb{A}}{v}{v}}
 \end{mathpar}
 \begin{mathpar}
 \inferrule*[right=brand-eq]{ }{\unsealv{n}{R}{\bra{n}}{\wrp{n}{v}}{v}}
@@ -318,7 +524,23 @@ v &::=& i \mid \tp \mid \langle v, \lambda(A{\to}B).\,e\rangle \mid \{\ell = v\}
 \and
 \inferrule*[right=arr]{ }
   {\unsealv{n}{R}{A \to B}{c}{\langle \mathsf{pxe}(c), \lambda(\subs{A}{n}{R}{\to}\subs{B}{n}{R}).\ \unsealE{n}{R}{B}{(\mathsf{pxf}\;(\sealE{n}{R}{A}{\qry.0}))}\rangle}}
+\and
+\inferrule*[right=inl]{\unsealv{n}{R}{A}{v}{w}}
+  {\unsealv{n}{R}{A \vee B}{\mathsf{inl}^{B} v}{\mathsf{inl}^{\subs{B}{n}{R}} w}}
+\and
+\inferrule*[right=inr]{\unsealv{n}{R}{B}{v}{w}}
+  {\unsealv{n}{R}{A \vee B}{\mathsf{inr}^{A} v}{\mathsf{inr}^{\subs{A}{n}{R}} w}}
+\and
+\inferrule*[right=var]{ }{\unsealv{n}{R}{X_k}{v}{v}}
+\and
+\inferrule*[right=mu]{ }{\unsealv{n}{R}{\mu T}{v}{v}}
+\and
+\inferrule*[right=bvar]{ }{\unsealv{n}{R}{\bv{i}}{v}{v}}
+\and
+\inferrule*[right=allb]{ }{\unsealv{n}{R}{\allb{A}}{v}{v}}
 \end{mathpar}
+The coercions are the identity at $X$/$\mu$/$\beta$/$\forall$ (opaque under sealing;
+type-correct because \textsf{WfSig} forbids $\bra{n}$ and brand variables there).
 
 \subsubsection*{Small-step \quad $\step{v}{e}{e'}$ \qquad (all rules carry $v\ \Val$; value premises shown)}
 \begin{mathpar}
@@ -366,7 +588,42 @@ v &::=& i \mid \tp \mid \langle v, \lambda(A{\to}B).\,e\rangle \mid \{\ell = v\}
 \inferrule*[right=sunseal]{\step{v}{e}{e'}}{\step{v}{\unsealE{n}{R}{S}{e}}{\unsealE{n}{R}{S}{e'}}}
 \and
 \inferrule*[right=sunsealv]{v_1\ \Val \\ \unsealv{n}{R}{S}{v_1}{w}}{\step{v}{\unsealE{n}{R}{S}{v_1}}{w}}
+\and
+\inferrule*[right=sinl]{\step{v}{e}{e'}}{\step{v}{\mathsf{inl}^{B} e}{\mathsf{inl}^{B} e'}}
+\and
+\inferrule*[right=sinr]{\step{v}{e}{e'}}{\step{v}{\mathsf{inr}^{A} e}{\mathsf{inr}^{A} e'}}
+\and
+\inferrule*[right=scase]{\step{v}{e}{e'}}
+  {\step{v}{\mathsf{case}\ e\ \mathsf{of}\ e_1 \mid e_2}{\mathsf{case}\ e'\ \mathsf{of}\ e_1 \mid e_2}}
+\and
+\inferrule*[right=scasel]{v_1\ \Val}
+  {\step{v}{\mathsf{case}\ (\mathsf{inl}^{B} v_1)\ \mathsf{of}\ e_1 \mid e_2}{(v \mrg v_1) \bx e_1}}
+\and
+\inferrule*[right=scaser]{v_1\ \Val}
+  {\step{v}{\mathsf{case}\ (\mathsf{inr}^{A} v_1)\ \mathsf{of}\ e_1 \mid e_2}{(v \mrg v_1) \bx e_2}}
+\and
+\inferrule*[right=sfold]{\step{v}{e}{e'}}{\step{v}{\mathsf{fold}^{T} e}{\mathsf{fold}^{T} e'}}
+\and
+\inferrule*[right=sunfold]{\step{v}{e}{e'}}{\step{v}{\mathsf{unfold}\ e}{\mathsf{unfold}\ e'}}
+\and
+\inferrule*[right=sunfoldv]{v_1\ \Val}{\step{v}{\mathsf{unfold}\ (\mathsf{fold}^{T} v_1)}{v_1}}
+\and
+\inferrule*[right=sflam]{ }{\step{v}{\mu\lambda(A{\to}B).e}{\fclosx{v}{A}{B}{e}^{B}}}
+\and
+\inferrule*[right=sfbeta]{v_1\ \Val \\ v_2\ \Val \\ \cast{v_2}{A}{v_2'}}
+  {\step{v}{\fclosx{v_1}{A}{B}{e}^{B_x}\,v_2}{\bigl((v_1 \mrg \fclosx{v_1}{A}{B}{e}^{B}) \mrg v_2'\bigr) \bx (e : B_x)}}
+\and
+\inferrule*[right=sblam]{ }{\step{v}{\blam{A}{e}}{\langle v, \blam{A}{e}\rangle}}
+\and
+\inferrule*[right=sbappl]{\step{v}{e}{e'}}{\step{v}{\bapp{e}{n}}{\bapp{e'}{n}}}
+\and
+\inferrule*[right=sbappbeta]{\rho\ \Val}
+  {\step{v}{\bapp{\langle \rho, \blam{A}{e}\rangle}{n}}{\rho \bx \subs{e}{\bv{0}}{\bra{n}}}}
 \end{mathpar}
+Fixpoint beta reinstalls the self-reference with the external codomain reset to the
+internal $B$ and reseals the result at the client-facing $B_x$.  $\forall$-beta is pure
+annotation rewriting: no argument cast, no reseal — the instantiated body runs under
+the captured environment.
 
 \begin{mathpar}
 \inferrule*[right=refl]{ }{\msteps{v}{e}{e}}
@@ -438,8 +695,42 @@ $\eta : \mathbb{N} \to \mathsf{Exp} \to \mathsf{Exp} \to \mathsf{Prop}$; \quad s
 \end{array}
 \]
 \[
+\begin{array}{r@{\;}c@{\;}l}
+\LRg{o}{A \vee B}(v_1,v_2) &=& \bigl(\exists w_1\,w_2.\ v_1 = \mathsf{inl}^{\mathsf{viewL}\,o\,B} w_1 \wedge v_2 = \mathsf{inl}^{\mathsf{viewR}\,o\,B} w_2 \wedge \LRg{o}{A}(w_1,w_2)\bigr) \;\vee \\
+  && \bigl(\exists w_1\,w_2.\ v_1 = \mathsf{inr}^{\mathsf{viewL}\,o\,A} w_1 \wedge v_2 = \mathsf{inr}^{\mathsf{viewR}\,o\,A} w_2 \wedge \LRg{o}{B}(w_1,w_2)\bigr) \\
+\LRg{o}{X_k}(v_1,v_2) &=& \bot \qquad\qquad \LRg{o}{\bv{i}}(v_1,v_2) \;=\; \bot \\
+\LRg{o}{\mu T}(v_1,v_2) &=& v_1\ \Val \wedge v_2\ \Val \wedge
+  \hast{\Delta_1}{\tp}{v_1}{\mathsf{viewL}\,o\,(\mu T)} \wedge \hast{\Delta_2}{\tp}{v_2}{\mathsf{viewR}\,o\,(\mu T)} \wedge v_1 = v_2 \\
+\LRg{o}{\allb{A}}(v_1,v_2) &=& v_1\ \Val \wedge v_2\ \Val \wedge
+  \hast{\Delta_1}{\tp}{v_1}{\mathsf{viewL}\,o\,(\allb{A})} \wedge \hast{\Delta_2}{\tp}{v_2}{\mathsf{viewR}\,o\,(\allb{A})} \;\wedge \\
+  && \forall m.\ \forall \rho_1\,\rho_2.\ \rho_1\ \Val \Rightarrow \rho_2\ \Val \Rightarrow \\
+  && \quad \exists w_1\,w_2.\ \msteps{\rho_1}{\bapp{v_1}{m}}{w_1} \wedge \msteps{\rho_2}{\bapp{v_2}{m}}{w_2} \wedge \LRg{o}{\subs{A}{\bv{0}}{\bra{m}}}(w_1,w_2)
+\end{array}
+\]
+\[
 \LRc{T} \;:=\; \LRg{\mathsf{none}}{T}
 \]
+The $\forall$-clause is \emph{instantiation closure}: related generic values yield, at
+every concrete brand $m$, related runs of the instantiation at the substituted body
+type.  $\eta$ is never extended and no freshness is demanded — at brand-$m$ positions
+the relation is whatever $\eta$ already says about $m$, which is exactly what
+representation independence needs (the client instantiates at the provider's own
+allocated brand, where $\eta$ relates the two representations).  Typings stay at the
+\emph{syntactic} type, so degenerate $\bv{}$-annotated values relate vacuously through
+the $\bot$ clause at $\bv{i}$.  The recursion descends on $\mathsf{tsize}$
+($\subs{A}{\bv{0}}{\bra{m}}$ is not a subterm but is size-preserving), so the
+definition is by well-founded recursion.  $\mu$ stays opaque (a finer clause needs step
+indexing); free theorems over \emph{arbitrary} relations at $\beta$ (relational
+parametricity proper) are future work.
+\end{definition}
+
+\begin{definition}[\textsf{Finitary}]
+$\mathsf{Finitary}\ e$: the least predicate closed under every term former
+\emph{except} the fixpoints $\mu\lambda(A{\to}B).e$ and their closures.  Generic terms
+$\Lambda$/$\langle\cdot,\Lambda\rangle$/$\bapp{\cdot}{n}$ \emph{are} included:
+$\forall$-beta rewrites only annotations and never duplicates subterms, so the fragment
+stays normalizing.  The relational layer below is stated for this fragment; the safety
+layer (determinism, progress, preservation) covers the full language.
 \end{definition}
 
 \begin{definition}[\textsf{OpenAdm}, \textsf{OpenBrand}, \textsf{SemTyp}]
@@ -468,19 +759,25 @@ $\eta : \mathbb{N} \to \mathsf{Exp} \to \mathsf{Exp} \to \mathsf{Prop}$; \quad s
 
 \begin{theorem}[\textsf{fundamental}]
 \[
-\hast{\emptyset}{\Gamma}{e}{A} \;\Longrightarrow\; \mathsf{SemTyp}\ \Delta_1\ \Delta_2\ \eta\ \Gamma\ e\ e\ A
+\hast{\emptyset}{\Gamma}{e}{A} \;\wedge\; \mathsf{Finitary}\ e \;\Longrightarrow\; \mathsf{SemTyp}\ \Delta_1\ \Delta_2\ \eta\ \Gamma\ e\ e\ A
 \]
+Proved by strong induction on $\mathsf{esize}\ e$: the $\Lambda$-cases recurse at the
+\emph{instantiated} body — the unsubstituted body cannot run (casts at $\bv{}$
+annotations are stuck) — whose typing comes from the instantiation lemma
+$\hast{\Delta}{\Gamma}{e}{A} \Rightarrow
+\hast{\Delta}{\subs{\Gamma}{\bv{d}}{\bra{n}}}{\subs{e}{\bv{d}}{\bra{n}}}{\subs{A}{\bv{d}}{\bra{n}}}$
+(\textsf{hastype\_bsubst}), not from a subderivation.
 \end{theorem}
 
 \begin{theorem}[\textsf{normalization}]
 \[
-\hast{\emptyset}{\tp}{e}{A} \;\Longrightarrow\; \exists v.\ v\ \Val \;\wedge\; \msteps{\tp}{e}{v}
+\hast{\emptyset}{\tp}{e}{A} \;\wedge\; \mathsf{Finitary}\ e \;\Longrightarrow\; \exists v.\ v\ \Val \;\wedge\; \msteps{\tp}{e}{v}
 \]
 \end{theorem}
 
 \begin{theorem}[\textsf{sealing}]
 \[
-\LRc{A}(p_1',p_2') \;\wedge\; \hast{\emptyset}{A}{e}{\Int} \;\Longrightarrow\;
+\LRc{A}(p_1',p_2') \;\wedge\; \hast{\emptyset}{A}{e}{\Int} \;\wedge\; \mathsf{Finitary}\ e \;\Longrightarrow\;
 \exists i.\ \msteps{p_1'}{e}{i} \;\wedge\; \msteps{p_2'}{e}{i}
 \]
 \end{theorem}
@@ -504,12 +801,34 @@ $\eta : \mathbb{N} \to \mathsf{Exp} \to \mathsf{Exp} \to \mathsf{Prop}$; \quad s
 \[
 \begin{array}{l}
 \mathsf{OpenBrand}\ \Delta_1\ \Delta_2\ \eta\ n\ R_1\ R_2 \;\wedge\;
-\mathsf{WfSig}\ n\ R_1\ S \;\wedge\; \mathsf{WfSig}\ n\ R_2\ S \;\wedge\;
-\LRg{(n,R_1,R_2)}{S}(p_1,p_2) \;\wedge\; \hast{\emptyset}{S}{e}{\Int} \\
+\mathsf{WfSig}\ n\ R_1\ S \;\wedge\; \mathsf{WfSig}\ n\ R_2\ S \;\wedge \\
+\LRg{(n,R_1,R_2)}{S}(p_1,p_2) \;\wedge\; \hast{\emptyset}{S}{e}{\Int} \;\wedge\; \mathsf{Finitary}\ e \\
 \Longrightarrow\;
 \exists i.\ \msteps{\tp}{(\sealE{n}{R_1}{S}{p_1}) \bx e}{i} \;\wedge\; \msteps{\tp}{(\sealE{n}{R_2}{S}{p_2}) \bx e}{i}
 \end{array}
 \]
+\end{theorem}
+
+\begin{theorem}[\textsf{generic\_client\_representation\_independence}]
+One \emph{generic} client, typed once at $\allb{(S_\beta \to \Int)}$ with the signature
+abstract in the brand it will be instantiated at, observes the same integer against two
+sealed providers of that signature over different representations.  Writing
+$S^{*} := \subs{S_\beta}{\bv{0}}{\bra{n}}$:
+\[
+\begin{array}{l}
+\mathsf{OpenBrand}\ \Delta_1\ \Delta_2\ \eta\ n\ R_1\ R_2 \;\wedge\;
+\mathsf{WfSig}\ n\ R_1\ S^{*} \;\wedge\; \mathsf{WfSig}\ n\ R_2\ S^{*} \;\wedge \\
+\LRg{(n,R_1,R_2)}{S^{*}}(p_1,p_2) \;\wedge\;
+\hast{\emptyset}{\tp}{c_t}{\allb{(S_\beta \to \Int)}} \;\wedge\; \mathsf{Finitary}\ c_t \\
+\Longrightarrow\;
+\exists i.\ \msteps{\tp}{(\bapp{c_t}{n})\,(\sealE{n}{R_1}{S^{*}}{p_1})}{i} \;\wedge\;
+\msteps{\tp}{(\bapp{c_t}{n})\,(\sealE{n}{R_2}{S^{*}}{p_2})}{i}
+\end{array}
+\]
+The client instantiates at the provider's \emph{own} allocated brand $n$: the
+$\forall$-clause needs no freshness, and $\eta$ at $n$ is exactly the relation between
+the two representations, so $\bapp{\cdot}{n}$ lands the client in the
+concrete-signature world where \textsf{representation\_independence} already lives.
 \end{theorem}
 
 \section{$\lambda_{SCE}$ (SCE)}
@@ -528,8 +847,8 @@ e &::=& \qry \mid e.k \mid i \mid \tp \mid \lambda A.\,e \mid e_1 \bx e_2 \mid \
   &\mid& \mathsf{inl}^{B}\,e \mid \mathsf{inr}^{A}\,e \mid \mathsf{case}\ e\ \mathsf{of}\ e_1 \mid e_2
        \mid \mu\lambda(A{\to}B).\,e \mid \langle e_1, \mu\lambda(A{\to}B).\,e_2 \rangle \mid \mathsf{fold}^{T} e \mid \mathsf{unfold}\ e \\
   &\mid& \wrp{n}{e} \mid \sealE{n}{R}{S}{e} \mid \unsealE{n}{R}{S}{e} \\[4pt]
-v &::=& i \mid \tp \mid \langle v, \lambda A.e \rangle \mid \langle v, \mathsf{functor}(A).e \rangle \mid v_1 \mrg v_2 \mid \{\ell = v\}
-      \mid \mathsf{inl}^{B} v \mid \mathsf{inr}^{A} v \mid \langle v, \mu\lambda(A{\to}B).e\rangle \mid \mathsf{fold}^{T} v \mid \wrp{n}{v}
+v &::=& i \mid \tp \mid \langle v, \lambda A.e \rangle \mid \langle v, \mathsf{functor}(A).e \rangle \mid v_1 \mrg v_2 \mid \{\ell = v\} \\
+  &\mid& \mathsf{inl}^{B} v \mid \mathsf{inr}^{A} v \mid \langle v, \mu\lambda(A{\to}B).e\rangle \mid \mathsf{fold}^{T} v \mid \wrp{n}{v}
 \end{array}
 \]
 
@@ -537,10 +856,11 @@ v &::=& i \mid \tp \mid \langle v, \lambda A.e \rangle \mid \langle v, \mathsf{f
 \begin{array}{l}
 \subs{X_k}{d}{S}^{\mu} = \begin{cases} S & k = d \\ X_k & k \neq d \end{cases} \qquad
 \subs{(\mu T)}{d}{S}^{\mu} = \mu\,(\subs{T}{d{+}1}{S}^{\mu}) \qquad
-\subs{\bra{n}}{d}{S}^{\mu} = \bra{n} \qquad \text{(homomorphic otherwise, incl.\ }\sigma\text{)} \\[3pt]
+\subs{\bra{n}}{d}{S}^{\mu} = \bra{n} \\[3pt]
 \subs{\bra{m}}{n}{R} = \begin{cases} R & m = n \\ \bra{m} & m \neq n \end{cases} \qquad
 \subs{X_k}{n}{R} = X_k \qquad
-\subs{(\mu T)}{n}{R} = \mu\,(\subs{T}{n}{R}) \qquad \text{(homomorphic otherwise, incl.\ }\sigma\text{)}
+\subs{(\mu T)}{n}{R} = \mu\,(\subs{T}{n}{R}) \\[3pt]
+\text{(both homomorphic otherwise, incl.\ }\sigma\text{)}
 \end{array}
 \]
 
@@ -587,9 +907,11 @@ v &::=& i \mid \tp \mid \langle v, \lambda A.e \rangle \mid \langle v, \mathsf{f
 
 \subsubsection*{Import packages \quad $\wire{\Gamma}{c_1}{D}$, \; $\mathsf{WireOk}\ \Gamma\ \Gamma_1\ D$}
 \[
+\begin{array}{l}
 \wire{\Gamma}{c_1}{\{\ell : A\}} = \{\ell = c_1.\ell\} \qquad
-\wire{\Gamma}{c_1}{D \& \{\ell : A\}} = \wire{\Gamma}{c_1}{D} \mrg \bigl((\qry : \Gamma) \bx \{\ell = c_1.\ell\}\bigr) \qquad
-\wire{\Gamma}{c_1}{\_} = \tp
+\wire{\Gamma}{c_1}{\_} = \tp \\[2pt]
+\wire{\Gamma}{c_1}{D \& \{\ell : A\}} = \wire{\Gamma}{c_1}{D} \mrg \bigl((\qry : \Gamma) \bx \{\ell = c_1.\ell\}\bigr)
+\end{array}
 \]
 \begin{mathpar}
 \inferrule*[right=one]{\rlk{\Gamma_1}{\ell}{A}}{\mathsf{WireOk}\ \Gamma\ \Gamma_1\ \{\ell : A\}}
@@ -641,7 +963,35 @@ v &::=& i \mid \tp \mid \langle v, \lambda A.e \rangle \mid \langle v, \mathsf{f
 \and
 \inferrule*[right=eopenm]{\elab{\Delta}{\Gamma}{e_1}{\{\ell : A\}}{\overline{e}_1} \\ \elab{\Delta}{\Gamma \& A}{e_2}{B}{\overline{e}_2} \\ \sT{\Gamma} * \sT{A}}
   {\elab{\Delta}{\Gamma}{\mathsf{open}\ e_1\ \mathsf{in}\ e_2}{B}{\bigl(\lambda(\sT{A}{\to}\sT{B}).\overline{e}_2\bigr)\,(\overline{e}_1.\ell)}}
+\end{mathpar}
+\begin{mathpar}
+\inferrule*[right=einl]{\elab{\Delta}{\Gamma}{e}{A}{\overline{e}}}
+  {\elab{\Delta}{\Gamma}{\mathsf{inl}^{B} e}{A \vee B}{\mathsf{inl}^{\sT{B}}\,\overline{e}}}
 \and
+\inferrule*[right=einr]{\elab{\Delta}{\Gamma}{e}{B}{\overline{e}}}
+  {\elab{\Delta}{\Gamma}{\mathsf{inr}^{A} e}{A \vee B}{\mathsf{inr}^{\sT{A}}\,\overline{e}}}
+\and
+\inferrule*[right=ecase]{\elab{\Delta}{\Gamma}{e}{A \vee B}{\overline{e}} \\
+    \elab{\Delta}{\Gamma \& A}{e_1}{C}{\overline{e}_1} \\ \elab{\Delta}{\Gamma \& B}{e_2}{C}{\overline{e}_2} \\
+    \sT{\Gamma} * \sT{A} \\ \sT{\Gamma} * \sT{B}}
+  {\elab{\Delta}{\Gamma}{\mathsf{case}\ e\ \mathsf{of}\ e_1 \mid e_2}{C}{\mathsf{case}\ \overline{e}\ \mathsf{of}\ \overline{e}_1 \mid \overline{e}_2}}
+\and
+\inferrule*[right=eflam]{\elab{\Delta}{(\Gamma \& (A{\to}B)) \& A}{e}{B}{\overline{e}} \\
+    \sT{\Gamma} * (\sT{A}{\to}\sT{B}) \\ (\sT{\Gamma} \& (\sT{A}{\to}\sT{B})) * \sT{A}}
+  {\elab{\Delta}{\Gamma}{\mu\lambda(A{\to}B).e}{A \to B}{\mu\lambda(\sT{A}{\to}\sT{B}).\overline{e}}}
+\and
+\inferrule*[right=efclos]{v_1\ \Val \\ \elab{\Delta}{\tp}{v_1}{\Gamma'}{\overline{v}_1} \\
+    \elab{\Delta}{(\Gamma' \& (A{\to}B)) \& A}{e_2}{B}{\overline{e}_2} \\
+    \sT{\Gamma'} * (\sT{A}{\to}\sT{B}) \\ (\sT{\Gamma'} \& (\sT{A}{\to}\sT{B})) * \sT{A}}
+  {\elab{\Delta}{\Gamma}{\langle v_1, \mu\lambda(A{\to}B).e_2\rangle}{A \to B}{\fclosx{\overline{v}_1}{\sT{A}}{\sT{B}}{\overline{e}_2}^{\sT{B}}}}
+\and
+\inferrule*[right=efold]{\elab{\Delta}{\Gamma}{e}{\subs{T}{X_0}{\mu T}^{\mu}}{\overline{e}}}
+  {\elab{\Delta}{\Gamma}{\mathsf{fold}^{T} e}{\mu T}{\mathsf{fold}^{\sT{T}}\,\overline{e}}}
+\and
+\inferrule*[right=eunfold]{\elab{\Delta}{\Gamma}{e}{\mu T}{\overline{e}} \\ A = \subs{T}{X_0}{\mu T}^{\mu}}
+  {\elab{\Delta}{\Gamma}{\mathsf{unfold}\ e}{A}{\mathsf{unfold}\ \overline{e}}}
+\end{mathpar}
+\begin{mathpar}
 \inferrule*[right=emstruct-$\sbx$]{\elab{\Delta}{\tp}{e}{B}{\overline{e}}}
   {\elab{\Delta}{\Gamma}{\mathsf{struct}^{\sbx}\,e}{B}{\tp \bx \overline{e}}}
 \and
@@ -851,6 +1201,20 @@ v &::=& i \mid \tp \mid \langle v, \lambda A.e \rangle \mid \langle v, \mathsf{f
 \and
 \inferrule*[right=wrap]{\Delta\,n = R \\ \eva{\Delta}{v}{R}{\overline{w}}}
   {\eva{\Delta}{\wrp{n}{v}}{\bra{n}}{\wrp{n}{\overline{w}}}}
+\and
+\inferrule*[right=inl]{\eva{\Delta}{v}{A}{\overline{w}}}
+  {\eva{\Delta}{\mathsf{inl}^{B} v}{A \vee B}{\mathsf{inl}^{\sT{B}}\,\overline{w}}}
+\and
+\inferrule*[right=inr]{\eva{\Delta}{v}{B}{\overline{w}}}
+  {\eva{\Delta}{\mathsf{inr}^{A} v}{A \vee B}{\mathsf{inr}^{\sT{A}}\,\overline{w}}}
+\and
+\inferrule*[right=fclos]{\rho\ \Val \\ \eva{\Delta}{\rho}{\Gamma'}{\overline{\rho}} \\
+    \elab{\Delta}{(\Gamma' \& (A{\to}B)) \& A}{e}{B}{\overline{e}} \\
+    \sT{\Gamma'} * (\sT{A}{\to}\sT{B}) \\ (\sT{\Gamma'} \& (\sT{A}{\to}\sT{B})) * \sT{A}}
+  {\eva{\Delta}{\langle \rho, \mu\lambda(A{\to}B).e\rangle}{A \to B}{\fclosx{\overline{\rho}}{\sT{A}}{\sT{B}}{\overline{e}}^{\sT{B}}}}
+\and
+\inferrule*[right=fold]{\eva{\Delta}{v}{\subs{T}{X_0}{\mu T}^{\mu}}{\overline{w}}}
+  {\eva{\Delta}{\mathsf{fold}^{T} v}{\mu T}{\mathsf{fold}^{\sT{T}}\,\overline{w}}}
 \end{mathpar}
 \end{definition}
 
@@ -864,6 +1228,29 @@ v &::=& i \mid \tp \mid \langle v, \lambda A.e \rangle \mid \langle v, \mathsf{f
 \[
 \Delta \storele \Delta' \;\wedge\; \elab{\Delta}{\Gamma}{e}{A}{\overline{e}} \;\Longrightarrow\; \elab{\Delta'}{\Gamma}{e}{A}{\overline{e}}
 \]
+\end{theorem}
+
+\begin{theorem}[\textsf{elabSeal\_uniqueness}]
+Elaboration is a function of the term and (for non-values) its context:
+\[
+\elab{\Delta}{\Gamma_1}{e}{T_1}{\overline{e}_1} \;\wedge\; \elab{\Delta}{\Gamma_2}{e}{T_2}{\overline{e}_2}
+\;\wedge\; (\Gamma_1 = \Gamma_2 \vee e\ \Val) \;\Longrightarrow\; T_1 = T_2 \wedge \overline{e}_1 = \overline{e}_2
+\]
+\end{theorem}
+
+\begin{theorem}[\textsf{source\_sprogress}, \textsf{source\_spreservation}, \textsf{source\_bigstep\_deterministic}]
+Pure source metatheory, with elaborability playing the role of typing (SStep is the
+source small-step, BStep the big-step):
+\[
+\begin{array}{l}
+(\exists \overline{e}.\ \elab{\Delta}{\tp}{e}{A}{\overline{e}}) \;\Longrightarrow\; e\ \Val \;\vee\; \exists e'.\ \mathsf{SStep}\ \tp\ e\ e' \\[2pt]
+(\exists \overline{e}.\ \elab{\Delta}{\tp}{e}{A}{\overline{e}}) \;\wedge\; \mathsf{SStep}\ \tp\ e\ e' \;\Longrightarrow\; \exists \overline{e}'.\ \elab{\Delta}{\tp}{e'}{A}{\overline{e}'} \\[2pt]
+(\exists \overline{e}.\ \elab{\Delta}{\tp}{e}{A}{\overline{e}}) \;\wedge\; \bstep{\tp}{e}{v_1} \;\wedge\; \bstep{\tp}{e}{v_2} \;\Longrightarrow\; v_1 = v_2
+\end{array}
+\]
+(Each also holds generalized over a well-typed environment; sealed-unit runs are
+covered — the sealing cases of preservation and progress go through the source
+coercions.)
 \end{theorem}
 
 \begin{theorem}[\textsf{seal\_semantic\_preservation}]
@@ -915,6 +1302,10 @@ v &::=& i \mid \tp \mid \langle v, \lambda A.e \rangle \mid \langle v, \mathsf{f
 \]
 \end{theorem}
 
+$\mathsf{SFinitary}\ c$ is the source-side normalizing fragment (every source former
+except the fixpoints); elaboration maps it into $\mathsf{Finitary}$
+(\textsf{elabSeal\_finitary}).
+
 \begin{theorem}[\textsf{source\_representation\_independence}]
 \[
 \begin{array}{l}
@@ -924,7 +1315,7 @@ v &::=& i \mid \tp \mid \langle v, \lambda A.e \rangle \mid \langle v, \mathsf{f
 \elab{\Delta_1}{\tp}{p_1}{\subs{S}{n}{R_1}}{\overline{p}_1} \;\wedge\;
 \elab{\Delta_2}{\tp}{p_2}{\subs{S}{n}{R_2}}{\overline{p}_2} \;\wedge \\
 \LRg{(n,\sT{R_1},\sT{R_2})}{\sT{S}}(\overline{p}_1,\overline{p}_2) \;\wedge\;
-\elab{\emptyset}{S}{c}{\Int}{\overline{c}} \;\wedge \\
+\elab{\emptyset}{S}{c}{\Int}{\overline{c}} \;\wedge\; \mathsf{SFinitary}\ c \;\wedge \\
 \bstep{\tp}{(\sealE{n}{R_1}{S}{p_1}) \bx c}{v_1} \;\wedge\;
 \bstep{\tp}{(\sealE{n}{R_2}{S}{p_2}) \bx c}{v_2} \\
 \Longrightarrow\;
@@ -932,5 +1323,69 @@ v &::=& i \mid \tp \mid \langle v, \lambda A.e \rangle \mid \langle v, \mathsf{f
 \end{array}
 \]
 \end{theorem}
+
+\section{Ongoing work}
+
+Planned results are typeset \textcolor{red}{in red}; statements are provisional (the
+source syntax for generics is not yet fixed — a brand-binding
+$\mathsf{functor}^{\beta}$ or a separate $\mathsf{bfunctor}$ form).
+
+\begin{planned}{source\_generic\_elaboration}
+Source-side generics elaborate to the target $\forall\beta$ layer and are semantically
+preserved: extending SCE with a brand-binding functor form
+$\mathsf{bfunctor}(\beta).\,e$ elaborated to $\blam{\sT{A}}{\overline{e}}$ and
+link-time instantiation elaborated through $\bapp{\cdot}{n}$, the elaboration
+type-preservation and simulation theorems (\textsf{seal\_type\_preservation},
+\textsf{seal\_semantic\_preservation}) extend to the new forms.
+\end{planned}
+
+\begin{planned}{seal\_separate\_compilation\_generic}
+Separate compilation for generic clients across brand \emph{renaming}: a generic client
+compiled against an abstract signature links with a provider whose brand was allocated
+differently — renaming a concrete brand $\bra{n}$ to a fresh $\bra{n'}$ in store,
+derivation and program preserves typing and evaluation (freshness is genuinely required
+here, unlike for $\forall\beta$-instantiation).
+\end{planned}
+
+\begin{planned}{source\_\allowbreak generic\_\allowbreak client\_\allowbreak representation\_\allowbreak independence}
+The source-level mirror of
+\textsf{generic\_\allowbreak client\_\allowbreak representation\_\allowbreak independence}: a source generic client,
+instantiated at each sealed source provider's brand and linked against it, computes the
+same literal for providers related at the signature — by semantic preservation, the
+target theorem, and source determinism.
+\end{planned}
+
+\medskip
+\noindent The concrete work items, in dependency order:
+\begin{itemize}
+\item \textbf{Milestone 5 — source-side generics.}  Add the brand-binding functor form to
+  SCE, its \textsf{elabSeal} rules targeting $\Lambda/\bapp{\cdot}{n}$, and the
+  Correctness cases; instantiation happens at link time ($\ltimes^{\!*}$).
+\item \textbf{Brand-renaming metatheory.}  Renaming concrete brand $\to$ concrete brand
+  with freshness side conditions, through stores, derivations and values; culminates in
+  \textsf{seal\_separate\_compilation\_generic}.  A separate mechanism from
+  $\forall\beta$-instantiation, which is freshness-free by design.
+\item \textbf{Source-level generic example.}  The $\{mk\} \,\&\, \{get\}$ example with a
+  source $\forall$-functor client serving both sealed source providers — the source
+  mirror of the mechanized target-level run.
+\item \textbf{$\mu$/fix examples.}  A sealed-interface factorial through the fixpoint
+  closure, a tagged-union run, and a $\mu$-stream, exercising the Phase-1 layers
+  end-to-end in \textsf{Examples.lean}.
+\item \textbf{Step-indexed logical relation.}  Lift the
+  $\mathsf{Finitary}/\mathsf{SFinitary}$ fence so the relational results (and RI) cover
+  fixpoints and a structural $\mu$-clause; replaces the termination-flavored
+  fundamental lemma with a step-indexed one.
+\item \textbf{Lifting the $\forall$-fences.}  A shifting $\mu$-substitution admits
+  $\forall$ inside $\mu$-bodies ($\neg\hallb{T}$ on fold/unfold); shifting in the
+  term-level instantiation admits nested, multi-binder generics ($\bcl{1}{A}$ on
+  \textsc{tbapp}).
+\item \textbf{Relational parametricity proper.}  Free theorems over arbitrary
+  admissible relations at $\beta$ need brand-interpretation environments plus a
+  properly-bound (EBClosed) typing discipline; representation independence of generic
+  clients deliberately avoided both.
+\item \textbf{Cleanups.}  Collapse the module-type syntax into the function type,
+  merge single-import linking into the $n$-ary form, and update this document as the
+  source syntax for generics lands.
+\end{itemize}
 
 \end{document}
