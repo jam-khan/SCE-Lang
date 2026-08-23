@@ -829,6 +829,15 @@ The client instantiates at the provider's \emph{own} allocated brand $n$: the
 $\forall$-clause needs no freshness, and $\eta$ at $n$ is exactly the relation between
 the two representations, so $\bapp{\cdot}{n}$ lands the client in the
 concrete-signature world where \textsf{representation\_independence} already lives.
+Both providers seal at the \emph{same} brand $n$ — the two representations live in the
+two stores, as in every RI statement ($\Delta\,n$ is functional).  A single client
+facing providers allocated at \emph{different} brands is the brand-renaming theorem
+(\S3), not this one.  What this layer adds beyond
+\textsf{representation\_independence} is (i) coverage: $\mathsf{Finitary}$ now
+includes generic syntax, so \emph{every} relational theorem applies to clients that
+use $\Lambda$/$\bapp{\cdot}{n}$ internally, which previously none did; and (ii) reuse
+at the typing level: one generic client value serves providers at different brands in
+one store (mechanized in the examples), which no concrete-signature client can.
 \end{theorem}
 
 \section{$\lambda_{SCE}$ (SCE)}
@@ -1350,9 +1359,11 @@ here, unlike for $\forall\beta$-instantiation).
 \begin{planned}{source\_\allowbreak generic\_\allowbreak client\_\allowbreak representation\_\allowbreak independence}
 The source-level mirror of
 \textsf{generic\_\allowbreak client\_\allowbreak representation\_\allowbreak independence}: a source generic client,
-instantiated at each sealed source provider's brand and linked against it, computes the
-same literal for providers related at the signature — by semantic preservation, the
-target theorem, and source determinism.
+instantiated at the one brand both source providers seal at (two representations, two
+stores, as in the target theorem), computes the same literal for providers related at
+the signature — by semantic preservation, the target theorem, and source determinism.
+The cross-brand version — one client, providers allocated at \emph{different} brands —
+factors through \textsf{seal\_\allowbreak separate\_\allowbreak compilation\_\allowbreak generic} and is not claimed here.
 \end{planned}
 
 \medskip
