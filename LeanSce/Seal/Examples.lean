@@ -391,4 +391,35 @@ example {v₁ v₂ : SCE.Exp}
 
 end RIExample
 
+-- ── Brand polymorphism, target level (Phase 3): a generic client, twice instantiated ──
+--
+-- The generic identity Λβ. λ(x : β). x types at ∀β. β → β and instantiates at ANY
+-- brand — the target half of the motivating example (one polymorphic client serving
+-- every sealed provider).  The full two-provider ∀-functor example is milestone 5.
+namespace BrandPolyExample
+
+def genId : Exp := .blam (.arr (.bvar 0) (.bvar 0)) (.lam (.bvar 0) (.bvar 0) (.proj .query 0))
+
+theorem genId_typed {Δ : BrandStore}
+    : HasType Δ .top genId (.allb (.arr (.bvar 0) (.bvar 0))) :=
+  HasType.tblam (fun h => nomatch h)
+    (HasType.tlam disj_top (HasType.tproj HasType.tquery Lookup.zero))
+
+-- Instantiation at any concrete brand m yields the identity at that brand.
+theorem genId_inst (m : Nat) {Δ : BrandStore}
+    : HasType Δ .top (.bapp genId m) (.arr (.brand m) (.brand m)) :=
+  HasType.tbapp genId_typed
+    (BClosed.arr (BClosed.bvar Nat.zero_lt_one) (BClosed.bvar Nat.zero_lt_one)) rfl
+
+-- And it runs: capture, instantiate (pushing `brand m` into the annotations), close.
+theorem genId_run (m : Nat) : MStep .unit (.bapp genId m)
+    (.clos .unit (.brand m) (.brand m) (.proj .query 0)) :=
+  MStep.step (Step.sbappl Value.vunit (Step.sblam Value.vunit))
+    (MStep.step (Step.sbappbeta Value.vunit Value.vunit)
+      (MStep.step (Step.sboxr Value.vunit Value.vunit (Step.sclos Value.vunit))
+        (MStep.step (Step.sboxv Value.vunit Value.vunit (Value.vclos Value.vunit))
+          MStep.refl)))
+
+end BrandPolyExample
+
 end Seal

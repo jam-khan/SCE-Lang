@@ -1,4 +1,4 @@
-# HANDOFF: extensions + cleanup of LeanSce (updated 2026-08-23, session 2)
+# HANDOFF: extensions + cleanup of LeanSce (updated 2026-08-23, session 3)
 
 **Read this first in the next session.**  It is the complete working state of the
 "1 source + 1 target, sealing-based, with fix/unions/μ + brand polymorphism" effort.
@@ -9,7 +9,7 @@ polymorphism, motivating example).  This file is the execution log + precise nex
 **ALL WORK LIVES ON `lambdae-sub` — `main` mirrors `origin/main` and must stay
 clean/untouched until the user says otherwise.**
 
-Everything below is committed on `lambdae-sub` and green: `lake build` succeeds (60 jobs),
+Everything below is committed on `lambdae-sub` and green: `lake build` succeeds (62 jobs),
 **zero `sorry`, only standard axioms** (the flagship
 `Seal.source_representation_independence` still uses `propext` only; the ported
 determinism/preservation results use at most `propext, Quot.sound`; nothing uses
@@ -22,12 +22,12 @@ target).  `LeanSce/Core` and the SCE→Core elaboration are DELETED (Phase 2e,
 commit `1a79fcd`); `grep -rn "Core\." LeanSce` and `grep -rn "elabExp" LeanSce`
 are empty.
 
-**▶ WHERE TO CONTINUE: §3 below — Phase 3 (brand polymorphism).  Commit A is
-DONE (session 3, commit `49dbca0`) — with a DESIGN REVISION: `tmergev` is
-hardened with Disj as planned, but a second runtime merge rule **`tmergevc`**
-was added for cast-duplicated merges (see the §3.3 correction below).  Next
-action = "Commit B" in §3.6 (syntax additions).  Do not re-derive the design;
-§3 was checked against the actual definitions and §3.3 against the compiler.**
+**▶ WHERE TO CONTINUE: Phase 3 milestones 1–3 (target-side ∀β with the FULL
+safety layer) are COMPLETE (session 3, commits `49dbca0..`, see §3.6 statuses
+and §3.9 for the session-3 design corrections).  Next work = §3.7: milestone 4
+(the real relational ∀-clause over η-extensions) or milestone 5 (source-side
+`mfunctor`-generic + elabSeal + sepcomp).  Also open: the §2 examples/doc
+items.  Do not re-derive the design; §3 was checked against the compiler.**
 
 ---
 
@@ -336,35 +336,49 @@ Bottom-up order:
 
 ### 3.6 Commit plan (execute in order; `lake build` green after each)
 
+**ALL COMMITS BELOW ARE DONE (session 3).**  Actual sequence (resequenced —
+see the ⚠ notes): A (`49dbca0`), B+C (`05b657a`, one unit: total matches over
+Typ pull the Sub/Cost leaves in immediately), D-prep (`d94e193`), E
+(`005e5c8`), F′a (`82474d5`), F′b (`bcc930b`), F′c (`2b2b849`), example+docs
+(this commit).  §3.9 lists every design correction made along the way.
+
 - **Commit A ✅ DONE** (`49dbca0`, session 3): `tmergev` + `Disj A B` premise
   AND the `tmergevc` split (§3.3 correction).  Downstream consequences for later
   commits: `hastype_bsubst` (Commit F) gains a tmergevc case = IHs (origin +
   components) + `cast_bsubst` + `consistent_after_cast`; new typing-inversion
   proofs written from Commit D onward must handle BOTH merge rules.
-- **Commit B ◀ START HERE**: Syntax additions (§3.1) — types, terms, substitutions, HasBVar,
+- **Commit B ✅ (as B+C)**: Syntax additions (§3.1) — types, terms, substitutions, HasBVar,
   Value/genVal/Ordinary/toplike_dec.  Everything still compiles because no
   relation mentions the new constructors yet EXCEPT total matches: `genVal`
   (extended here), `substBrand`/`substTyp` (extended here).
-- **Commit C**: Subtyping + Disjointness + Casting extensions (§3.2, §3.4-Sub/Cast)
+- **Commit C ✅ (in B+C)**: Subtyping + Disjointness + Casting extensions (§3.2, §3.4-Sub/Cast)
   incl. the full compose/peel fallout and `sub_bvar_peel`.
-- **Commit D**: Typing (NoRes/WfSig strengthening + sealTyp_no_hasbvar + tblam/
+- **Commit D ✅ (as D-prep + F′a + F′c)**: Typing (NoRes/WfSig strengthening + sealTyp_no_hasbvar + tblam/
   tbclos/tbapp) and SmallStep (sblam/sbappl/sbappbeta, SealV/UnsealV bvar/allb).
   Existing WfSig.mu sites gain the ¬HasBVar argument.
-- **Commit E**: the substitution suite §3.5 items 1–6.
-- **Commit F**: `hastype_bsubst` (§3.5.7).
-- **Commit G**: CastingLemmas/Determinism/Progress/Preservation new cases
+- **Commit E ✅** (`005e5c8`, new file `Seal/BrandSubst.lean`): the substitution
+  suite §3.5 items 1–6 (item 6 replaced by identity-via-bvar-freeness; the
+  cost_{brand,var,mu}_compose helpers were replaced by refl-leaf peels — with
+  cmubv the μ compose lemma is FALSE for arbitrary costs).
+- **Commit F ✅ (as F′c, `2b2b849`)**: `hastype_bsubst` (§3.5.7) + steps +
+  typing rules + all fallout in one unit (typing rules force progress cases
+  needing the steps; sbappbeta preservation needs hastype_bsubst — none land
+  green separately).
+- **Commit G ✅ (in F′c)**: CastingLemmas/Determinism/Progress/Preservation new cases
   (cast determinism for cbclos mirrors cwrap/cfold; progress at allb via canonical
   bclos; preservation sbappbeta case = tbclos inversion + hastype_bsubst + tbox).
-- **Commit H**: Sealing.lean: `LRg (.bvar _) = False`; `LRg (.allb A)` = opaque
+- **Commit H ✅ (spread over B+C and F′c)**: Sealing.lean: `LRg (.bvar _) = False`; `LRg (.allb A)` = opaque
   equality clause mirroring the μ clause (`v₁ = v₂` + typings); `cast_lr` allb
   case via a `cast_allb_id` lemma (mirror `cast_mu_id`); `coe_lr` allb case =
   identity via WfSig.allb's ¬BrandIn + `substBrand_notin`; Abstraction.lean
   fallout.  `Finitary` needs NO change (inductive whitelist; no blam/bclos/bapp
   constructors → generic terms are outside the normalizing fragment, `fundamental`
   discharges the new typing cases by the absent-Finitary pattern used for flam).
-- **Commit I**: Examples (a tiny ∀β target-level run: seal two providers at
-  brands 0/1, one bclos client, two bapp instantiations — the motivating example's
-  target half), DESIGN.md §(h) documenting §3.2/§3.3 decisions, HANDOFF update.
+- **Commit I ✅ (this commit)**: Examples.BrandPolyExample — the generic
+  identity Λβ.λ(x:β).x typed at ∀β.β→β, instantiated at ANY brand (genId_inst),
+  with a 4-step run to the concrete closure (genId_run).  The full two-provider
+  sealed ∀-functor example moves to milestone 5.  DESIGN.md §(h) still TODO
+  (document §3.2/§3.3/§3.9 decisions).
 
 ### 3.7 Deferred (after the safety layer)
 
@@ -413,6 +427,48 @@ Bottom-up order:
   adding WfSig.bvar (per §3.5.6) is consistent with the var precedent ✓.
 - Sizes: CastingLemmas 1202, Sealing 1365, Correctness ~1640 (post 2-pre),
   Preservation 433, Progress 379, Determinism 198 lines.
+
+### 3.9 Session-3 design corrections (all implemented; trust these over §3.1–§3.5)
+
+1. **tmergevc** (Commit A, §3.3 correction): second runtime merge rule for
+   cast-duplicated merges; both merge rules keep Consistent.
+2. **blam/bclos carry the ∀-body annotation** (`blam A e`, `bclos ρ A e`): an
+   identity cast must be pinned by the value (the fold/wrap precedent), or
+   cast_preservation's cbclos case is unprovable.  `bsubstExp` maps the
+   annotation and body at d+1, the captured environment at d (it sits OUTSIDE
+   the binder).
+3. **twrap gains `¬ HasBVar R`** (like tseal/tunseal): the store representation
+   must be bsubst-invariant.
+4. **tfold/tunfold gain `¬ AllbIn T`** (new occurrence inductive): substTyp
+   does not shift bvars, so ∀ INSIDE a μ-body would capture cross-binder bvars;
+   `bsubst_substTyp_comm` holds exactly under the fence.  μ over an OUTER β
+   stays allowed.  Liftable later with a shifting substTyp.
+5. **tbapp carries `BClosed 1 A`** (new properly-bound predicate): the
+   shift-free beta is index-coherent only when the ∀-body's bvars are bound by
+   its OWN binder.  Under it, hastype_bsubst's tbapp case closes by
+   `bclosed_bsubst` (identity at/above cutoff) + `bclosed_bsubst_lower`.
+6. **cost_{brand,var,mu}_compose replaced by refl-leaf peels** (sub_brand_peel/
+   sub_var_peel/sub_mu_peel/sub_bvar_peel/sub_allb_peel): with cmubv the μ
+   compose lemma is false for arbitrary costs; subtyping-derived costs end in
+   the exact leaf, which is all sub_sub_cost needs.  `disj_brand_notin` gains a
+   `¬ HasBVar B` premise (a brand costs every bvar).
+7. **wfsig_bsubst not needed**: WfSig has NO bvar case (dropped per §3.5.6);
+   signatures are bvar-free (`wfsig_no_hasbvar`), so bsubst is the identity on
+   them.  `sealTyp_no_hasbvar`/`sealTyp_no_allbin` discharge every elaboration
+   obligation.
+8. **Premise orders NOW** (for inversions): `tmergev hv₁ hv₂ ht₁ ht₂ hd hcons`;
+   `tmergevc hv₁ hv₂ ht₁ ht₂ hv ht hc₁ hc₂ hcons`; `twrap hΔ hnb hv ht`;
+   `tseal hΔ hnr hnb hwf h`; `tunseal hΔ hnr hnb hwf h heq`;
+   `tfold hna h`; `tunfold hna h heq`; `tblam hnb h`; `tbclos hv henv hnb h`;
+   `tbapp h hbc heq`.  Lean allows PARTIAL binder lists in `cases/induction`
+   alternatives (extra args auto-named inaccessible) — use minimal binders.
+9. **Key new lemmas**: BrandSubst.lean holds the whole suite — hasbvar_dec,
+   bsubst_notin, hasbvar_bsubst_inv, ten bsubst_eq_* shape inversions,
+   cost_bsubst_inv → disj_bsubst, sub/lookup/rlookup/toplike/ordinary/nores
+   _bsubst, bsubstExp_value, bsubstExp_genVal, cast_bsubst,
+   hasbvar_substBrand, allbin_bsubst_inv, bsubst_substTyp_comm,
+   bclosed_bsubst(_lower), hastype_bsubst.  CastingLemmas: cast_allb_cost;
+   Sealing: cast_allb_id, viewL/R_allb; Examples: BrandPolyExample.
 
 ---
 
@@ -464,6 +520,12 @@ Bottom-up order:
 ## 5. Commit log (newest first; session 2 above the line)
 
 ```
+2b2b849 Seal: ∀β typing + steps + hastype_bsubst — safety layer complete (F′c, session 3)
+bcc930b Seal: blam/bclos carry the ∀-body annotation (F′b)
+82474d5 Seal: twrap ¬HasBVar R + tfold/tunfold ¬AllbIn μ-fence (F′a)
+005e5c8 Seal/BrandSubst: the ∀β-instantiation substitution suite (E)
+d94e193 Seal: bvar-free sealing discipline — WfSig/NoRes/tseal (D-prep)
+05b657a Seal: brand-polymorphism syntax + conservative COST/Sub/Cast (B+C)
 49dbca0 Seal: harden tmergev with Disj; split off tmergevc — Phase 3 Commit A (session 3)
 3a28c98 HANDOFF.md: Phase 3 design complete
 3b799d9 HANDOFF.md: work lives on lambdae-sub; main stays clean
