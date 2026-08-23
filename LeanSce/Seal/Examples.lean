@@ -44,8 +44,9 @@ example : Step .unit
 -- both seal to {x = 1}, hence are related at the seal, hence (by `sealing`)
 -- indistinguishable to any client typed against {x : Int}.
 example : LR noBrands noBrands (fun _ _ _ => False) (.rcd "x" .int)
-    (.lrec "x" (.lit 1)) (.lrec "x" (.lit 1)) :=
-  ⟨_, _, rfl, rfl, 1, rfl, rfl⟩
+    (.lrec "x" (.lit 1)) (.lrec "x" (.lit 1)) := by
+  simp only [LR, LRg]
+  exact ⟨_, _, rfl, rfl, 1, rfl, rfl⟩
 
 -- A client of the seal: select x from the sealed environment.
 example : HasType Δ (.rcd "x" .int) (.rproj .query "x") .int :=
@@ -183,7 +184,7 @@ theorem unboxClos_typed {Δ : BrandStore} : HasType Δ .top unboxClos (.arr R₂
 -- stores: the relation at an open brand only consults η).
 theorem impl_related {Δ₁ Δ₂ : BrandStore}
     : LRg Δ₁ Δ₂ ηex (some (0, .int, R₂)) Sig impl₁ impl₂ := by
-  refine ⟨?_, ?_, _, _, _, _, rfl, rfl, ?_, ?_⟩
+  refine lr_and_intro ?_ ?_ ?_ ?_
   · -- typing of impl₁ at Sig[α := Int]
     exact HasType.tmrg (HasType.trcd idClos_typed)
       (HasType.trcd (value_weaken idClos_typed (Value.vclos Value.vunit)))
@@ -192,6 +193,8 @@ theorem impl_related {Δ₁ Δ₂ : BrandStore}
       (HasType.trcd (value_weaken unboxClos_typed (Value.vclos Value.vunit)))
       disj_top_r (disj_rcd_ne (by decide))
   · -- mk : Int → α
+    show LRg Δ₁ Δ₂ ηex (some (0, .int, R₂)) SigMk (.lrec "mk" idClos) (.lrec "mk" boxClos)
+    simp only [SigMk, LRg]
     refine ⟨_, _, rfl, rfl, Value.vclos Value.vunit, Value.vclos Value.vunit,
       idClos_typed, boxClos_typed, ?_⟩
     intro u₁ u₂ hu ρ₁ ρ₂ hρ₁ hρ₂
@@ -201,6 +204,8 @@ theorem impl_related {Δ₁ Δ₂ : BrandStore}
     simp only [LRg, α, if_true]
     exact ⟨Value.vint, Value.vrcd Value.vint, HasType.tint, HasType.trcd HasType.tint, i, rfl, rfl⟩
   · -- get : α → Int
+    show LRg Δ₁ Δ₂ ηex (some (0, .int, R₂)) SigGet (.lrec "get" idClos) (.lrec "get" unboxClos)
+    simp only [SigGet, LRg]
     refine ⟨_, _, rfl, rfl, Value.vclos Value.vunit, Value.vclos Value.vunit,
       idClos_typed, unboxClos_typed, ?_⟩
     intro u₁ u₂ hu ρ₁ ρ₂ hρ₁ hρ₂

@@ -50,34 +50,7 @@ def RawRel (Δ₁ Δ₂ : BrandStore) (η : Nat → Exp → Exp → Prop) (n : N
     (v₁ v₂ : Exp) : Prop :=
   Value v₁ ∧ Value v₂ ∧ HasType Δ₁ .top v₁ R₁ ∧ HasType Δ₂ .top v₂ R₂ ∧ η n v₁ v₂
 
--- δ-environments: the relational interpretation of BRAND VARIABLES (milestone 4
--- prep).  Each entry names the concrete brand both sides instantiated the binder at,
--- and the relation the binder was opened with; index 0 will be the nearest enclosing
--- ∀-binder.  Not yet consumed by LRg — see HANDOFF §3.7 for the open design questions.
-abbrev DEnv := Nat → Nat × (Exp → Exp → Prop)
-
-def dbrands (δ : DEnv) : Nat → Nat := fun i => (δ i).1
-
-def demp : DEnv := fun _ => (0, fun _ _ => False)
-
--- Admissibility of a binder relation: closed under casting at the (viewed) brand —
--- the OpenAdm pattern, one binder at a time.
-def RelAdm (o : BrandOpen) (m : Nat) (rel : Exp → Exp → Prop) : Prop :=
-  ∀ w₁ w₂, rel w₁ w₂ → ∀ w₁' w₂', Cast w₁ (viewL o (.brand m)) w₁'
-    → Cast w₂ (viewR o (.brand m)) w₂' → rel w₁' w₂'
-
-def DeltaAdm (o : BrandOpen) (δ : DEnv) : Prop := ∀ i, RelAdm o (δ i).1 (δ i).2
-
-theorem deltaAdm_demp {o : BrandOpen} : DeltaAdm o demp := fun _ _ _ h => h.elim
-
-theorem deltaAdm_insert {o : BrandOpen} {δ : DEnv} {m : Nat} {rel : Exp → Exp → Prop}
-    (hδ : DeltaAdm o δ) (hrel : RelAdm o m rel) : DeltaAdm o (bvInsert 0 (m, rel) δ) := by
-  intro i
-  cases i with
-  | zero => exact hrel
-  | succ i => exact hδ i
-
--- The relation, by structural recursion on the type.  Every clause that cannot re-derive
+-- The relation, by recursion on the type.  Every clause that cannot re-derive
 -- the values' typing carries it (& needs the consistency baked into the typing; arrows
 -- carry their closure typing; brands carry it because the payload's typing lives in the
 -- respective store).  The arrow clause is extensional and phrased at the application
@@ -117,13 +90,25 @@ def LRg (Δ₁ Δ₂ : BrandStore) (η : Nat → Exp → Exp → Prop) (o : Bran
   | .mu T, v₁, v₂ =>
       Value v₁ ∧ Value v₂ ∧
       HasType Δ₁ .top v₁ (viewL o (.mu T)) ∧ HasType Δ₂ .top v₂ (viewR o (.mu T)) ∧ v₁ = v₂
-  -- Brand variables never close-type a value (like μ-vars).  ∀ is opaque to the relation
-  -- for now, exactly like μ: the real ∀-clause quantifying over η-extensions is the
-  -- relational milestone (HANDOFF §3.7, milestone 4).
+  -- Brand variables never close-type a value (like μ-vars).  ∀β is INSTANTIATION-CLOSED:
+  -- related generic values yield, at EVERY concrete brand m, related runs of the
+  -- instantiation `bapp · m` at the substituted body type.  η is never extended and no
+  -- freshness is demanded — at brand-m positions the relation is whatever η already says
+  -- about m, which is exactly what representation independence needs (the client
+  -- instantiates at the provider's own allocated brand, where η relates the two
+  -- representations).  Typing conjuncts stay at the SYNTACTIC type, so degenerate
+  -- bvar-annotated subjects keep relating vacuously through the False bvar clause; the
+  -- one cost is that the recursion descends on `tsize` (bsubst preserves it) instead of
+  -- the type structure.
   | .bvar _, _, _ => False
   | .allb A, v₁, v₂ =>
       Value v₁ ∧ Value v₂ ∧
-      HasType Δ₁ .top v₁ (viewL o (.allb A)) ∧ HasType Δ₂ .top v₂ (viewR o (.allb A)) ∧ v₁ = v₂
+      HasType Δ₁ .top v₁ (viewL o (.allb A)) ∧ HasType Δ₂ .top v₂ (viewR o (.allb A)) ∧
+      ∀ m : Nat, ∀ ρ₁ ρ₂ : Exp, Value ρ₁ → Value ρ₂ →
+        ∃ w₁ w₂, MStep ρ₁ (.bapp v₁ m) w₁ ∧ MStep ρ₂ (.bapp v₂ m) w₂ ∧
+          LRg Δ₁ Δ₂ η o (bsubst 0 m A) w₁ w₂
+termination_by T _ _ => tsize T
+decreasing_by all_goals simp only [tsize, tsize_bsubst]; omega
 
 -- The client-facing relation: every brand abstract.
 abbrev LR (Δ₁ Δ₂ : BrandStore) (η : Nat → Exp → Exp → Prop) : Typ → Exp → Exp → Prop :=
@@ -142,6 +127,10 @@ def OpenAdm (η : Nat → Exp → Exp → Prop) (o : BrandOpen) : Prop :=
 theorem openadm_none : OpenAdm η none := fun _ _ _ h => nomatch h
 
 -- View lemmas: the views commute with every type former (only brands are affected).
+theorem viewL_none {T : Typ} : viewL none T = T := rfl
+theorem viewR_none {T : Typ} : viewR none T = T := rfl
+theorem viewL_some {n : Nat} {R₁ R₂ T : Typ} : viewL (some (n, R₁, R₂)) T = substBrand n R₁ T := rfl
+theorem viewR_some {n : Nat} {R₁ R₂ T : Typ} : viewR (some (n, R₁, R₂)) T = substBrand n R₂ T := rfl
 theorem viewL_int {o : BrandOpen} : viewL o .int = .int := by cases o with | none => rfl | some p => rfl
 theorem viewR_int {o : BrandOpen} : viewR o .int = .int := by cases o with | none => rfl | some p => rfl
 theorem viewL_top {o : BrandOpen} : viewL o .top = .top := by cases o with | none => rfl | some p => rfl
@@ -252,8 +241,14 @@ theorem toplike_viewR_inv {o : BrandOpen} (hadm : OpenAdm η o) {A : Typ}
 
 theorem lr_value {o : BrandOpen} : {T : Typ} → {v₁ v₂ : Exp} → LRg Δ₁ Δ₂ η o T v₁ v₂
     → Value v₁ ∧ Value v₂
-  | .int, _, _, ⟨_, h₁, h₂⟩ => by subst h₁; subst h₂; exact ⟨Value.vint, Value.vint⟩
-  | .top, _, _, ⟨h₁, h₂⟩ => by subst h₁; subst h₂; exact ⟨Value.vunit, Value.vunit⟩
+  | .int, _, _, h => by
+    simp only [LRg] at h
+    obtain ⟨_, h₁, h₂⟩ := h
+    subst h₁; subst h₂; exact ⟨Value.vint, Value.vint⟩
+  | .top, _, _, h => by
+    simp only [LRg] at h
+    obtain ⟨h₁, h₂⟩ := h
+    subst h₁; subst h₂; exact ⟨Value.vunit, Value.vunit⟩
   | .brand m, v₁, v₂, h => by
     have wrap_val : WrapRel Δ₁ Δ₂ η m v₁ v₂ → Value v₁ ∧ Value v₂ := by
       intro ⟨ht₁, ht₂, _, _, h₁, h₂, _⟩
@@ -262,21 +257,28 @@ theorem lr_value {o : BrandOpen} : {T : Typ} → {v₁ v₂ : Exp} → LRg Δ₁
       cases ht₂ with | twrap _ _ hv₂ _ =>
       exact ⟨Value.vwrap hv₁, Value.vwrap hv₂⟩
     cases o with
-    | none => exact wrap_val h
+    | none => simp only [LRg] at h; exact wrap_val h
     | some p =>
       obtain ⟨n, R₁, R₂⟩ := p
       by_cases hm : m = n
       · simp only [LRg, hm, if_true] at h; exact ⟨h.1, h.2.1⟩
       · simp only [LRg, hm, if_false] at h; exact wrap_val h
-  | .and A B, _, _, ⟨_, _, a₁, b₁, a₂, b₂, h₁, h₂, hA, hB⟩ => by
+  | .and A B, _, _, h => by
+    simp only [LRg] at h
+    obtain ⟨_, _, a₁, b₁, a₂, b₂, h₁, h₂, hA, hB⟩ := h
     subst h₁; subst h₂
     exact ⟨Value.vmrg (lr_value hA).1 (lr_value hB).1,
            Value.vmrg (lr_value hA).2 (lr_value hB).2⟩
-  | .rcd l A, _, _, ⟨w₁, w₂, h₁, h₂, hA⟩ => by
+  | .rcd l A, _, _, h => by
+    simp only [LRg] at h
+    obtain ⟨w₁, w₂, h₁, h₂, hA⟩ := h
     subst h₁; subst h₂
     exact ⟨Value.vrcd (lr_value hA).1, Value.vrcd (lr_value hA).2⟩
-  | .arr A B, _, _, ⟨hv₁, hv₂, _, _, _⟩ => ⟨hv₁, hv₂⟩
+  | .arr A B, _, _, h => by
+    simp only [LRg] at h
+    exact ⟨h.1, h.2.1⟩
   | .or A B, _, _, h => by
+    simp only [LRg] at h
     cases h with
     | inl h' =>
       obtain ⟨w₁, w₂, h₁, h₂, hA⟩ := h'
@@ -286,20 +288,24 @@ theorem lr_value {o : BrandOpen} : {T : Typ} → {v₁ v₂ : Exp} → LRg Δ₁
       obtain ⟨w₁, w₂, h₁, h₂, hB⟩ := h'
       subst h₁; subst h₂
       exact ⟨Value.vinr (lr_value hB).1, Value.vinr (lr_value hB).2⟩
-  | .var _, _, _, h => h.elim
-  | .mu T, _, _, h => ⟨h.1, h.2.1⟩
-  | .bvar _, _, _, h => h.elim
-  | .allb _, _, _, h => ⟨h.1, h.2.1⟩
+  | .var _, _, _, h => by simp only [LRg] at h
+  | .mu T, _, _, h => by simp only [LRg] at h; exact ⟨h.1, h.2.1⟩
+  | .bvar _, _, _, h => by simp only [LRg] at h
+  | .allb _, _, _, h => by simp only [LRg] at h; exact ⟨h.1, h.2.1⟩
 
 theorem lr_typed {o : BrandOpen} : {T : Typ} → {v₁ v₂ : Exp} → LRg Δ₁ Δ₂ η o T v₁ v₂
     → HasType Δ₁ .top v₁ (viewL o T) ∧ HasType Δ₂ .top v₂ (viewR o T)
-  | .int, _, _, ⟨_, h₁, h₂⟩ => by
+  | .int, _, _, h => by
+    simp only [LRg] at h
+    obtain ⟨_, h₁, h₂⟩ := h
     subst h₁; subst h₂; rw [viewL_int, viewR_int]; exact ⟨HasType.tint, HasType.tint⟩
-  | .top, _, _, ⟨h₁, h₂⟩ => by
+  | .top, _, _, h => by
+    simp only [LRg] at h
+    obtain ⟨h₁, h₂⟩ := h
     subst h₁; subst h₂; rw [viewL_top, viewR_top]; exact ⟨HasType.tunit, HasType.tunit⟩
   | .brand m, v₁, v₂, h => by
     cases o with
-    | none => exact ⟨h.1, h.2.1⟩
+    | none => simp only [LRg] at h; exact ⟨h.1, h.2.1⟩
     | some p =>
       obtain ⟨n, R₁, R₂⟩ := p
       by_cases hm : m = n
@@ -309,13 +315,16 @@ theorem lr_typed {o : BrandOpen} : {T : Typ} → {v₁ v₂ : Exp} → LRg Δ₁
       · simp only [LRg, hm, if_false] at h
         simp only [viewL, viewR, substBrand, hm, if_false]
         exact ⟨h.1, h.2.1⟩
-  | .and _ _, _, _, ⟨ht₁, ht₂, _⟩ => ⟨ht₁, ht₂⟩
-  | .rcd l A, _, _, ⟨w₁, w₂, h₁, h₂, hA⟩ => by
+  | .and _ _, _, _, h => by simp only [LRg] at h; exact ⟨h.1, h.2.1⟩
+  | .rcd l A, _, _, h => by
+    simp only [LRg] at h
+    obtain ⟨w₁, w₂, h₁, h₂, hA⟩ := h
     subst h₁; subst h₂
     rw [viewL_rcd, viewR_rcd]
     exact ⟨HasType.trcd (lr_typed hA).1, HasType.trcd (lr_typed hA).2⟩
-  | .arr _ _, _, _, ⟨_, _, ht₁, ht₂, _⟩ => ⟨ht₁, ht₂⟩
+  | .arr _ _, _, _, h => by simp only [LRg] at h; exact ⟨h.2.2.1, h.2.2.2.1⟩
   | .or A B, _, _, h => by
+    simp only [LRg] at h
     rw [viewL_or, viewR_or]
     cases h with
     | inl h' =>
@@ -326,10 +335,21 @@ theorem lr_typed {o : BrandOpen} : {T : Typ} → {v₁ v₂ : Exp} → LRg Δ₁
       obtain ⟨w₁, w₂, h₁, h₂, hB⟩ := h'
       subst h₁; subst h₂
       exact ⟨HasType.tinr (lr_typed hB).1, HasType.tinr (lr_typed hB).2⟩
-  | .var _, _, _, h => h.elim
-  | .mu T, _, _, h => ⟨h.2.2.1, h.2.2.2.1⟩
-  | .bvar _, _, _, h => h.elim
-  | .allb _, _, _, h => ⟨h.2.2.1, h.2.2.2.1⟩
+  | .var _, _, _, h => by simp only [LRg] at h
+  | .mu T, _, _, h => by simp only [LRg] at h; exact ⟨h.2.2.1, h.2.2.2.1⟩
+  | .bvar _, _, _, h => by simp only [LRg] at h
+  | .allb _, _, _, h => by simp only [LRg] at h; exact ⟨h.2.2.1, h.2.2.2.1⟩
+
+-- Clause-introduction helper: the WF-compiled LRg does not unfold definitionally, so
+-- intersection relatedness is packaged here once (type arguments are inferred from the
+-- component relations, keeping unification away from the unfolded clause).
+theorem lr_and_intro {o : BrandOpen} {A B : Typ} {a₁ b₁ a₂ b₂ : Exp}
+    (ht₁ : HasType Δ₁ .top (.mrg a₁ b₁) (viewL o (.and A B)))
+    (ht₂ : HasType Δ₂ .top (.mrg a₂ b₂) (viewR o (.and A B)))
+    (hA : LRg Δ₁ Δ₂ η o A a₁ a₂) (hB : LRg Δ₁ Δ₂ η o B b₁ b₂)
+    : LRg Δ₁ Δ₂ η o (.and A B) (.mrg a₁ b₁) (.mrg a₂ b₂) := by
+  simp only [LRg]
+  exact ⟨ht₁, ht₂, _, _, _, _, rfl, rfl, hA, hB⟩
 
 -- ── MStep congruence toolkit ─────────────────────────────────────────────────────────
 
@@ -694,16 +714,18 @@ theorem cast_merge_eq_r {a b : Exp} {Γ B₁ B₂ : Typ} : ∀ {T : Typ} {w w' :
 theorem toplike_lr_gen {o : BrandOpen} (hadm : OpenAdm η o) {D : Typ} (htl : TopLike D)
     : LRg Δ₁ Δ₂ η o D (genVal (viewL o D)) (genVal (viewR o D)) := by
   induction htl with
-  | tltop => rw [viewL_top, viewR_top]; exact ⟨rfl, rfl⟩
+  | tltop => rw [viewL_top, viewR_top]; simp only [LRg]; exact ⟨rfl, rfl⟩
   | tland h₁ h₂ ih₁ ih₂ =>
     rw [viewL_and, viewR_and]
+    simp only [LRg]
     exact ⟨by rw [viewL_and]; exact genVal_typed (TopLike.tland (toplike_viewL h₁) (toplike_viewL h₂)) .top,
       by rw [viewR_and]; exact genVal_typed (TopLike.tland (toplike_viewR h₁) (toplike_viewR h₂)) .top,
       _, _, _, _, rfl, rfl, ih₁, ih₂⟩
-  | tlrcd h ih => rw [viewL_rcd, viewR_rcd]; exact ⟨_, _, rfl, rfl, ih⟩
+  | tlrcd h ih => rw [viewL_rcd, viewR_rcd]; simp only [LRg]; exact ⟨_, _, rfl, rfl, ih⟩
   | tlarr h ih =>
     rename_i A₀ D'
     rw [viewL_arr, viewR_arr]
+    simp only [LRg]
     refine ⟨genVal_value _, genVal_value _,
       by rw [viewL_arr]; exact genVal_typed (TopLike.tlarr (toplike_viewL h)) .top,
       by rw [viewR_arr]; exact genVal_typed (TopLike.tlarr (toplike_viewR h)) .top,
@@ -778,6 +800,7 @@ theorem cast_lr {o : BrandOpen} (hadm : OpenAdm η o) {B A : Typ} (hs : Sub B A)
     (c₁ : Cast v₁ (viewL o A) w₁) (c₂ : Cast v₂ (viewR o A) w₂) : LRg Δ₁ Δ₂ η o A w₁ w₂ := by
   induction hs generalizing v₁ v₂ w₁ w₂ with
   | sint =>
+    simp only [LRg] at hlr ⊢
     obtain ⟨i, e₁, e₂⟩ := hlr
     subst e₁; subst e₂
     rw [viewL_int] at c₁; rw [viewR_int] at c₂
@@ -786,6 +809,7 @@ theorem cast_lr {o : BrandOpen} (hadm : OpenAdm η o) {B A : Typ} (hs : Sub B A)
       cases c₂ with
       | cint => exact ⟨i, rfl, rfl⟩
   | stop =>
+    simp only [LRg]
     rw [viewL_top] at c₁; rw [viewR_top] at c₂
     cases c₁ with
     | ctop =>
@@ -798,6 +822,7 @@ theorem cast_lr {o : BrandOpen} (hadm : OpenAdm η o) {B A : Typ} (hs : Sub B A)
   | sand hs₁ hs₂ ih₁ ih₂ =>
     have hv := lr_value hlr
     have ht := lr_typed hlr
+    simp only [LRg]
     rw [viewL_and] at c₁; rw [viewR_and] at c₂
     cases c₁ with
     | cand c₁ₗ c₁ᵣ =>
@@ -811,6 +836,7 @@ theorem cast_lr {o : BrandOpen} (hadm : OpenAdm η o) {B A : Typ} (hs : Sub B A)
     | cmrgl hord _ => nomatch hord
     | cmrgr hord _ => nomatch hord
   | sandl hs' ih =>
+    simp only [LRg] at hlr
     obtain ⟨htm₁, htm₂, a₁, b₁, a₂, b₂, e₁, e₂, hA₁, hA₂⟩ := hlr
     subst e₁; subst e₂
     rw [viewL_and] at htm₁; rw [viewR_and] at htm₂
@@ -823,6 +849,7 @@ theorem cast_lr {o : BrandOpen} (hadm : OpenAdm η o) {B A : Typ} (hs : Sub B A)
         cast_merge_eq_l (Value.vmrg hva.2 hvb.2) htm₂ c₂ c₂']
     exact ih hA₁ c₁' c₂'
   | sandr hs' ih =>
+    simp only [LRg] at hlr
     obtain ⟨htm₁, htm₂, a₁, b₁, a₂, b₂, e₁, e₂, hA₁, hA₂⟩ := hlr
     subst e₁; subst e₂
     rw [viewL_and] at htm₁; rw [viewR_and] at htm₂
@@ -835,6 +862,7 @@ theorem cast_lr {o : BrandOpen} (hadm : OpenAdm η o) {B A : Typ} (hs : Sub B A)
         cast_merge_eq_r (Value.vmrg hva.2 hvb.2) htm₂ c₂ c₂']
     exact ih hA₂ c₁' c₂'
   | srcd hs' ih =>
+    simp only [LRg] at hlr ⊢
     obtain ⟨u₁, u₂, e₁, e₂, hInner⟩ := hlr
     subst e₁; subst e₂
     rw [viewL_rcd] at c₁; rw [viewR_rcd] at c₂
@@ -854,7 +882,7 @@ theorem cast_lr {o : BrandOpen} (hadm : OpenAdm η o) {B A : Typ} (hs : Sub B A)
         cases c₂ with
         | cwrap => exact ⟨ht₁, ht₂, u₁, u₂, rfl, rfl, hη⟩
     cases o with
-    | none => exact wrap_case hlr c₁ c₂
+    | none => simp only [LRg] at hlr ⊢; exact wrap_case hlr c₁ c₂
     | some p =>
       obtain ⟨n, R₁, R₂⟩ := p
       by_cases hm : m = n
@@ -866,22 +894,25 @@ theorem cast_lr {o : BrandOpen} (hadm : OpenAdm η o) {B A : Typ} (hs : Sub B A)
       · simp only [LRg, hm, if_false] at hlr ⊢
         simp only [viewL, viewR, substBrand, hm, if_false] at c₁ c₂
         exact wrap_case hlr c₁ c₂
-  | svar => exact hlr.elim
+  | svar => simp only [LRg] at hlr
   | smu =>
-    obtain ⟨hv₁, hv₂, ht₁, ht₂, heq⟩ := hlr
-    subst heq
+    obtain ⟨hv₁, hv₂⟩ := lr_value hlr
+    obtain ⟨ht₁, ht₂⟩ := lr_typed hlr
     rw [viewL_mu] at c₁ ht₁; rw [viewR_mu] at c₂ ht₂
     rw [cast_mu_id c₁ hv₁ ht₁, cast_mu_id c₂ hv₂ ht₂]
-    exact ⟨hv₁, hv₂, by rw [viewL_mu]; exact ht₁, by rw [viewR_mu]; exact ht₂, rfl⟩
-  | sbvar => exact hlr.elim
+    exact hlr
+  | sbvar => simp only [LRg] at hlr
+  -- ∀ is refl-only in Sub and casts at it are the identity, so the instantiation-closure
+  -- clause transfers wholesale.
   | sallb =>
-    obtain ⟨hv₁, hv₂, ht₁, ht₂, heq⟩ := hlr
-    subst heq
+    obtain ⟨hv₁, hv₂⟩ := lr_value hlr
+    obtain ⟨ht₁, ht₂⟩ := lr_typed hlr
     rw [viewL_allb] at c₁ ht₁; rw [viewR_allb] at c₂ ht₂
     rw [cast_allb_id c₁ hv₁ ht₁, cast_allb_id c₂ hv₂ ht₂]
-    exact ⟨hv₁, hv₂, by rw [viewL_allb]; exact ht₁, by rw [viewR_allb]; exact ht₂, rfl⟩
+    exact hlr
   | sor hsA hsB ihA ihB =>
     rw [viewL_or] at c₁; rw [viewR_or] at c₂
+    simp only [LRg] at hlr ⊢
     cases hlr with
     | inl h' =>
       obtain ⟨w₁', w₂', e₁, e₂, hA⟩ := h'
@@ -898,6 +929,7 @@ theorem cast_lr {o : BrandOpen} (hadm : OpenAdm η o) {B A : Typ} (hs : Sub B A)
         cases c₂ with
         | cinr d₂ => exact Or.inr ⟨_, _, rfl, rfl, ihB hB d₁ d₂⟩
   | @sarr C' D' C D hsC hsD ihC ihD =>
+    simp only [LRg] at hlr
     obtain ⟨hv₁, hv₂, ht₁, ht₂, CL⟩ := hlr
     rw [viewL_arr] at ht₁; rw [viewR_arr] at ht₂
     rw [viewL_arr] at c₁; rw [viewR_arr] at c₂
@@ -954,6 +986,7 @@ theorem cast_lr {o : BrandOpen} (hadm : OpenAdm η o) {B A : Typ} (hs : Sub B A)
         exact absurd (toplike_viewL (toplike_viewR_inv hadm htlD)) hntlD
       | carrow hntlD₂ hsc₂ hsb₂ =>
         have hvenv₂ := value_clos_env hv₂
+        simp only [LRg]
         refine ⟨Value.vclos hvenv₁, Value.vclos hvenv₂,
           by rw [viewL_arr]; exact cast_preservation (Cast.carrow hntlD hsc₁ hsb₁) hv₁ ht₁,
           by rw [viewR_arr]; exact cast_preservation (Cast.carrow hntlD₂ hsc₂ hsb₂) hv₂ ht₂, ?_⟩
@@ -973,6 +1006,7 @@ theorem cast_lr {o : BrandOpen} (hadm : OpenAdm η o) {B A : Typ} (hs : Sub B A)
           ihD hr cs₁ cs₂⟩
       | cfarrow hntlD₂ hsc₂ hsb₂ =>
         have hvenv₂ := value_fclos_env hv₂
+        simp only [LRg]
         refine ⟨Value.vclos hvenv₁, Value.vfclos hvenv₂,
           by rw [viewL_arr]; exact cast_preservation (Cast.carrow hntlD hsc₁ hsb₁) hv₁ ht₁,
           by rw [viewR_arr]; exact cast_preservation (Cast.cfarrow hntlD₂ hsc₂ hsb₂) hv₂ ht₂, ?_⟩
@@ -1001,6 +1035,7 @@ theorem cast_lr {o : BrandOpen} (hadm : OpenAdm η o) {B A : Typ} (hs : Sub B A)
         exact absurd (toplike_viewL (toplike_viewR_inv hadm htlD)) hntlD
       | carrow hntlD₂ hsc₂ hsb₂ =>
         have hvenv₂ := value_clos_env hv₂
+        simp only [LRg]
         refine ⟨Value.vfclos hvenv₁, Value.vclos hvenv₂,
           by rw [viewL_arr]; exact cast_preservation (Cast.cfarrow hntlD hsc₁ hsb₁) hv₁ ht₁,
           by rw [viewR_arr]; exact cast_preservation (Cast.carrow hntlD₂ hsc₂ hsb₂) hv₂ ht₂, ?_⟩
@@ -1020,6 +1055,7 @@ theorem cast_lr {o : BrandOpen} (hadm : OpenAdm η o) {B A : Typ} (hs : Sub B A)
           ihD hr cs₁ cs₂⟩
       | cfarrow hntlD₂ hsc₂ hsb₂ =>
         have hvenv₂ := value_fclos_env hv₂
+        simp only [LRg]
         refine ⟨Value.vfclos hvenv₁, Value.vfclos hvenv₂,
           by rw [viewL_arr]; exact cast_preservation (Cast.cfarrow hntlD hsc₁ hsb₁) hv₁ ht₁,
           by rw [viewR_arr]; exact cast_preservation (Cast.cfarrow hntlD₂ hsc₂ hsb₂) hv₂ ht₂, ?_⟩
@@ -1046,7 +1082,7 @@ def SemTyp (Δ₁ Δ₂ : BrandStore) (η : Nat → Exp → Exp → Prop) (Γ : 
   ∀ {ρ₁ ρ₂ : Exp}, LR Δ₁ Δ₂ η Γ ρ₁ ρ₂ →
     ∃ w₁ w₂, MStep ρ₁ e₁ w₁ ∧ MStep ρ₂ e₂ w₂ ∧ LR Δ₁ Δ₂ η A w₁ w₂
 
-theorem lr_top_unit : LR Δ₁ Δ₂ η .top .unit .unit := ⟨rfl, rfl⟩
+theorem lr_top_unit : LR Δ₁ Δ₂ η .top .unit .unit := by simp [LR, LRg]
 
 -- A value semantically self-related under the empty context is LR-self-related.
 theorem semtyp_value_self {v : Exp} {T : Typ} (h : SemTyp Δ₁ Δ₂ η .top v v T) (hv : Value v)
@@ -1061,10 +1097,12 @@ theorem lr_lookup {B : Typ} {n : Nat} {A : Typ} (hl : Lookup B n A)
     : ∃ s₁ s₂, LookupV r₁ n s₁ ∧ LookupV r₂ n s₂ ∧ LR Δ₁ Δ₂ η A s₁ s₂ := by
   induction hl generalizing r₁ r₂ with
   | zero =>
+    simp only [LR, LRg] at hr
     obtain ⟨_, _, a₁, b₁, a₂, b₂, e₁, e₂, _, hB⟩ := hr
     subst e₁; subst e₂
     exact ⟨b₁, b₂, LookupV.lvzero, LookupV.lvzero, hB⟩
   | succ _ ih =>
+    simp only [LR, LRg] at hr
     obtain ⟨_, _, a₁, b₁, a₂, b₂, e₁, e₂, hA, _⟩ := hr
     subst e₁; subst e₂
     obtain ⟨s₁, s₂, l₁, l₂, hlr'⟩ := ih hA
@@ -1076,15 +1114,18 @@ theorem lr_rlookup {B : Typ} {l : String} {A : Typ} (hl : RLookup B l A)
     : ∃ s₁ s₂, RLookupV r₁ l s₁ ∧ RLookupV r₂ l s₂ ∧ LR Δ₁ Δ₂ η A s₁ s₂ := by
   induction hl generalizing r₁ r₂ with
   | zero =>
+    simp only [LR, LRg] at hr
     obtain ⟨u₁, u₂, e₁, e₂, hInner⟩ := hr
     subst e₁; subst e₂
     exact ⟨u₁, u₂, RLookupV.rvlzero, RLookupV.rvlzero, hInner⟩
   | landl _ _ ih =>
+    simp only [LR, LRg] at hr
     obtain ⟨_, _, a₁, b₁, a₂, b₂, e₁, e₂, hA, _⟩ := hr
     subst e₁; subst e₂
     obtain ⟨s₁, s₂, l₁, l₂, hlr'⟩ := ih hA
     exact ⟨s₁, s₂, RLookupV.vlandl l₁, RLookupV.vlandl l₂, hlr'⟩
   | landr _ _ ih =>
+    simp only [LR, LRg] at hr
     obtain ⟨_, _, a₁, b₁, a₂, b₂, e₁, e₂, _, hB⟩ := hr
     subst e₁; subst e₂
     obtain ⟨s₁, s₂, l₁, l₂, hlr'⟩ := ih hB
@@ -1154,16 +1195,20 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A
     exact ⟨ρ₁, ρ₂, mstep_one (Step.squery hv.1), mstep_one (Step.squery hv.2), hρ⟩
   | tint =>
     intro ρ₁ ρ₂ _
-    exact ⟨_, _, MStep.refl, MStep.refl, _, rfl, rfl⟩
+    refine ⟨_, _, MStep.refl, MStep.refl, ?_⟩
+    simp only [LR, LRg]
+    exact ⟨_, rfl, rfl⟩
   | tunit =>
     intro ρ₁ ρ₂ _
-    exact ⟨_, _, MStep.refl, MStep.refl, rfl, rfl⟩
+    refine ⟨_, _, MStep.refl, MStep.refl, ?_⟩
+    simp [LR, LRg]
   | tapp _ _ ih₁ ih₂ =>
     intro ρ₁ ρ₂ hρ
     obtain ⟨hf₁, hf₂⟩ := Finitary.app_inv hfin
     have hvρ := lr_value hρ
     obtain ⟨f₁, f₂, rf₁, rf₂, hf⟩ := ih₁ hf₁ hρ
     obtain ⟨a₁, a₂, ra₁, ra₂, ha⟩ := ih₂ hf₂ hρ
+    simp only [LR, LRg] at hf
     obtain ⟨hvf₁, hvf₂, _, _, CL⟩ := hf
     obtain ⟨w₁, w₂, rw₁, rw₂, hw⟩ := CL a₁ a₂ ha ρ₁ ρ₂ hvρ.1 hvρ.2
     refine ⟨w₁, w₂, ?_, ?_, hw⟩
@@ -1199,7 +1244,9 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A
     intro ρ₁ ρ₂ hρ
     have hvρ := lr_value hρ
     obtain ⟨w₁, w₂, rw₁, rw₂, hw⟩ := ih (Finitary.lrec_inv hfin) hρ
-    exact ⟨_, _, mstep_lrec hvρ.1 rw₁, mstep_lrec hvρ.2 rw₂, _, _, rfl, rfl, hw⟩
+    refine ⟨_, _, mstep_lrec hvρ.1 rw₁, mstep_lrec hvρ.2 rw₂, ?_⟩
+    simp only [LR, LRg]
+    exact ⟨_, _, rfl, rfl, hw⟩
   | trproj _ hl ih =>
     intro ρ₁ ρ₂ hρ
     have hvρ := lr_value hρ
@@ -1218,48 +1265,51 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A
     have hva := lr_value ha
     have hta := lr_typed ha
     have hρ' : LR Δ₁ Δ₂ η (.and _ _) (.mrg ρ₁ a₁) (.mrg ρ₂ a₂) :=
-      ⟨HasType.tmergev hvρ.1 hva.1 htρ.1 hta.1 (disj_symm hd₁)
-          (disjoint_consistent hvρ.1 hva.1 htρ.1 hta.1 (disj_symm hd₁)),
-        HasType.tmergev hvρ.2 hva.2 htρ.2 hta.2 (disj_symm hd₁)
-          (disjoint_consistent hvρ.2 hva.2 htρ.2 hta.2 (disj_symm hd₁)),
-        _, _, _, _, rfl, rfl, hρ, ha⟩
+      lr_and_intro
+        (HasType.tmergev hvρ.1 hva.1 htρ.1 hta.1 (disj_symm hd₁)
+          (disjoint_consistent hvρ.1 hva.1 htρ.1 hta.1 (disj_symm hd₁)))
+        (HasType.tmergev hvρ.2 hva.2 htρ.2 hta.2 (disj_symm hd₁)
+          (disjoint_consistent hvρ.2 hva.2 htρ.2 hta.2 (disj_symm hd₁))) hρ ha
     obtain ⟨b₁, b₂, rb₁, rb₂, hb⟩ := ih₂ hf₂ hρ'
     have hvb := lr_value hb
     have htb := lr_typed hb
     refine ⟨.mrg a₁ b₁, .mrg a₂ b₂, ?_, ?_, ?_⟩
     · exact mstep_trans (mstep_mrgl hvρ.1 ra₁) (mstep_mrgr hvρ.1 hva.1 rb₁)
     · exact mstep_trans (mstep_mrgl hvρ.2 ra₂) (mstep_mrgr hvρ.2 hva.2 rb₂)
-    · exact ⟨HasType.tmergev hva.1 hvb.1 hta.1 htb.1 hd₂
-          (disjoint_consistent hva.1 hvb.1 hta.1 htb.1 hd₂),
-        HasType.tmergev hva.2 hvb.2 hta.2 htb.2 hd₂
-          (disjoint_consistent hva.2 hvb.2 hta.2 htb.2 hd₂),
-        _, _, _, _, rfl, rfl, ha, hb⟩
+    · exact lr_and_intro
+        (HasType.tmergev hva.1 hvb.1 hta.1 htb.1 hd₂
+          (disjoint_consistent hva.1 hvb.1 hta.1 htb.1 hd₂))
+        (HasType.tmergev hva.2 hvb.2 hta.2 htb.2 hd₂
+          (disjoint_consistent hva.2 hvb.2 hta.2 htb.2 hd₂)) ha hb
   | tmergev hv₁ hv₂ hp hq hd hcons ih₁ ih₂ =>
     intro ρ₁ ρ₂ _
     obtain ⟨hf₁, hf₂⟩ := Finitary.mrg_inv hfin
-    exact ⟨_, _, MStep.refl, MStep.refl,
-      HasType.tmergev hv₁ hv₂ (hastype_weaken_store storele_noBrands hp)
-        (hastype_weaken_store storele_noBrands hq) hd hcons,
-      HasType.tmergev hv₁ hv₂ (hastype_weaken_store storele_noBrands hp)
-        (hastype_weaken_store storele_noBrands hq) hd hcons,
-      _, _, _, _, rfl, rfl, semtyp_value_self (ih₁ hf₁) hv₁, semtyp_value_self (ih₂ hf₂) hv₂⟩
+    refine ⟨_, _, MStep.refl, MStep.refl, ?_⟩
+    exact lr_and_intro
+      (HasType.tmergev hv₁ hv₂ (hastype_weaken_store storele_noBrands hp)
+        (hastype_weaken_store storele_noBrands hq) hd hcons)
+      (HasType.tmergev hv₁ hv₂ (hastype_weaken_store storele_noBrands hp)
+        (hastype_weaken_store storele_noBrands hq) hd hcons)
+      (semtyp_value_self (ih₁ hf₁) hv₁) (semtyp_value_self (ih₂ hf₂) hv₂)
   | tmergevc hv₁ hv₂ hp hq hv ht hc₁ hc₂ hcons ih₁ ih₂ _ =>
     intro ρ₁ ρ₂ _
     obtain ⟨hf₁, hf₂⟩ := Finitary.mrg_inv hfin
-    exact ⟨_, _, MStep.refl, MStep.refl,
-      HasType.tmergevc hv₁ hv₂ (hastype_weaken_store storele_noBrands hp)
+    refine ⟨_, _, MStep.refl, MStep.refl, ?_⟩
+    exact lr_and_intro
+      (HasType.tmergevc hv₁ hv₂ (hastype_weaken_store storele_noBrands hp)
         (hastype_weaken_store storele_noBrands hq) hv
-        (hastype_weaken_store storele_noBrands ht) hc₁ hc₂ hcons,
-      HasType.tmergevc hv₁ hv₂ (hastype_weaken_store storele_noBrands hp)
+        (hastype_weaken_store storele_noBrands ht) hc₁ hc₂ hcons)
+      (HasType.tmergevc hv₁ hv₂ (hastype_weaken_store storele_noBrands hp)
         (hastype_weaken_store storele_noBrands hq) hv
-        (hastype_weaken_store storele_noBrands ht) hc₁ hc₂ hcons,
-      _, _, _, _, rfl, rfl, semtyp_value_self (ih₁ hf₁) hv₁, semtyp_value_self (ih₂ hf₂) hv₂⟩
+        (hastype_weaken_store storele_noBrands ht) hc₁ hc₂ hcons)
+      (semtyp_value_self (ih₁ hf₁) hv₁) (semtyp_value_self (ih₂ hf₂) hv₂)
   | tlam hd hb ih =>
     intro ρ₁ ρ₂ hρ
     have hfb := Finitary.lam_inv hfin
     have hvρ := lr_value hρ
     have htρ := lr_typed hρ
     refine ⟨_, _, mstep_one (Step.sclos hvρ.1), mstep_one (Step.sclos hvρ.2), ?_⟩
+    simp only [LR, LRg]
     refine ⟨Value.vclos hvρ.1, Value.vclos hvρ.2,
       HasType.tclos hvρ.1 htρ.1 hd (hastype_weaken_store storele_noBrands hb)
         (sub_refl _) (sub_refl _),
@@ -1274,11 +1324,11 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A
     have hvu' := lr_value hu'
     have htu' := lr_typed hu'
     have hρ' : LR Δ₁ Δ₂ η (.and _ _) (.mrg ρ₁ u₁') (.mrg ρ₂ u₂') :=
-      ⟨HasType.tmergev hvρ.1 hvu'.1 htρ.1 htu'.1 hd
-          (disjoint_consistent hvρ.1 hvu'.1 htρ.1 htu'.1 hd),
-        HasType.tmergev hvρ.2 hvu'.2 htρ.2 htu'.2 hd
-          (disjoint_consistent hvρ.2 hvu'.2 htρ.2 htu'.2 hd),
-        _, _, _, _, rfl, rfl, hρ, hu'⟩
+      lr_and_intro
+        (HasType.tmergev hvρ.1 hvu'.1 htρ.1 htu'.1 hd
+          (disjoint_consistent hvρ.1 hvu'.1 htρ.1 htu'.1 hd))
+        (HasType.tmergev hvρ.2 hvu'.2 htρ.2 htu'.2 hd
+          (disjoint_consistent hvρ.2 hvu'.2 htρ.2 htu'.2 hd)) hρ hu'
     obtain ⟨b₁, b₂, rb₁, rb₂, hbb⟩ := ih hfb hρ'
     have hvb := lr_value hbb
     have htb := lr_typed hbb
@@ -1300,6 +1350,7 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A
     obtain ⟨hfv, hfb⟩ := Finitary.clos_inv hfin
     have hgg := semtyp_value_self (ih_env hfv) hv
     refine ⟨_, _, MStep.refl, MStep.refl, ?_⟩
+    simp only [LR, LRg]
     refine ⟨Value.vclos hv, Value.vclos hv,
       HasType.tclos hv (hastype_weaken_store storele_noBrands henv₁) hd
         (hastype_weaken_store storele_noBrands hb) hs₁ hs₂,
@@ -1316,11 +1367,11 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A
     have hgv := lr_value hgg
     have hgt := lr_typed hgg
     have hρ' : LR Δ₁ Δ₂ η (.and _ _) (.mrg _ u₁') (.mrg _ u₂') :=
-      ⟨HasType.tmergev hgv.1 hvu'.1 hgt.1 htu'.1 hd
-          (disjoint_consistent hgv.1 hvu'.1 hgt.1 htu'.1 hd),
-        HasType.tmergev hgv.2 hvu'.2 hgt.2 htu'.2 hd
-          (disjoint_consistent hgv.2 hvu'.2 hgt.2 htu'.2 hd),
-        _, _, _, _, rfl, rfl, hgg, hu'⟩
+      lr_and_intro
+        (HasType.tmergev hgv.1 hvu'.1 hgt.1 htu'.1 hd
+          (disjoint_consistent hgv.1 hvu'.1 hgt.1 htu'.1 hd))
+        (HasType.tmergev hgv.2 hvu'.2 hgt.2 htu'.2 hd
+          (disjoint_consistent hgv.2 hvu'.2 hgt.2 htu'.2 hd)) hgg hu'
     obtain ⟨b₁, b₂, rb₁, rb₂, hbb⟩ := ih_b hfb hρ'
     have hvb := lr_value hbb
     have htb := lr_typed hbb
@@ -1352,18 +1403,23 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A
     intro ρ₁ ρ₂ hρ
     have hvρ := lr_value hρ
     obtain ⟨w₁, w₂, rw₁, rw₂, hw⟩ := ih (Finitary.inl_inv hfin) hρ
-    exact ⟨_, _, mstep_inl hvρ.1 rw₁, mstep_inl hvρ.2 rw₂, Or.inl ⟨w₁, w₂, rfl, rfl, hw⟩⟩
+    refine ⟨_, _, mstep_inl hvρ.1 rw₁, mstep_inl hvρ.2 rw₂, ?_⟩
+    simp only [LR, LRg]
+    exact Or.inl ⟨w₁, w₂, rfl, rfl, hw⟩
   | tinr _ ih =>
     intro ρ₁ ρ₂ hρ
     have hvρ := lr_value hρ
     obtain ⟨w₁, w₂, rw₁, rw₂, hw⟩ := ih (Finitary.inr_inv hfin) hρ
-    exact ⟨_, _, mstep_inr hvρ.1 rw₁, mstep_inr hvρ.2 rw₂, Or.inr ⟨w₁, w₂, rfl, rfl, hw⟩⟩
+    refine ⟨_, _, mstep_inr hvρ.1 rw₁, mstep_inr hvρ.2 rw₂, ?_⟩
+    simp only [LR, LRg]
+    exact Or.inr ⟨w₁, w₂, rfl, rfl, hw⟩
   | tcase _ hd₁ hd₂ _ _ ih ih₁ ih₂ =>
     intro ρ₁ ρ₂ hρ
     obtain ⟨hfe, hfe₁, hfe₂⟩ := Finitary.case_inv hfin
     have hvρ := lr_value hρ
     have htρ := lr_typed hρ
     obtain ⟨r₁, r₂, rr₁, rr₂, hr⟩ := ih hfe hρ
+    simp only [LR, LRg] at hr
     cases hr with
     | inl h' =>
       obtain ⟨w₁, w₂, e₁eq, e₂eq, hA⟩ := h'
@@ -1371,11 +1427,11 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A
       have hvw := lr_value hA
       have htw := lr_typed hA
       have hρ' : LR Δ₁ Δ₂ η (.and _ _) (.mrg ρ₁ w₁) (.mrg ρ₂ w₂) :=
-        ⟨HasType.tmergev hvρ.1 hvw.1 htρ.1 htw.1 hd₁
-            (disjoint_consistent hvρ.1 hvw.1 htρ.1 htw.1 hd₁),
-          HasType.tmergev hvρ.2 hvw.2 htρ.2 htw.2 hd₁
-            (disjoint_consistent hvρ.2 hvw.2 htρ.2 htw.2 hd₁),
-          _, _, _, _, rfl, rfl, hρ, hA⟩
+        lr_and_intro
+          (HasType.tmergev hvρ.1 hvw.1 htρ.1 htw.1 hd₁
+            (disjoint_consistent hvρ.1 hvw.1 htρ.1 htw.1 hd₁))
+          (HasType.tmergev hvρ.2 hvw.2 htρ.2 htw.2 hd₁
+            (disjoint_consistent hvρ.2 hvw.2 htρ.2 htw.2 hd₁)) hρ hA
       obtain ⟨s₁, s₂, rs₁, rs₂, hs⟩ := ih₁ hfe₁ hρ'
       have hvs := lr_value hs
       refine ⟨s₁, s₂, ?_, ?_, hs⟩
@@ -1393,11 +1449,11 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A
       have hvw := lr_value hB
       have htw := lr_typed hB
       have hρ' : LR Δ₁ Δ₂ η (.and _ _) (.mrg ρ₁ w₁) (.mrg ρ₂ w₂) :=
-        ⟨HasType.tmergev hvρ.1 hvw.1 htρ.1 htw.1 hd₂
-            (disjoint_consistent hvρ.1 hvw.1 htρ.1 htw.1 hd₂),
-          HasType.tmergev hvρ.2 hvw.2 htρ.2 htw.2 hd₂
-            (disjoint_consistent hvρ.2 hvw.2 htρ.2 htw.2 hd₂),
-          _, _, _, _, rfl, rfl, hρ, hB⟩
+        lr_and_intro
+          (HasType.tmergev hvρ.1 hvw.1 htρ.1 htw.1 hd₂
+            (disjoint_consistent hvρ.1 hvw.1 htρ.1 htw.1 hd₂))
+          (HasType.tmergev hvρ.2 hvw.2 htρ.2 htw.2 hd₂
+            (disjoint_consistent hvρ.2 hvw.2 htρ.2 htw.2 hd₂)) hρ hB
       obtain ⟨s₁, s₂, rs₁, rs₂, hs⟩ := ih₂ hfe₂ hρ'
       have hvs := lr_value hs
       refine ⟨s₁, s₂, ?_, ?_, hs⟩
@@ -1442,6 +1498,7 @@ theorem sealing {A : Typ} {p₁' p₂' : Exp} (hagree : LR Δ₁ Δ₂ η A p₁
     {e : Exp} (hcl : HasType noBrands A e .int) (hfin : Finitary e)
     : ∃ i, MStep p₁' e (.lit i) ∧ MStep p₂' e (.lit i) := by
   obtain ⟨w₁, w₂, r₁, r₂, hlr⟩ := fundamental hcl hfin hagree
+  simp only [LR, LRg] at hlr
   obtain ⟨i, e₁, e₂⟩ := hlr
   subst e₁; subst e₂
   exact ⟨i, r₁, r₂⟩

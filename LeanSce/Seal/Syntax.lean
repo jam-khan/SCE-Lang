@@ -105,23 +105,35 @@ inductive AllbIn : Typ → Prop where
   | orr {A B}     : AllbIn B → AllbIn (.or A B)
   | mu {T}        : AllbIn T → AllbIn (.mu T)
 
--- `bsubstEnv σ d T`: SIMULTANEOUS brand-variable instantiation — every free bvar
--- (index ≥ d, the binders already crossed) is replaced by the concrete brand its
--- environment entry names: `bvar i ↦ brand (σ (i − d))`.  The single-point `bsubst` is
--- the one-binder special case; this is what the δ-indexed logical relation's typing
--- conjuncts use (values under ∀-binders are typed at concrete brands).
-def bsubstEnv (σ : Nat → Nat) : Nat → Typ → Typ
-  | _, .int       => .int
-  | _, .top       => .top
-  | d, .arr A B   => .arr (bsubstEnv σ d A) (bsubstEnv σ d B)
-  | d, .and A B   => .and (bsubstEnv σ d A) (bsubstEnv σ d B)
-  | d, .rcd l A   => .rcd l (bsubstEnv σ d A)
-  | _, .brand m   => .brand m
-  | d, .or A B    => .or (bsubstEnv σ d A) (bsubstEnv σ d B)
-  | _, .var m     => .var m
-  | d, .mu T      => .mu (bsubstEnv σ d T)
-  | d, .bvar i    => if i < d then .bvar i else .brand (σ (i - d))
-  | d, .allb A    => .allb (bsubstEnv σ (d + 1) A)
+-- Type size.  The logical relation's ∀-clause recurses at the INSTANTIATED body
+-- `bsubst 0 m A`, which is not a structural subterm of `allb A` — the relation therefore
+-- descends on `tsize`, and `tsize_bsubst` (instantiation only trades a `bvar` leaf for a
+-- `brand` leaf) is what makes that descent well-founded.
+def tsize : Typ → Nat
+  | .int       => 1
+  | .top       => 1
+  | .arr A B   => tsize A + tsize B + 1
+  | .and A B   => tsize A + tsize B + 1
+  | .rcd _ A   => tsize A + 1
+  | .brand _   => 1
+  | .or A B    => tsize A + tsize B + 1
+  | .var _     => 1
+  | .mu T      => tsize T + 1
+  | .bvar _    => 1
+  | .allb A    => tsize A + 1
+
+theorem tsize_bsubst {n : Nat} : {d : Nat} → {T : Typ} → tsize (bsubst d n T) = tsize T
+  | _, .int => rfl
+  | _, .top => rfl
+  | _, .brand _ => rfl
+  | _, .var _ => rfl
+  | _, .bvar _ => by simp only [bsubst]; split <;> rfl
+  | _, .arr A B => by simp only [bsubst, tsize, tsize_bsubst]
+  | _, .and A B => by simp only [bsubst, tsize, tsize_bsubst]
+  | _, .rcd _ A => by simp only [bsubst, tsize, tsize_bsubst]
+  | _, .or A B => by simp only [bsubst, tsize, tsize_bsubst]
+  | _, .mu T => by simp only [bsubst, tsize, tsize_bsubst]
+  | _, .allb A => by simp only [bsubst, tsize, tsize_bsubst]
 
 -- `BClosed c T`: every brand-variable index is properly bound — below the number of
 -- enclosing `allb` binders plus the cutoff c.  `BClosed 1 A` is the ∀-body discipline

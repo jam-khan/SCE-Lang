@@ -123,6 +123,50 @@ theorem unseal_proxy_run {ρ c u u' x y z z' : Exp} {n : Nat} {R A B : Typ}
   refine MStep.step (Step.sboxr hρ henv (Step.sannov henv hvz hz')) ?_
   exact mstep_one (Step.sboxv hρ henv (cast_value hvz hz'))
 
+-- ── Open/abstract agreement away from the open brand ─────────────────────────────────
+
+-- On a type mentioning neither the open brand nor any brand variable, the open and
+-- client relations coincide: substBrand is the identity on every clause annotation, the
+-- RawRel branch is unreachable (m ≠ n), and — the ∀-clause — a brand-variable-free
+-- ∀-body is invariant under instantiation (bsubst_notin), so the instantiation-closure
+-- clause recurses at the body itself.  coe_lr's ∀-arm is the consumer.
+theorem lrg_notin_iff {n : Nat} {R₁ R₂ : Typ} : {T : Typ} → ¬ BrandIn n T → ¬ HasBVar T
+    → (v₁ v₂ : Exp) → (LRg Δ₁ Δ₂ η (some (n, R₁, R₂)) T v₁ v₂ ↔ LR Δ₁ Δ₂ η T v₁ v₂)
+  | .int, _, _, v₁, v₂ => by simp only [LR, LRg]
+  | .top, _, _, v₁, v₂ => by simp only [LR, LRg]
+  | .brand m, hnin, _, v₁, v₂ => by
+    have hm : m ≠ n := fun h => hnin (h ▸ BrandIn.self)
+    simp only [LR, LRg, hm, if_false]
+  | .var _, _, _, v₁, v₂ => by simp only [LR, LRg]
+  | .bvar _, _, _, v₁, v₂ => by simp only [LR, LRg]
+  | .arr A B, hnin, hnb, v₁, v₂ => by
+    simp only [LR, LRg, viewL_some, viewR_some, viewL_none, viewR_none,
+      substBrand_notin hnin,
+      lrg_notin_iff (fun h => hnin (BrandIn.arrl h)) (fun h => hnb (HasBVar.arrl h)),
+      lrg_notin_iff (fun h => hnin (BrandIn.arrr h)) (fun h => hnb (HasBVar.arrr h))]
+  | .and A B, hnin, hnb, v₁, v₂ => by
+    simp only [LR, LRg, viewL_some, viewR_some, viewL_none, viewR_none,
+      substBrand_notin hnin,
+      lrg_notin_iff (fun h => hnin (BrandIn.andl h)) (fun h => hnb (HasBVar.andl h)),
+      lrg_notin_iff (fun h => hnin (BrandIn.andr h)) (fun h => hnb (HasBVar.andr h))]
+  | .rcd l A, hnin, hnb, v₁, v₂ => by
+    simp only [LR, LRg,
+      lrg_notin_iff (fun h => hnin (BrandIn.rcd h)) (fun h => hnb (HasBVar.rcd h))]
+  | .or A B, hnin, hnb, v₁, v₂ => by
+    simp only [LR, LRg, viewL_some, viewR_some, viewL_none, viewR_none,
+      substBrand_notin (fun h => hnin (BrandIn.orl h)),
+      substBrand_notin (fun h => hnin (BrandIn.orr h)),
+      lrg_notin_iff (fun h => hnin (BrandIn.orl h)) (fun h => hnb (HasBVar.orl h)),
+      lrg_notin_iff (fun h => hnin (BrandIn.orr h)) (fun h => hnb (HasBVar.orr h))]
+  | .mu T, hnin, _, v₁, v₂ => by
+    simp only [LR, LRg, viewL_some, viewR_some, viewL_none, viewR_none,
+      substBrand_notin hnin]
+  | .allb A, hnin, hnb, v₁, v₂ => by
+    have hnbA : ¬ HasBVar A := fun h => hnb (HasBVar.allb h)
+    simp only [LR, LRg, viewL_some, viewR_some, viewL_none, viewR_none,
+      substBrand_notin hnin, bsubst_notin hnbA,
+      lrg_notin_iff (fun h => hnin (BrandIn.allb h)) hnbA]
+
 -- ── The coercions respect the relations ──────────────────────────────────────────────
 
 -- Sealing carries implementation-relatedness (brand n open) to client-relatedness
@@ -140,6 +184,7 @@ theorem coe_lr {n : Nat} {R₁ R₂ : Typ} (hb : OpenBrand Δ₁ Δ₂ η n R₁
       | or hwfA₂ hwfB₂ =>
         constructor
         · intro v₁ v₂ w₁ w₂ hlr h₁ h₂
+          simp only [LR, LRg] at hlr ⊢
           cases hlr with
           | inl h' =>
             obtain ⟨p₁, p₂, e₁, e₂, hp⟩ := h'
@@ -158,6 +203,7 @@ theorem coe_lr {n : Nat} {R₁ R₂ : Typ} (hb : OpenBrand Δ₁ Δ₂ η n R₁
               | inr hs₂ =>
                 exact Or.inr ⟨_, _, rfl, rfl, (coe_lr hb B hwfB₁ hwfB₂).1 hp hs₁ hs₂⟩
         · intro v₁ v₂ w₁ w₂ hlr h₁ h₂
+          simp only [LR, LRg] at hlr ⊢
           cases hlr with
           | inl h' =>
             obtain ⟨p₁, p₂, e₁, e₂, hp⟩ := h'
@@ -177,35 +223,47 @@ theorem coe_lr {n : Nat} {R₁ R₂ : Typ} (hb : OpenBrand Δ₁ Δ₂ η n R₁
                 exact Or.inr ⟨_, _, rfl, rfl, (coe_lr hb B hwfB₁ hwfB₂).2 hp hu₁ hu₂⟩
   | .var _, hwf₁, _ => nomatch hwf₁
   | .bvar _, hwf₁, _ => nomatch hwf₁
+  -- ∀-signatures: WfSig makes the body brand-variable-free, so the ∀ binds nothing —
+  -- every instantiation is the body itself (bsubst_notin) and, away from the open brand,
+  -- open and abstract relatedness coincide on it (lrg_notin_iff).  The coercions are the
+  -- identity (¬BrandIn n) and the instantiation-closure clause transfers.
   | .allb A, hwf₁, hwf₂ => by
     cases hwf₁ with
-    | allb hnin₁ _ _ =>
+    | allb hnin₁ _ hnb₁ =>
       cases hwf₂ with
       | allb hnin₂ _ _ =>
+        have hninA : ¬ BrandIn n A := fun h => hnin₁ (BrandIn.allb h)
+        have hnbA : ¬ HasBVar A := fun h => hnb₁ (HasBVar.allb h)
         constructor
         · intro v₁ v₂ w₁ w₂ hlr h₁ h₂
-          obtain ⟨hv₁, hv₂, ht₁, ht₂, heq⟩ := hlr
-          subst heq
+          simp only [LRg, viewL_some, viewR_some] at hlr
+          obtain ⟨hv₁, hv₂, ht₁, ht₂, hinst⟩ := hlr
+          rw [substBrand_notin hnin₁] at ht₁
+          rw [substBrand_notin hnin₂] at ht₂
           cases h₁ with
           | allb =>
             cases h₂ with
             | allb =>
-              exact ⟨hv₁, hv₂, substBrand_notin hnin₁ ▸ ht₁, substBrand_notin hnin₂ ▸ ht₂,
-                rfl⟩
+              simp only [LR, LRg, viewL_none, viewR_none]
+              refine ⟨hv₁, hv₂, ht₁, ht₂, ?_⟩
+              intro m ρ₁ ρ₂ hρ₁ hρ₂
+              obtain ⟨u₁, u₂, r₁, r₂, hrel⟩ := hinst m ρ₁ ρ₂ hρ₁ hρ₂
+              rw [bsubst_notin hnbA] at hrel ⊢
+              exact ⟨u₁, u₂, r₁, r₂, (lrg_notin_iff hninA hnbA u₁ u₂).1 hrel⟩
         · intro v₁ v₂ w₁ w₂ hlr h₁ h₂
-          obtain ⟨hv₁, hv₂, ht₁, ht₂, heq⟩ := hlr
-          subst heq
+          simp only [LR, LRg, viewL_none, viewR_none] at hlr
+          obtain ⟨hv₁, hv₂, ht₁, ht₂, hinst⟩ := hlr
           cases h₁ with
           | allb =>
             cases h₂ with
             | allb =>
-              refine ⟨hv₁, hv₂, ?_, ?_, rfl⟩
-              · show HasType Δ₁ .top v₁ (substBrand n R₁ (.allb A))
-                rw [substBrand_notin hnin₁]
-                exact ht₁
-              · show HasType Δ₂ .top v₁ (substBrand n R₂ (.allb A))
-                rw [substBrand_notin hnin₂]
-                exact ht₂
+              simp only [LRg, viewL_some, viewR_some]
+              rw [substBrand_notin hnin₁, substBrand_notin hnin₂]
+              refine ⟨hv₁, hv₂, ht₁, ht₂, ?_⟩
+              intro m ρ₁ ρ₂ hρ₁ hρ₂
+              obtain ⟨u₁, u₂, r₁, r₂, hrel⟩ := hinst m ρ₁ ρ₂ hρ₁ hρ₂
+              rw [bsubst_notin hnbA] at hrel ⊢
+              exact ⟨u₁, u₂, r₁, r₂, (lrg_notin_iff hninA hnbA u₁ u₂).2 hrel⟩
   | .mu T, hwf₁, hwf₂ => by
     cases hwf₁ with
     | mu hnin₁ _ _ =>
@@ -213,44 +271,48 @@ theorem coe_lr {n : Nat} {R₁ R₂ : Typ} (hb : OpenBrand Δ₁ Δ₂ η n R₁
       | mu hnin₂ _ _ =>
         constructor
         · intro v₁ v₂ w₁ w₂ hlr h₁ h₂
+          simp only [LRg, viewL_some, viewR_some] at hlr
           obtain ⟨hv₁, hv₂, ht₁, ht₂, heq⟩ := hlr
           subst heq
           cases h₁ with
           | mu =>
             cases h₂ with
             | mu =>
+              simp only [LR, LRg, viewL_none, viewR_none]
               exact ⟨hv₁, hv₂, substBrand_notin hnin₁ ▸ ht₁, substBrand_notin hnin₂ ▸ ht₂,
-                rfl⟩
+                trivial⟩
         · intro v₁ v₂ w₁ w₂ hlr h₁ h₂
+          simp only [LR, LRg, viewL_none, viewR_none] at hlr
           obtain ⟨hv₁, hv₂, ht₁, ht₂, heq⟩ := hlr
           subst heq
           cases h₁ with
           | mu =>
             cases h₂ with
             | mu =>
-              refine ⟨hv₁, hv₂, ?_, ?_, rfl⟩
-              · show HasType Δ₁ .top v₁ (substBrand n R₁ (.mu T))
-                rw [substBrand_notin hnin₁]
+              simp only [LRg, viewL_some, viewR_some]
+              refine ⟨hv₁, hv₂, ?_, ?_, trivial⟩
+              · rw [substBrand_notin hnin₁]
                 exact ht₁
-              · show HasType Δ₂ .top v₁ (substBrand n R₂ (.mu T))
-                rw [substBrand_notin hnin₂]
+              · rw [substBrand_notin hnin₂]
                 exact ht₂
   | .int, _, _ => by
     constructor
     · intro v₁ v₂ w₁ w₂ hlr h₁ h₂
+      simp only [LR, LRg] at hlr ⊢
       obtain ⟨i, e₁, e₂⟩ := hlr
       subst e₁; subst e₂
       cases h₁; cases h₂
       exact ⟨i, rfl, rfl⟩
     · intro v₁ v₂ w₁ w₂ hlr h₁ h₂
+      simp only [LR, LRg] at hlr ⊢
       obtain ⟨i, e₁, e₂⟩ := hlr
       subst e₁; subst e₂
       cases h₁; cases h₂
       exact ⟨i, rfl, rfl⟩
   | .top, _, _ => by
     constructor
-    · intro v₁ v₂ w₁ w₂ _ h₁ h₂; cases h₁; cases h₂; exact ⟨rfl, rfl⟩
-    · intro v₁ v₂ w₁ w₂ _ h₁ h₂; cases h₁; cases h₂; exact ⟨rfl, rfl⟩
+    · intro v₁ v₂ w₁ w₂ _ h₁ h₂; cases h₁; cases h₂; simp [LRg]
+    · intro v₁ v₂ w₁ w₂ _ h₁ h₂; cases h₁; cases h₂; simp [LRg]
   | .brand m, _, _ => by
     by_cases hm : m = n
     · subst hm
@@ -262,12 +324,14 @@ theorem coe_lr {n : Nat} {R₁ R₂ : Typ} (hb : OpenBrand Δ₁ Δ₂ η n R₁
         | brand_eq =>
           cases h₂ with
           | brand_eq =>
+            simp only [LR, LRg]
             exact ⟨HasType.twrap hb.st₁ hb.nobvar₁ hv₁ ht₁,
               HasType.twrap hb.st₂ hb.nobvar₂ hv₂ ht₂,
               _, _, rfl, rfl, hη⟩
           | brand_ne hne => exact absurd rfl hne
         | brand_ne hne => exact absurd rfl hne
       · intro v₁ v₂ w₁ w₂ hlr h₁ h₂
+        simp only [LR, LRg] at hlr
         obtain ⟨ht₁, ht₂, u₁, u₂, e₁, e₂, hη⟩ := hlr
         subst e₁; subst e₂
         simp only [LRg, if_true]
@@ -287,6 +351,7 @@ theorem coe_lr {n : Nat} {R₁ R₂ : Typ} (hb : OpenBrand Δ₁ Δ₂ η n R₁
     · constructor
       · intro v₁ v₂ w₁ w₂ hlr h₁ h₂
         simp only [LRg, hm, if_false] at hlr
+        simp only [LR, LRg]
         cases h₁ with
         | brand_eq => exact absurd rfl hm
         | brand_ne _ =>
@@ -294,6 +359,7 @@ theorem coe_lr {n : Nat} {R₁ R₂ : Typ} (hb : OpenBrand Δ₁ Δ₂ η n R₁
           | brand_eq => exact absurd rfl hm
           | brand_ne _ => exact hlr
       · intro v₁ v₂ w₁ w₂ hlr h₁ h₂
+        simp only [LR, LRg] at hlr
         simp only [LRg, hm, if_false]
         cases h₁ with
         | brand_eq => exact absurd rfl hm
@@ -307,12 +373,14 @@ theorem coe_lr {n : Nat} {R₁ R₂ : Typ} (hb : OpenBrand Δ₁ Δ₂ η n R₁
     have ih := coe_lr hb A hA₁ hA₂
     constructor
     · intro v₁ v₂ w₁ w₂ hlr h₁ h₂
+      simp only [LR, LRg] at hlr ⊢
       obtain ⟨u₁, u₂, e₁, e₂, hA⟩ := hlr
       subst e₁; subst e₂
       cases h₁ with | rcd h₁' =>
       cases h₂ with | rcd h₂' =>
       exact ⟨_, _, rfl, rfl, ih.1 hA h₁' h₂'⟩
     · intro v₁ v₂ w₁ w₂ hlr h₁ h₂
+      simp only [LR, LRg] at hlr ⊢
       obtain ⟨u₁, u₂, e₁, e₂, hA⟩ := hlr
       subst e₁; subst e₂
       cases h₁ with | rcd h₁' =>
@@ -325,6 +393,7 @@ theorem coe_lr {n : Nat} {R₁ R₂ : Typ} (hb : OpenBrand Δ₁ Δ₂ η n R₁
       (by cases hwf₂ with | and _ h _ _ => exact h)
     constructor
     · intro v₁ v₂ w₁ w₂ hlr h₁ h₂
+      simp only [LR, LRg] at hlr ⊢
       obtain ⟨ht₁, ht₂, a₁, b₁, a₂, b₂, e₁, e₂, hA, hB⟩ := hlr
       subst e₁; subst e₂
       have hv₁ := Value.vmrg (lr_value hA).1 (lr_value hB).1
@@ -335,6 +404,7 @@ theorem coe_lr {n : Nat} {R₁ R₂ : Typ} (hb : OpenBrand Δ₁ Δ₂ η n R₁
       cases h₂ with | and h₂a h₂b =>
       exact ⟨hw₁, hw₂, _, _, _, _, rfl, rfl, ihA.1 hA h₁a h₂a, ihB.1 hB h₁b h₂b⟩
     · intro v₁ v₂ w₁ w₂ hlr h₁ h₂
+      simp only [LR, LRg] at hlr ⊢
       obtain ⟨ht₁, ht₂, a₁, b₁, a₂, b₂, e₁, e₂, hA, hB⟩ := hlr
       subst e₁; subst e₂
       have hv₁ := Value.vmrg (lr_value hA).1 (lr_value hB).1
@@ -354,6 +424,7 @@ theorem coe_lr {n : Nat} {R₁ R₂ : Typ} (hb : OpenBrand Δ₁ Δ₂ η n R₁
     constructor
     -- sealing an arrow: the proxies are related at A → B (abstract)
     · intro v₁ v₂ w₁ w₂ hlr h₁ h₂
+      simp only [LR, LRg] at hlr ⊢
       obtain ⟨hv₁, hv₂, ht₁, ht₂, CL⟩ := hlr
       have hw₁ := sealv_preservation hb.st₁ hb.nores₁ hb.nobvar₁ h₁ hwf₁ hv₁ ht₁
       have hw₂ := sealv_preservation hb.st₂ hb.nores₂ hb.nobvar₂ h₂ hwf₂ hv₂ ht₂
@@ -398,6 +469,7 @@ theorem coe_lr {n : Nat} {R₁ R₂ : Typ} (hb : OpenBrand Δ₁ Δ₂ η n R₁
         cast_lr openadm_none (sub_refl _) hz cz₁ cz₂⟩
     -- unsealing an arrow: the proxies are related at A[R] → B[R] (representation view)
     · intro v₁ v₂ w₁ w₂ hlr h₁ h₂
+      simp only [LR, LRg] at hlr ⊢
       obtain ⟨hv₁, hv₂, ht₁, ht₂, CL⟩ := hlr
       have hw₁ := unsealv_preservation hb.st₁ hb.nores₁ hb.nobvar₁ h₁ hwf₁ hv₁ ht₁
       have hw₂ := unsealv_preservation hb.st₂ hb.nores₂ hb.nobvar₂ h₂ hwf₂ hv₂ ht₂
