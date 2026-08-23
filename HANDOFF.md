@@ -432,6 +432,42 @@ Typ pull the Sub/Cost leaves in immediately), D-prep (`d94e193`), E
     bsubstEnv + lemmas) → M4b LRg refactor + call-site repair (δ∅ everywhere)
     → M4c cast_lr/coe_lr with DeltaAdm → M4d lrg_bsubst → M4e Finitary +
     fundamental → M4f RI corollary + example + docs.  Green after each.
+  - **⚠ M4b ATTEMPTED AND ROLLED BACK (session 3): two open design problems.**
+    M4a landed (`9892ce1`), plus sub_bsubstEnv (BrandSubst) and the δ-env
+    definitions DEnv/dbrands/demp/RelAdm/DeltaAdm/deltaAdm_demp/deltaAdm_insert
+    (Sealing, defined but NOT yet consumed by LRg).  The LRg-with-δ clause
+    rewrite itself was attempted and reverted because:
+    (1) **The demp-degeneracy problem.**  With typing conjuncts at
+    δ-instantiated images `viewL o (bsubstEnv (dbrands δ) 0 T)`, the
+    fundamental at δ = demp becomes FALSE for degenerate bvar-annotated
+    programs: `lam (bvar 0) (bvar 0) (proj query 0)` is closed, Finitary, and
+    typed at `arr (bvar 0) (bvar 0)` — but its closure value is NOT typed at
+    the image `arr (brand 0) (brand 0)` the new arrow clause demands.  (The
+    OLD clauses were satisfiable there because typings were at the syntactic
+    type; relatedness held vacuously via the False bvar clause.)  Candidate
+    fix: thread a properly-bound invariant — `EBClosed c e` (annotation
+    bvar-indices properly bound, c+1 under blam/bclos) with `BClosed 0 Γ` —
+    and derive `BClosed 0 A` for every type in the derivation, so the images
+    rewrite away by bclosed_bsubstEnv.  BUT:
+    (2) **The slack leak.**  `hastype_bclosed` is FALSE as stated: tclos's
+    subtyping slack `Sub C A` can introduce unbound bvars into derivation
+    types via contravariant domains — `Sub (arr .top .int) (arr (bvar 99)
+    .int)` holds (stop + refl), so a closure typed at `arr .top .int`
+    re-types at `arr (bvar 99) .int`.  Same for tfclos's three slacks and
+    tanno-with-slack chains through casts.  Candidate fixes to evaluate NEXT
+    SESSION, in order of appeal: (i) strengthen tclos/tfclos/tanno slacks
+    with BClosed-preservation side conditions (sub_bclosed holds in the
+    covariant direction; only the contravariant slack leaks — a
+    `BClosed c C` premise on tclos/tfclos mirrors the BClosed 1 premise on
+    tbapp and is bsubst-stable); (ii) restrict the fundamental's STATEMENT to
+    EBClosed subjects and prove clause-typings only up to the leaky slack by
+    re-deriving them from value_weaken + the subject's own annotations rather
+    than from the derivation's types; (iii) drop typing conjuncts from LRg
+    clauses entirely and re-engineer lr_typed as an external invariant
+    (biggest surgery, cleanest theory).  Also note for M4b proper: lr_typed's
+    statement becomes typings at the bsubstEnv-image; leaf arms need
+    `simp only [bsubstEnv]` before the viewL_* rewrites; the or-clause value
+    annotations also take images.
 - **Milestone 5 (source)**: source `∀`-functors (`mfunctor` binding a brand or a
   separate `bfunctor`), `elabSeal` + Correctness cases, `mlinkn`-time
   instantiation; then the sepcomp obligations (plan §3(C) items 1–4:

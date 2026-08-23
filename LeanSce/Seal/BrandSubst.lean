@@ -815,6 +815,24 @@ theorem bsubstEnv_insert {m : Nat} {σ : Nat → Nat} : {p d : Nat} → {T : Typ
     simp only [bsubst, bsubstEnv, bsubstEnv_insert (p := p) (d := d + 1) h]
     rfl
 
+-- Subtyping is stable under simultaneous instantiation (refl leaves stay refl).
+theorem sub_bsubstEnv {σ : Nat → Nat} {d : Nat} {A B : Typ} (h : Sub A B)
+    : Sub (bsubstEnv σ d A) (bsubstEnv σ d B) := by
+  induction h with
+  | sint => exact Sub.sint
+  | stop => exact Sub.stop
+  | sarr _ _ ih₁ ih₂ => exact Sub.sarr ih₁ ih₂
+  | sandl _ ih => exact Sub.sandl ih
+  | sandr _ ih => exact Sub.sandr ih
+  | sand _ _ ih₁ ih₂ => exact Sub.sand ih₁ ih₂
+  | srcd _ ih => exact Sub.srcd ih
+  | sbrand => exact sub_refl _
+  | sor _ _ ih₁ ih₂ => exact Sub.sor ih₁ ih₂
+  | svar => exact sub_refl _
+  | smu => exact sub_refl _
+  | sbvar => exact sub_refl _
+  | sallb => exact sub_refl _
+
 -- ── THE substitution lemma ───────────────────────────────────────────────────────────
 
 -- ∀β-instantiation preserves typing.  The tmergev case survives via disj_bsubst (the

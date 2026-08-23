@@ -50,6 +50,33 @@ def RawRel (Δ₁ Δ₂ : BrandStore) (η : Nat → Exp → Exp → Prop) (n : N
     (v₁ v₂ : Exp) : Prop :=
   Value v₁ ∧ Value v₂ ∧ HasType Δ₁ .top v₁ R₁ ∧ HasType Δ₂ .top v₂ R₂ ∧ η n v₁ v₂
 
+-- δ-environments: the relational interpretation of BRAND VARIABLES (milestone 4
+-- prep).  Each entry names the concrete brand both sides instantiated the binder at,
+-- and the relation the binder was opened with; index 0 will be the nearest enclosing
+-- ∀-binder.  Not yet consumed by LRg — see HANDOFF §3.7 for the open design questions.
+abbrev DEnv := Nat → Nat × (Exp → Exp → Prop)
+
+def dbrands (δ : DEnv) : Nat → Nat := fun i => (δ i).1
+
+def demp : DEnv := fun _ => (0, fun _ _ => False)
+
+-- Admissibility of a binder relation: closed under casting at the (viewed) brand —
+-- the OpenAdm pattern, one binder at a time.
+def RelAdm (o : BrandOpen) (m : Nat) (rel : Exp → Exp → Prop) : Prop :=
+  ∀ w₁ w₂, rel w₁ w₂ → ∀ w₁' w₂', Cast w₁ (viewL o (.brand m)) w₁'
+    → Cast w₂ (viewR o (.brand m)) w₂' → rel w₁' w₂'
+
+def DeltaAdm (o : BrandOpen) (δ : DEnv) : Prop := ∀ i, RelAdm o (δ i).1 (δ i).2
+
+theorem deltaAdm_demp {o : BrandOpen} : DeltaAdm o demp := fun _ _ _ h => h.elim
+
+theorem deltaAdm_insert {o : BrandOpen} {δ : DEnv} {m : Nat} {rel : Exp → Exp → Prop}
+    (hδ : DeltaAdm o δ) (hrel : RelAdm o m rel) : DeltaAdm o (bvInsert 0 (m, rel) δ) := by
+  intro i
+  cases i with
+  | zero => exact hrel
+  | succ i => exact hδ i
+
 -- The relation, by structural recursion on the type.  Every clause that cannot re-derive
 -- the values' typing carries it (& needs the consistency baked into the typing; arrows
 -- carry their closure typing; brands carry it because the payload's typing lives in the
