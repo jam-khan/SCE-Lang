@@ -784,7 +784,7 @@ theorem cast_trans_fold : {v : Exp} → {A : Typ} → {T : Typ} → {u : Exp}
   | _, _, _, _, .cmrgr _ h => .cmrgr .omu (cast_trans_fold h)
 
 theorem cast_trans_bclos : {v : Exp} → {A : Typ} → {ρ e : Exp} → {B : Typ}
-    → Cast v A (.bclos ρ e) → Cast v (.allb B) (.bclos ρ e)
+    → Cast v A (.bclos ρ B e) → Cast v (.allb B) (.bclos ρ B e)
   | _, _, _, _, _, .cbclos => .cbclos
   | _, _, _, _, _, .cmrgl _ h => .cmrgl .oallb (cast_trans_bclos h)
   | _, _, _, _, _, .cmrgr _ h => .cmrgr .oallb (cast_trans_bclos h)

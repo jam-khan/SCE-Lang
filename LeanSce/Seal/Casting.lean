@@ -72,8 +72,8 @@ inductive Cast : Exp → Typ → Exp → Prop where
     → Cast (.fclos v A B Bx e) (.arr C D) (.clos .unit C D (genVal D))
   -- Casting at a ∀-type is the identity on brand closures (the cwrap/cfold pattern):
   -- ∀ is opaque, subtyping at it is reflexive only, and the closure is untouched.
-  | cbclos {ρ e A}
-    : Cast (.bclos ρ e) (.allb A) (.bclos ρ e)
+  | cbclos {ρ A e}
+    : Cast (.bclos ρ A e) (.allb A) (.bclos ρ A e)
 
 -- Eᵢ Definition 3.
 def Consistent (v₁ v₂ : Exp) : Prop :=

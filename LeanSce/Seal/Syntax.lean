@@ -165,11 +165,13 @@ inductive Exp where
   -- there is no subsumption to absorb a widened self-entry.
   | flam   : Typ → Typ → Exp → Exp
   | fclos  : Exp → Typ → Typ → Typ → Exp → Exp
-  -- Brand polymorphism: `blam e` abstracts over a brand (∀β-introduction; steps to
-  -- `bclos ρ e`, capturing the ambient environment — the lam→clos pattern), and
-  -- `bapp e n` instantiates at the concrete brand n.
-  | blam   : Exp → Exp
-  | bclos  : Exp → Exp → Exp
+  -- Brand polymorphism: `blam A e` abstracts over a brand (∀β-introduction; steps to
+  -- `bclos ρ A e`, capturing the ambient environment — the lam→clos pattern), and
+  -- `bapp e n` instantiates at the concrete brand n.  The ∀-body annotation A is
+  -- carried on the closure for the same reason fold carries its μ-body: casting at a
+  -- ∀-type is an identity that the VALUE must pin (cast_preservation's cbclos case).
+  | blam   : Typ → Exp → Exp
+  | bclos  : Exp → Typ → Exp → Exp
   | bapp   : Exp → Nat → Exp
   deriving Repr
 
@@ -199,10 +201,10 @@ def bsubstExp (d n : Nat) : Exp → Exp
   | .flam A B e   => .flam (bsubst d n A) (bsubst d n B) (bsubstExp d n e)
   | .fclos v A B Bx e =>
     .fclos (bsubstExp d n v) (bsubst d n A) (bsubst d n B) (bsubst d n Bx) (bsubstExp d n e)
-  | .blam e       => .blam (bsubstExp (d + 1) n e)
+  | .blam A e     => .blam (bsubst (d + 1) n A) (bsubstExp (d + 1) n e)
   -- The captured environment was the AMBIENT value at capture time — it sits outside
-  -- the binder, so it substitutes at d; only the body is one binder deeper.
-  | .bclos ρ e    => .bclos (bsubstExp d n ρ) (bsubstExp (d + 1) n e)
+  -- the binder, so it substitutes at d; the annotation and body are one binder deeper.
+  | .bclos ρ A e  => .bclos (bsubstExp d n ρ) (bsubst (d + 1) n A) (bsubstExp (d + 1) n e)
   | .bapp e m     => .bapp (bsubstExp d n e) m
 
 inductive Value : Exp → Prop where
@@ -216,7 +218,7 @@ inductive Value : Exp → Prop where
   | vinr  {v A}     : Value v → Value (.inr A v)
   | vfold {v T}     : Value v → Value (.fold T v)
   | vfclos {v A B Bx e} : Value v → Value (.fclos v A B Bx e)
-  | vbclos {ρ e}    : Value ρ → Value (.bclos ρ e)
+  | vbclos {ρ A e}  : Value ρ → Value (.bclos ρ A e)
 
 theorem value_clos_env {v : Exp} {A B : Typ} {e : Exp} (h : Value (.clos v A B e))
     : Value v := by cases h with | vclos h' => exact h'
@@ -224,7 +226,7 @@ theorem value_clos_env {v : Exp} {A B : Typ} {e : Exp} (h : Value (.clos v A B e
 theorem value_fclos_env {v : Exp} {A B Bx : Typ} {e : Exp} (h : Value (.fclos v A B Bx e))
     : Value v := by cases h with | vfclos h' => exact h'
 
-theorem value_bclos_env {ρ e : Exp} (h : Value (.bclos ρ e)) : Value ρ := by
+theorem value_bclos_env {ρ e : Exp} {A : Typ} (h : Value (.bclos ρ A e)) : Value ρ := by
   cases h with | vbclos h' => exact h'
 
 theorem value_inl_payload {v : Exp} {B : Typ} (h : Value (.inl B v)) : Value v := by
