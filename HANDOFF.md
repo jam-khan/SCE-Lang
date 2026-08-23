@@ -382,10 +382,48 @@ Typ pull the Sub/Cost leaves in immediately), D-prep (`d94e193`), E
 
 ### 3.7 Deferred (after the safety layer)
 
-- **Milestone 4 (relational)**: replace the opaque LRg-allb clause by the real
-  ∀-clause quantifying over η-extensions (`LRg (.allb A) v₁ v₂ = ∀ n₁ n₂ rel,
-  LR under η[β ↦ rel] of the instantiations…` — Kripke-free because brands are
-  static; plan §3(C).4); RI for generic clients.
+- **Milestone 4 (relational) — DESIGN FIXED (session 3), bvar-interpretation
+  environments** (an η-extension-at-a-concrete-brand formulation is UNSOUND: a
+  fresh-brand guard excludes instantiation at allocated provider brands, and an
+  unguarded ∀ conflates β with existing brands in the tblam intro case).  Keep
+  LRg STRUCTURAL by adding `δ : Nat → Nat × (Exp → Exp → Prop)` (de Bruijn env,
+  index 0 = nearest allb binder; single brand per binder — n₁ = n₂ suffices for
+  RI of generic clients; two-brand generalization later):
+  - `bsubstEnv (σ : Nat → Nat) (d : Nat) : Typ → Typ` — simultaneous
+    bvar→brand: `.bvar i ↦ if i < d then .bvar i else .brand (σ (i − d))`,
+    d+1 under allb.  Lemmas: `bsubstEnv_notin`; agreement with `bsubst` on
+    BClosed types (`BClosed 1 A → bsubstEnv (cons m σ) 0 A = bsubst 0 m A`,
+    `BClosed 0 A → bsubstEnv σ d A = A`).
+  - LRg clauses: every typing conjunct becomes `viewL/R o (bsubstEnv (σ of δ) 0 T)`
+    (values under binders are typed at CONCRETE brands, one per side is wrong —
+    same brand both sides).  New `.bvar i` clause: `Value v₁ ∧ Value v₂ ∧
+    typings at (viewL/R o (.brand (δ i).1)) ∧ (δ i).2 v₁ v₂`.  New `.allb A`
+    clause (mirror the arrow clause's extensional shape): values ∧ typings at
+    the bsubstEnv-image ∧ `∀ m rel, RelAdm o m rel → ∀ ρ₁ ρ₂ values, ∃ w₁ w₂,
+    MStep runs of (.bapp vᵢ m) ∧ LRg (cons (m,rel) δ) A w₁ w₂`.
+  - `RelAdm o m rel` := cast-closure of rel at `viewL/R o (.brand m)` (the
+    OpenAdm pattern); `DeltaAdm o δ` := RelAdm for every entry — threaded as a
+    LEMMA hypothesis (like hadm : OpenAdm) through cast_lr/coe_lr, trivially
+    satisfied by the empty δ.  Cast at `.bvar` is UNINHABITED
+    (`cast_bvar_empty`); cast at a brand on brand-typed values is the identity
+    (`cast_brand_id`, mirror cast_mu_id) — the o = none sbvar case of cast_lr;
+    the o = some sbvar case uses DeltaAdm.
+  - `LR := LRg δ∅` with `δ∅ := fun _ => (0, fun _ _ => False)`; δ-irrelevance
+    on bvar-free types (`lrg_delta_irrel`) keeps every existing statement.
+  - THE key lemma (`lrg_bsubst`, compositionality / the relational substitution
+    lemma; generalize over insertion depth like hastype_bsubst):
+    `BClosed 1 A → (LRg (cons (m, brandRel m) δ∅) A v₁ v₂ ↔
+    LRg δ∅ (bsubst 0 m A) v₁ v₂)` where `brandRel m := LRg δ∅ (.brand m)`.
+    This is what connects tbapp's conclusion type to the ∀-clause.  Budget it
+    like cost_bsubst_inv.
+  - Fundamental: add blam/bclos/bapp to `Finitary` (sbappbeta never duplicates
+    subterms → SN preserved); tblam intro assumes RelAdm and recurses under
+    cons; tbapp picks `rel := brandRel n` (RelAdm via cast_brand_id / OpenAdm)
+    and finishes by lrg_bsubst.  Then `generic_client_representation_independence`.
+  - Commit order: M4a infrastructure (cast_bvar_empty, cast_brand_id,
+    bsubstEnv + lemmas) → M4b LRg refactor + call-site repair (δ∅ everywhere)
+    → M4c cast_lr/coe_lr with DeltaAdm → M4d lrg_bsubst → M4e Finitary +
+    fundamental → M4f RI corollary + example + docs.  Green after each.
 - **Milestone 5 (source)**: source `∀`-functors (`mfunctor` binding a brand or a
   separate `bfunctor`), `elabSeal` + Correctness cases, `mlinkn`-time
   instantiation; then the sepcomp obligations (plan §3(C) items 1–4:
