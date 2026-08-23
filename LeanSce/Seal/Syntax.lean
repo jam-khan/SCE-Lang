@@ -105,6 +105,24 @@ inductive AllbIn : Typ → Prop where
   | orr {A B}     : AllbIn B → AllbIn (.or A B)
   | mu {T}        : AllbIn T → AllbIn (.mu T)
 
+-- `bsubstEnv σ d T`: SIMULTANEOUS brand-variable instantiation — every free bvar
+-- (index ≥ d, the binders already crossed) is replaced by the concrete brand its
+-- environment entry names: `bvar i ↦ brand (σ (i − d))`.  The single-point `bsubst` is
+-- the one-binder special case; this is what the δ-indexed logical relation's typing
+-- conjuncts use (values under ∀-binders are typed at concrete brands).
+def bsubstEnv (σ : Nat → Nat) : Nat → Typ → Typ
+  | _, .int       => .int
+  | _, .top       => .top
+  | d, .arr A B   => .arr (bsubstEnv σ d A) (bsubstEnv σ d B)
+  | d, .and A B   => .and (bsubstEnv σ d A) (bsubstEnv σ d B)
+  | d, .rcd l A   => .rcd l (bsubstEnv σ d A)
+  | _, .brand m   => .brand m
+  | d, .or A B    => .or (bsubstEnv σ d A) (bsubstEnv σ d B)
+  | _, .var m     => .var m
+  | d, .mu T      => .mu (bsubstEnv σ d T)
+  | d, .bvar i    => if i < d then .bvar i else .brand (σ (i - d))
+  | d, .allb A    => .allb (bsubstEnv σ (d + 1) A)
+
 -- `BClosed c T`: every brand-variable index is properly bound — below the number of
 -- enclosing `allb` binders plus the cutoff c.  `BClosed 1 A` is the ∀-body discipline
 -- that keeps the shift-free beta coherent: instantiating bvar 0 with a closed brand is

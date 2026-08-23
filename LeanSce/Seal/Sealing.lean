@@ -732,6 +732,20 @@ theorem cast_allb_id {Δ' : BrandStore} : {v w : Exp} → {A : Typ} → {Γ : Ty
   | _, _, _, _, .cmrgl _ _, _, ht => absurd ht (by intro h; nomatch h)
   | _, _, _, _, .cmrgr _ _, _, ht => absurd ht (by intro h; nomatch h)
 
+-- Casting at a brand is the identity on brand-typed values (typing rules out merge
+-- peels; the only leaf rule is the cwrap identity).
+theorem cast_brand_id {Δ' : BrandStore} : {v w : Exp} → {n : Nat} → {Γ : Typ}
+    → Cast v (.brand n) w → Value v → HasType Δ' Γ v (.brand n) → w = v
+  | _, _, _, _, .cwrap, _, _ => rfl
+  | _, _, _, _, .cmrgl _ _, _, ht => absurd ht (by intro h; nomatch h)
+  | _, _, _, _, .cmrgr _ _, _, ht => absurd ht (by intro h; nomatch h)
+
+-- Nothing casts at a brand VARIABLE: there is no leaf rule, and the merge peels only
+-- recurse.  (Runtime types are always concrete — bvars exist only inside ∀-bodies.)
+theorem cast_bvar_empty : {v w : Exp} → {i : Nat} → Cast v (.bvar i) w → False
+  | _, _, _, .cmrgl _ h => cast_bvar_empty h
+  | _, _, _, .cmrgr _ h => cast_bvar_empty h
+
 theorem cast_lr {o : BrandOpen} (hadm : OpenAdm η o) {B A : Typ} (hs : Sub B A)
     {v₁ v₂ w₁ w₂ : Exp} (hlr : LRg Δ₁ Δ₂ η o B v₁ v₂)
     (c₁ : Cast v₁ (viewL o A) w₁) (c₂ : Cast v₂ (viewR o A) w₂) : LRg Δ₁ Δ₂ η o A w₁ w₂ := by
