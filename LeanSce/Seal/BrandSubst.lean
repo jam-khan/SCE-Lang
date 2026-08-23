@@ -575,4 +575,265 @@ theorem cast_bsubst {n : Nat} : {d : Nat} → {v : Exp} → {A : Typ} → {w : E
     exact Cast.cfarrowtl (toplike_bsubst htl) (sub_bsubst hsC) (sub_bsubst hsB)
   | _, _, _, _, .cbclos => Cast.cbclos
 
+-- ── The sealing/μ/∀ commutation toolkit ──────────────────────────────────────────────
+
+-- substBrand of bvar-free arguments is bvar-free.
+theorem hasbvar_substBrand {n : Nat} {R : Typ} : {S : Typ} → ¬ HasBVar R → ¬ HasBVar S
+    → ¬ HasBVar (substBrand n R S)
+  | .int, _, _ => fun h => nomatch h
+  | .top, _, _ => fun h => nomatch h
+  | .var _, _, _ => fun h => nomatch h
+  | .bvar _, _, hS => absurd HasBVar.bvar hS
+  | .brand m, hR, _ => by
+    simp only [substBrand]
+    split
+    · exact hR
+    · exact fun h => nomatch h
+  | .arr A B, hR, hS => fun h => by
+    simp only [substBrand] at h
+    cases h with
+    | arrl h' => exact hasbvar_substBrand hR (fun x => hS (HasBVar.arrl x)) h'
+    | arrr h' => exact hasbvar_substBrand hR (fun x => hS (HasBVar.arrr x)) h'
+  | .and A B, hR, hS => fun h => by
+    simp only [substBrand] at h
+    cases h with
+    | andl h' => exact hasbvar_substBrand hR (fun x => hS (HasBVar.andl x)) h'
+    | andr h' => exact hasbvar_substBrand hR (fun x => hS (HasBVar.andr x)) h'
+  | .rcd l A, hR, hS => fun h => by
+    simp only [substBrand] at h
+    cases h with
+    | rcd h' => exact hasbvar_substBrand hR (fun x => hS (HasBVar.rcd x)) h'
+  | .or A B, hR, hS => fun h => by
+    simp only [substBrand] at h
+    cases h with
+    | orl h' => exact hasbvar_substBrand hR (fun x => hS (HasBVar.orl x)) h'
+    | orr h' => exact hasbvar_substBrand hR (fun x => hS (HasBVar.orr x)) h'
+  | .mu T, hR, hS => fun h => by
+    simp only [substBrand] at h
+    cases h with
+    | mu h' => exact hasbvar_substBrand hR (fun x => hS (HasBVar.mu x)) h'
+  | .allb A, hR, hS => fun h => by
+    simp only [substBrand] at h
+    cases h with
+    | allb h' => exact hasbvar_substBrand hR (fun x => hS (HasBVar.allb x)) h'
+
+-- Instantiation never creates ∀-types.
+theorem allbin_bsubst_inv {n : Nat} : {d : Nat} → {T : Typ} → AllbIn (bsubst d n T)
+    → AllbIn T
+  | _, .allb _, _ => AllbIn.self
+  | _, .int, h => nomatch h
+  | _, .top, h => nomatch h
+  | _, .brand _, h => nomatch h
+  | _, .var _, h => nomatch h
+  | _, .bvar _, h => by simp only [bsubst] at h; split at h <;> nomatch h
+  | _, .arr A B, h => by
+    simp only [bsubst] at h
+    cases h with
+    | arrl h' => exact AllbIn.arrl (allbin_bsubst_inv h')
+    | arrr h' => exact AllbIn.arrr (allbin_bsubst_inv h')
+  | _, .and A B, h => by
+    simp only [bsubst] at h
+    cases h with
+    | andl h' => exact AllbIn.andl (allbin_bsubst_inv h')
+    | andr h' => exact AllbIn.andr (allbin_bsubst_inv h')
+  | _, .rcd l A, h => by
+    simp only [bsubst] at h
+    cases h with
+    | rcd h' => exact AllbIn.rcd (allbin_bsubst_inv h')
+  | _, .or A B, h => by
+    simp only [bsubst] at h
+    cases h with
+    | orl h' => exact AllbIn.orl (allbin_bsubst_inv h')
+    | orr h' => exact AllbIn.orr (allbin_bsubst_inv h')
+  | _, .mu T, h => by
+    simp only [bsubst] at h
+    cases h with
+    | mu h' => exact AllbIn.mu (allbin_bsubst_inv h')
+
+-- Under the ¬AllbIn fence, bsubst never crosses a ∀ inside T, so the μ-unfolding
+-- substitution and instantiation commute at a single depth.
+theorem bsubst_substTyp_comm {d n : Nat} : {k : Nat} → {S T : Typ} → ¬ AllbIn T
+    → bsubst d n (substTyp k S T) = substTyp k (bsubst d n S) (bsubst d n T)
+  | _, _, .int, _ => rfl
+  | _, _, .top, _ => rfl
+  | _, _, .brand _, _ => rfl
+  | k, S, .var m, _ => by
+    by_cases h : m = k
+    · simp only [substTyp, bsubst, h, if_true]
+    · simp only [substTyp, bsubst, h, if_false]
+  | k, S, .bvar i, _ => by
+    simp only [substTyp, bsubst]
+    split <;> rfl
+  | k, S, .arr A B, hna => by
+    simp only [substTyp, bsubst,
+      bsubst_substTyp_comm (fun h => hna (AllbIn.arrl h)),
+      bsubst_substTyp_comm (fun h => hna (AllbIn.arrr h))]
+  | k, S, .and A B, hna => by
+    simp only [substTyp, bsubst,
+      bsubst_substTyp_comm (fun h => hna (AllbIn.andl h)),
+      bsubst_substTyp_comm (fun h => hna (AllbIn.andr h))]
+  | k, S, .rcd l A, hna => by
+    simp only [substTyp, bsubst, bsubst_substTyp_comm (fun h => hna (AllbIn.rcd h))]
+  | k, S, .or A B, hna => by
+    simp only [substTyp, bsubst,
+      bsubst_substTyp_comm (fun h => hna (AllbIn.orl h)),
+      bsubst_substTyp_comm (fun h => hna (AllbIn.orr h))]
+  | k, S, .mu T, hna => by
+    simp only [substTyp, bsubst, bsubst_substTyp_comm (fun h => hna (AllbIn.mu h))]
+  | _, _, .allb _, hna => absurd AllbIn.self hna
+
+-- Properly-bound types are invariant under substitution at or above the cutoff.
+theorem bclosed_bsubst {n : Nat} : {c d : Nat} → {A : Typ} → BClosed c A → c ≤ d
+    → bsubst d n A = A
+  | _, _, _, .int, _ => rfl
+  | _, _, _, .top, _ => rfl
+  | _, _, _, .brand, _ => rfl
+  | _, _, _, .var, _ => rfl
+  | _, _, _, .bvar hi, hcd => by
+    simp only [bsubst]
+    split
+    · next h => exact absurd (h ▸ hi) (Nat.not_lt.mpr (Nat.le_of_lt_succ (Nat.lt_succ_of_le hcd)))
+    · rfl
+  | _, _, _, .arr h₁ h₂, hcd => by
+    simp only [bsubst, bclosed_bsubst h₁ hcd, bclosed_bsubst h₂ hcd]
+  | _, _, _, .and h₁ h₂, hcd => by
+    simp only [bsubst, bclosed_bsubst h₁ hcd, bclosed_bsubst h₂ hcd]
+  | _, _, _, .rcd h, hcd => by
+    simp only [bsubst, bclosed_bsubst h hcd]
+  | _, _, _, .or h₁ h₂, hcd => by
+    simp only [bsubst, bclosed_bsubst h₁ hcd, bclosed_bsubst h₂ hcd]
+  | _, _, _, .mu h, hcd => by
+    simp only [bsubst, bclosed_bsubst h hcd]
+  | _, _, _, .allb h, hcd => by
+    simp only [bsubst, bclosed_bsubst h (Nat.succ_le_succ hcd)]
+
+-- Instantiating the top allowed index lowers the cutoff.
+theorem bclosed_bsubst_lower {n : Nat} : {c : Nat} → {A : Typ} → BClosed (c + 1) A
+    → BClosed c (bsubst c n A)
+  | _, _, .int => BClosed.int
+  | _, _, .top => BClosed.top
+  | _, _, .brand => BClosed.brand
+  | _, _, .var => BClosed.var
+  | c, _, .bvar hi => by
+    simp only [bsubst]
+    split
+    · exact BClosed.brand
+    · next hne => exact BClosed.bvar (Nat.lt_of_le_of_ne (Nat.le_of_lt_succ hi) hne)
+  | _, _, .arr h₁ h₂ => BClosed.arr (bclosed_bsubst_lower h₁) (bclosed_bsubst_lower h₂)
+  | _, _, .and h₁ h₂ => BClosed.and (bclosed_bsubst_lower h₁) (bclosed_bsubst_lower h₂)
+  | _, _, .rcd h => BClosed.rcd (bclosed_bsubst_lower h)
+  | _, _, .or h₁ h₂ => BClosed.or (bclosed_bsubst_lower h₁) (bclosed_bsubst_lower h₂)
+  | _, _, .mu h => BClosed.mu (bclosed_bsubst_lower h)
+  | _, _, .allb h => BClosed.allb (bclosed_bsubst_lower h)
+
+-- ── THE substitution lemma ───────────────────────────────────────────────────────────
+
+-- ∀β-instantiation preserves typing.  The tmergev case survives via disj_bsubst (the
+-- whole point of the conservative COST rules); the tmergevc case rebuilds its
+-- consistency SEMANTICALLY: the substituted components are casts (cast_bsubst) of the
+-- substituted origin, so consistent_after_cast applies.  Sealing/wrapping annotations
+-- are invariant (bvar-free by the tseal/twrap discipline); μ commutes under the
+-- ¬AllbIn fence; the ∀ rules recurse one binder deeper on bvar-free contexts.
+theorem hastype_bsubst {Δ : BrandStore} {n : Nat} {Γ : Typ} {e : Exp} {A : Typ}
+    (ht : HasType Δ Γ e A) : ∀ {d : Nat},
+    HasType Δ (bsubst d n Γ) (bsubstExp d n e) (bsubst d n A) := by
+  induction ht with
+  | tquery => intro d; exact HasType.tquery
+  | tint => intro d; exact HasType.tint
+  | tunit => intro d; exact HasType.tunit
+  | tapp _ _ ih₁ ih₂ => intro d; exact HasType.tapp ih₁ ih₂
+  | tbox _ _ ih₁ ih₂ => intro d; exact HasType.tbox ih₁ ih₂
+  | tproj _ hl ih => intro d; exact HasType.tproj ih (lookup_bsubst hl)
+  | trcd _ ih => intro d; exact HasType.trcd ih
+  | trproj _ hl ih => intro d; exact HasType.trproj ih (rlookup_bsubst hl)
+  | tmrg _ _ hd₁ hd₂ ih₁ ih₂ =>
+    intro d
+    exact HasType.tmrg ih₁ ih₂ (disj_bsubst hd₁) (disj_bsubst hd₂)
+  | tmergev hv₁ hv₂ _ _ hd _ ih₁ ih₂ =>
+    intro d
+    exact HasType.tmergev (bsubstExp_value hv₁) (bsubstExp_value hv₂) ih₁ ih₂
+      (disj_bsubst hd)
+      (disjoint_consistent (bsubstExp_value hv₁) (bsubstExp_value hv₂) ih₁ ih₂
+        (disj_bsubst hd))
+  | tmergevc hv₁ hv₂ _ _ hv _ hc₁ hc₂ _ ih₁ ih₂ ih =>
+    intro d
+    exact HasType.tmergevc (bsubstExp_value hv₁) (bsubstExp_value hv₂) ih₁ ih₂
+      (bsubstExp_value hv) ih (cast_bsubst hc₁) (cast_bsubst hc₂)
+      (consistent_after_cast (bsubstExp_value hv) ih (cast_bsubst hc₁) (cast_bsubst hc₂))
+  | tlam hd _ ih => intro d; exact HasType.tlam (disj_bsubst hd) ih
+  | tclos hv _ hd _ hs₁ hs₂ ih₁ ih₂ =>
+    intro d
+    exact HasType.tclos (bsubstExp_value hv) ih₁ (disj_bsubst hd) ih₂
+      (sub_bsubst hs₁) (sub_bsubst hs₂)
+  | tanno _ hs ih => intro d; exact HasType.tanno ih (sub_bsubst hs)
+  | twrap hΔ hnb hv _ ih =>
+    intro d
+    have ih' := ih (d := d)
+    rw [bsubst_notin hnb] at ih'
+    exact HasType.twrap hΔ hnb (bsubstExp_value hv) ih'
+  | tseal hΔ hnr hnb hwf _ ih =>
+    intro d
+    have hS := wfsig_no_hasbvar hwf
+    have ih' := ih (d := d)
+    rw [bsubst_notin (hasbvar_substBrand hnb hS)] at ih'
+    simp only [bsubstExp]
+    rw [bsubst_notin hnb, bsubst_notin hS]
+    exact HasType.tseal hΔ hnr hnb hwf ih'
+  | tunseal hΔ hnr hnb hwf _ heq ih =>
+    intro d
+    have hS := wfsig_no_hasbvar hwf
+    subst heq
+    have ih' := ih (d := d)
+    rw [bsubst_notin hS] at ih'
+    simp only [bsubstExp]
+    rw [bsubst_notin hnb, bsubst_notin hS]
+    exact HasType.tunseal hΔ hnr hnb hwf ih'
+      (bsubst_notin (hasbvar_substBrand hnb hS))
+  | tinl _ ih => intro d; exact HasType.tinl ih
+  | tinr _ ih => intro d; exact HasType.tinr ih
+  | tcase _ hd₁ hd₂ _ _ ih ih₁ ih₂ =>
+    intro d
+    exact HasType.tcase ih (disj_bsubst hd₁) (disj_bsubst hd₂) ih₁ ih₂
+  | tfold hna _ ih =>
+    intro d
+    have ih' := ih (d := d)
+    rw [bsubst_substTyp_comm hna] at ih'
+    exact HasType.tfold (fun h => hna (allbin_bsubst_inv h)) ih'
+  | tunfold hna _ heq ih =>
+    intro d
+    subst heq
+    exact HasType.tunfold (fun h => hna (allbin_bsubst_inv h)) ih
+      (bsubst_substTyp_comm hna)
+  | tflam hd₁ hd₂ _ ih =>
+    intro d
+    exact HasType.tflam (disj_bsubst hd₁) (disj_bsubst hd₂) ih
+  | tfclos hv _ hd₁ hd₂ _ hs₁ hs₂ hs₃ ih₁ ih₂ =>
+    intro d
+    exact HasType.tfclos (bsubstExp_value hv) ih₁ (disj_bsubst hd₁) (disj_bsubst hd₂) ih₂
+      (sub_bsubst hs₁) (sub_bsubst hs₂) (sub_bsubst hs₃)
+  | tblam hnb _ ih =>
+    intro d
+    simp only [bsubstExp]
+    rw [bsubst_notin (T := _) hnb]
+    refine HasType.tblam hnb ?_
+    have ih' := ih (d := d + 1)
+    rwa [bsubst_notin hnb] at ih'
+  | tbclos hv _ hnb _ ih₁ ih₂ =>
+    intro d
+    simp only [bsubstExp]
+    refine HasType.tbclos (bsubstExp_value hv) ?_ hnb ?_
+    · have ih' := ih₁ (d := d)
+      rwa [bsubst_notin hnb] at ih'
+    · have ih' := ih₂ (d := d + 1)
+      rwa [bsubst_notin hnb] at ih'
+  | tbapp _ hbc heq ih =>
+    intro d
+    subst heq
+    -- BClosed 1 A: the outer substitution misses both A and its instantiation.
+    rw [bclosed_bsubst (bclosed_bsubst_lower hbc) (Nat.zero_le d)]
+    refine HasType.tbapp (A := bsubst (d + 1) n _) ih ?_ ?_
+    · rw [bclosed_bsubst hbc (Nat.succ_le_succ (Nat.zero_le d))]
+      exact hbc
+    · rw [bclosed_bsubst hbc (Nat.succ_le_succ (Nat.zero_le d))]
+
 end Seal

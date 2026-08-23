@@ -154,6 +154,20 @@ inductive Step : Exp → Exp → Exp → Prop where
   | sflam {v A B e}
     : Value v
     → Step v (.flam A B e) (.fclos v A B B e)
+  -- Brand abstraction captures the ambient environment (the lam→clos pattern);
+  -- instantiation pushes the concrete brand into the body's annotations and runs it
+  -- under the captured environment.  No argument cast: brands are static.
+  | sblam {v A e}
+    : Value v
+    → Step v (.blam A e) (.bclos v A e)
+  | sbappl {v e e' n}
+    : Value v
+    → Step v e e'
+    → Step v (.bapp e n) (.bapp e' n)
+  | sbappbeta {v ρ A e n}
+    : Value v
+    → Value ρ
+    → Step v (.bapp (.bclos ρ A e) n) (.box ρ (bsubstExp 0 n e))
   -- Fixpoint beta: cast the argument at the stored domain (as sbeta does), reinstall the
   -- self-reference with the external codomain RESET to the internal one (the body's
   -- context expects (A → B) at slot 1), and reseal the result at the external codomain —

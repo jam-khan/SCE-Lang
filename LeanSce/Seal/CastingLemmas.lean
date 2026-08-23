@@ -364,6 +364,29 @@ theorem cast_mu_cost : {v w : Exp} → {T : Typ} → Cast v (.mu T) w
     | tmergev _ _ _ hq' _ _ => exact Cost.candr (cast_mu_cost hc hq hq')
     | tmergevc _ _ _ hq' _ _ _ _ _ => exact Cost.candr (cast_mu_cost hc hq hq')
 
+-- A value castable at a ∀-type has that ∀-type as a leaf of its type (only same-body
+-- brand closures cast at ∀, and only tbclos types them) — the brand pattern.
+theorem cast_allb_cost : {v w : Exp} → {X : Typ} → Cast v (.allb X) w
+    → ∀ {Γ B : Typ}, Value v → HasType Δ Γ v B → Cost B (.allb X)
+  | _, _, _, .cbclos => by
+    intro _ ht
+    cases ht
+    exact Cost.callb
+  | _, _, _, .cmrgl _ hc => by
+    intro hv ht
+    cases hv with | vmrg hp _ =>
+    cases ht with
+    | tmrg hp' _ _ _ => exact Cost.candl (cast_allb_cost hc hp hp')
+    | tmergev _ _ hp' => exact Cost.candl (cast_allb_cost hc hp hp')
+    | tmergevc _ _ hp' => exact Cost.candl (cast_allb_cost hc hp hp')
+  | _, _, _, .cmrgr _ hc => by
+    intro hv ht
+    cases hv with | vmrg _ hq =>
+    cases ht with
+    | tmrg _ hq' _ _ => exact Cost.candr (cast_allb_cost hc hq hq')
+    | tmergev _ _ _ hq' => exact Cost.candr (cast_allb_cost hc hq hq')
+    | tmergevc _ _ _ hq' => exact Cost.candr (cast_allb_cost hc hq hq')
+
 -- Peel the second cast at a record target down to its record leaf, handing the leaf to a
 -- continuation (which will be the outer induction hypothesis of casts_not_disjoint).
 theorem cast_rcd_cost_aux : {v w : Exp} → {l : String} → {T' : Typ} → Cast v (.rcd l T') w
@@ -437,11 +460,10 @@ theorem casts_not_disjoint
     intro Γ₁ A _ ht₁ v₂ Γ₂ B w₂ hv₂ ht₂ hc₂ _
     cases ht₁
     exact cost_symm (cast_brand_cost hc₂ hv₂ ht₂)
-  -- No typing rule concludes a bclos yet (tbclos lands with the ∀ typing layer); the
-  -- case is vacuous until then.
   | cbclos =>
     intro Γ₁ A _ ht₁ v₂ Γ₂ B w₂ hv₂ ht₂ hc₂ _
-    nomatch ht₁
+    cases ht₁
+    exact cost_symm (cast_allb_cost hc₂ hv₂ ht₂)
   | cmrgl _ _ ih =>
     intro Γ₁ A hv₁ ht₁ v₂ Γ₂ B w₂ hv₂ ht₂ hc₂ hntl
     cases hv₁ with | vmrg hp _ =>
@@ -574,6 +596,11 @@ theorem value_weaken {v : Exp} {Γ A : Typ} (ht : HasType Δ Γ v A)
   | tfclos hv' henv hd₁ hd₂ hb hs₁ hs₂ hs₃ _ _ =>
     intro Γ' _
     exact HasType.tfclos hv' henv hd₁ hd₂ hb hs₁ hs₂ hs₃
+  | tblam _ _ _ => intro _ hv; nomatch hv
+  | tbclos hv' henv hnb hb _ _ =>
+    intro Γ' _
+    exact HasType.tbclos hv' henv hnb hb
+  | tbapp _ _ _ _ => intro _ hv; nomatch hv
   | tanno _ _ _ => intro _ hv; nomatch hv
   | twrap hΔ hnb hv' hp _ => intro Γ' _; exact HasType.twrap hΔ hnb hv' hp
   | tseal _ _ _ _ _ => intro _ hv; nomatch hv
@@ -888,10 +915,10 @@ theorem cast_preservation : {v : Exp} → {A : Typ} → {w : Exp} → Cast v A w
     intro _ ht
     cases ht with
     | twrap hΔ hnb hv' hp => exact HasType.twrap hΔ hnb hv' hp
-  -- Vacuous until tbclos lands: no typing rule concludes a bclos yet.
   | _, _, _, .cbclos => by
     intro _ ht
-    nomatch ht
+    cases ht with
+    | tbclos hv' henv hnb hb => exact HasType.tbclos hv' henv hnb hb
   | _, _, _, .cinl hc => by
     intro hv ht
     cases hv with | vinl hv' =>
@@ -981,6 +1008,9 @@ theorem cast_progress {A : Typ}
     | tcase _ _ _ _ _ _ _ _ => intro hv _; nomatch hv
     | tfold _ _ _ => intro _ hs; nomatch hs
     | tunfold _ _ _ _ => intro hv _; nomatch hv
+    | tblam _ _ _ => intro hv _; nomatch hv
+    | tbclos _ _ _ _ _ _ => intro _ hs; nomatch hs
+    | tbapp _ _ _ _ => intro hv _; nomatch hv
     | tflam _ _ _ _ => intro hv _; nomatch hv
     | tfclos _ _ _ _ _ _ _ _ _ _ => intro _ hs; nomatch hs
   | brand n =>
@@ -1039,6 +1069,9 @@ theorem cast_progress {A : Typ}
     | tcase _ _ _ _ _ _ _ _ => intro hv _; nomatch hv
     | tfold _ _ _ => intro _ hs; nomatch hs
     | tunfold _ _ _ _ => intro hv _; nomatch hv
+    | tblam _ _ _ => intro hv _; nomatch hv
+    | tbclos _ _ _ _ _ _ => intro _ hs; nomatch hs
+    | tbapp _ _ _ _ => intro hv _; nomatch hv
     | tflam _ _ _ _ => intro hv _; nomatch hv
     | tfclos _ _ _ _ _ _ _ _ _ _ => intro _ hs; nomatch hs
   | arr C D _ _ =>
@@ -1100,6 +1133,9 @@ theorem cast_progress {A : Typ}
     | tcase _ _ _ _ _ _ _ _ => intro hv _; nomatch hv
     | tfold _ _ _ => intro _ hs; nomatch hs
     | tunfold _ _ _ _ => intro hv _; nomatch hv
+    | tblam _ _ _ => intro hv _; nomatch hv
+    | tbclos _ _ _ _ _ _ => intro _ hs; nomatch hs
+    | tbapp _ _ _ _ => intro hv _; nomatch hv
     | tflam _ _ _ _ => intro hv _; nomatch hv
     | tfclos _ _ _ _ _ _ _ hs₃ _ _ =>
       intro _ hs
@@ -1167,6 +1203,9 @@ theorem cast_progress {A : Typ}
     | tcase _ _ _ _ _ _ _ _ => intro hv _; nomatch hv
     | tfold _ _ _ => intro _ hs; nomatch hs
     | tunfold _ _ _ _ => intro hv _; nomatch hv
+    | tblam _ _ _ => intro hv _; nomatch hv
+    | tbclos _ _ _ _ _ _ => intro _ hs; nomatch hs
+    | tbapp _ _ _ _ => intro hv _; nomatch hv
     | tflam _ _ _ _ => intro hv _; nomatch hv
     | tfclos _ _ _ _ _ _ _ _ _ _ => intro _ hs; nomatch hs
   | or A₁ B₁ ihA₁ ihB₁ =>
@@ -1236,6 +1275,9 @@ theorem cast_progress {A : Typ}
     | tcase _ _ _ _ _ _ _ _ => intro hv _; nomatch hv
     | tfold _ _ _ => intro _ hs; nomatch hs
     | tunfold _ _ _ _ => intro hv _; nomatch hv
+    | tblam _ _ _ => intro hv _; nomatch hv
+    | tbclos _ _ _ _ _ _ => intro _ hs; nomatch hs
+    | tbapp _ _ _ _ => intro hv _; nomatch hv
   | var m =>
     intro v Γ B hv ht hs
     revert hv hs
@@ -1291,6 +1333,9 @@ theorem cast_progress {A : Typ}
     | tcase _ _ _ _ _ _ _ _ => intro hv _; nomatch hv
     | tfold _ _ _ => intro _ hs; nomatch hs
     | tunfold _ _ _ _ => intro hv _; nomatch hv
+    | tblam _ _ _ => intro hv _; nomatch hv
+    | tbclos _ _ _ _ _ _ => intro _ hs; nomatch hs
+    | tbapp _ _ _ _ => intro hv _; nomatch hv
   | mu T _ =>
     intro v Γ B hv ht hs
     revert hv hs
@@ -1349,6 +1394,9 @@ theorem cast_progress {A : Typ}
       cases hs with
       | smu => exact ⟨_, Cast.cfold⟩
     | tunfold _ _ _ _ => intro hv _; nomatch hv
+    | tblam _ _ _ => intro hv _; nomatch hv
+    | tbclos _ _ _ _ _ _ => intro _ hs; nomatch hs
+    | tbapp _ _ _ _ => intro hv _; nomatch hv
 
   | bvar i =>
     intro v Γ B hv ht hs
@@ -1405,6 +1453,9 @@ theorem cast_progress {A : Typ}
     | tcase _ _ _ _ _ _ _ _ => intro hv _; nomatch hv
     | tfold _ _ _ => intro _ hs; nomatch hs
     | tunfold _ _ _ _ => intro hv _; nomatch hv
+    | tblam _ _ _ => intro hv _; nomatch hv
+    | tbclos _ _ _ _ _ _ => intro _ hs; nomatch hs
+    | tbapp _ _ _ _ => intro hv _; nomatch hv
   | allb A' _ =>
     intro v Γ B hv ht hs
     revert hv hs
@@ -1460,4 +1511,12 @@ theorem cast_progress {A : Typ}
     | tcase _ _ _ _ _ _ _ _ => intro hv _; nomatch hv
     | tfold _ _ _ => intro _ hs; nomatch hs
     | tunfold _ _ _ _ => intro hv _; nomatch hv
+    | tblam _ _ _ => intro hv _; nomatch hv
+    -- The canonical case: a value of ∀-type is a brand closure, and casting at its own
+    -- ∀-type is the identity (Sub at ∀ is reflexive only).
+    | tbclos _ _ _ _ _ _ =>
+      intro _ hs
+      cases hs with
+      | sallb => exact ⟨_, Cast.cbclos⟩
+    | tbapp _ _ _ _ => intro hv _; nomatch hv
 end Seal

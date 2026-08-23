@@ -82,6 +82,19 @@ theorem gdeterminism {venv e e₁ : Exp} (h₁ : Step venv e e₁)
   | sflam _ =>
     cases h₂ with
     | sflam _ => rfl
+  | sblam _ =>
+    cases h₂ with
+    | sblam _ => rfl
+  | sbappl _ hs ih =>
+    cases h₂ with
+    | sbappl _ hs₂ =>
+      cases ht with
+      | tbapp ha _ _ => rw [ih ha henv hs₂]
+    | sbappbeta _ hρ => exact (value_not_step (Value.vbclos hρ) hs).elim
+  | sbappbeta _ hρ =>
+    cases h₂ with
+    | sbappl _ hs₂ => exact (value_not_step (Value.vbclos hρ) hs₂).elim
+    | sbappbeta _ _ => rfl
   | sfbeta _ hv₁ hv₂ hc =>
     cases h₂ with
     | sappl _ hs₂ => exact (value_not_step (Value.vfclos hv₁) hs₂).elim

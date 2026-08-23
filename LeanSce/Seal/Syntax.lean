@@ -105,6 +105,25 @@ inductive AllbIn : Typ → Prop where
   | orr {A B}     : AllbIn B → AllbIn (.or A B)
   | mu {T}        : AllbIn T → AllbIn (.mu T)
 
+-- `BClosed c T`: every brand-variable index is properly bound — below the number of
+-- enclosing `allb` binders plus the cutoff c.  `BClosed 1 A` is the ∀-body discipline
+-- that keeps the shift-free beta coherent: instantiating bvar 0 with a closed brand is
+-- only index-correct when the body references no OUTER brand binders (a bvar k ≥ 1
+-- would be left un-decremented when beta consumes the binder).  tbapp carries it.
+inductive BClosed : Nat → Typ → Prop where
+  | int {c}       : BClosed c .int
+  | top {c}       : BClosed c .top
+  | brand {c n}   : BClosed c (.brand n)
+  | var {c n}     : BClosed c (.var n)
+  | bvar {c i}    : i < c → BClosed c (.bvar i)
+  | arr {c A B}   : BClosed c A → BClosed c B → BClosed c (.arr A B)
+  | and {c A B}   : BClosed c A → BClosed c B → BClosed c (.and A B)
+  | rcd {c l A}   : BClosed c A → BClosed c (.rcd l A)
+  | or {c A B}    : BClosed c A → BClosed c B → BClosed c (.or A B)
+  -- μ binds Typ.var, not bvars: no bump.
+  | mu {c T}      : BClosed c T → BClosed c (.mu T)
+  | allb {c A}    : BClosed (c + 1) A → BClosed c (.allb A)
+
 -- `HasBVar T`: some brand variable occurs in `T` (ANY index — index-blind on purpose:
 -- it feeds the conservative COST rules and the bsubst-invariance side conditions, both
 -- of which quantify over every possible instantiation depth).

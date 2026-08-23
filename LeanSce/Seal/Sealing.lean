@@ -1375,6 +1375,11 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A
   -- Fixpoints and iso-recursive folds are outside the normalizing fragment.
   | tflam _ _ _ _ => nomatch hfin
   | tfclos _ _ _ _ _ _ _ _ _ _ => nomatch hfin
+  -- Generic terms sit outside the normalizing fragment (no blam/bclos/bapp in
+  -- Finitary); the relational ∀-clause is milestone 4.
+  | tblam _ _ _ => nomatch hfin
+  | tbclos _ _ _ _ _ _ => nomatch hfin
+  | tbapp _ _ _ _ => nomatch hfin
   | tfold _ _ _ => nomatch hfin
   | tunfold _ _ _ _ => nomatch hfin
 

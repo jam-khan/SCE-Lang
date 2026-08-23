@@ -1,4 +1,5 @@
 import LeanSce.Seal.Lookup
+import LeanSce.Seal.BrandSubst
 
 -- Generalized preservation for λE^≤ (λE Theorem 4.9 + the casting premises of Eᵢ
 -- Theorem 14).  The genuinely new cases: sbeta re-types the extended closure environment
@@ -398,6 +399,23 @@ theorem gpreservation {venv e e' : Exp} (hstep : Step venv e e')
           (HasType.tmergev (Value.vmrg hu (Value.vfclos hu)) hv₂' hinner ht₂' hd₂
             (disjoint_consistent (Value.vmrg hu (Value.vfclos hu)) hv₂' hinner ht₂' hd₂))
           (HasType.tanno hb (sub_trans hs₁ hs₂))
+  | sblam hv =>
+    cases ht with
+    | tblam hnb hb => exact HasType.tbclos hv (value_weaken henv hv) hnb hb
+  | sbappl _ _ ih =>
+    cases ht with
+    | tbapp h hbc heq => exact HasType.tbapp (ih h henv) hbc heq
+  -- ∀β-instantiation: the body's typing survives bsubst at depth 0 (hastype_bsubst);
+  -- the captured context is bvar-free, so the reduct runs in it unchanged.
+  | @sbappbeta _ _ _ _ n _ hρ =>
+    cases ht with
+    | tbapp h _ heq =>
+      subst heq
+      cases h with
+      | tbclos _ henv₁ hnb hb =>
+        have hb' := hastype_bsubst (n := n) hb (d := 0)
+        rw [bsubst_notin hnb] at hb'
+        exact HasType.tbox (value_weaken henv₁ hρ) hb'
   | sboxl _ _ ih =>
     cases ht with
     | tbox h₁ h₂ => exact HasType.tbox (ih h₁ henv) h₂

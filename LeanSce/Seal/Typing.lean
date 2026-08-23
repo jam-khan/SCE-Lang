@@ -258,6 +258,30 @@ inductive HasType : BrandStore → Typ → Exp → Typ → Prop where
     → Sub B Bx
     → Sub C A
     → HasType Δ Γ (.fclos v A B Bx e) (.arr C Bx)
+  -- Brand polymorphism.  The ¬HasBVar side condition on the (captured) context replaces
+  -- de Bruijn shifting: the context may not mention ANY brand variable (index-blind —
+  -- that is what bsubst-invariance of Γ needs).  Nested generic functors capturing an
+  -- OUTER β are out of scope for this iteration; single-binder polymorphism is what the
+  -- motivating example needs.
+  | tblam {Δ : BrandStore} {Γ A : Typ} {e : Exp}
+    : ¬ HasBVar Γ
+    → HasType Δ Γ e A
+    → HasType Δ Γ (.blam A e) (.allb A)
+  | tbclos {Δ : BrandStore} {Γ Γ₁ A : Typ} {ρ e : Exp}
+    : Value ρ
+    → HasType Δ .top ρ Γ₁
+    → ¬ HasBVar Γ₁
+    → HasType Δ Γ₁ e A
+    → HasType Δ Γ (.bclos ρ A e) (.allb A)
+  -- Instantiation.  Equation-guarded (the tunseal/tunfold trick) so inversions at
+  -- concrete types do not get stuck on bsubst.  BClosed 1 A keeps the shift-free beta
+  -- index-coherent: the body's brand variables are bound by ITS OWN binder, so removing
+  -- that binder leaves no dangling outer references.
+  | tbapp {Δ : BrandStore} {Γ A T : Typ} {e : Exp} {n : Nat}
+    : HasType Δ Γ e (.allb A)
+    → BClosed 1 A
+    → T = bsubst 0 n A
+    → HasType Δ Γ (.bapp e n) T
 
 -- Store extension: Δ' knows everything Δ knows.
 def StoreLe (Δ Δ' : BrandStore) : Prop := ∀ n R, Δ n = some R → Δ' n = some R
@@ -295,5 +319,8 @@ theorem hastype_weaken_store {Δ Δ' : BrandStore} (hle : StoreLe Δ Δ') {Γ : 
   | tunfold hna _ heq ih => exact HasType.tunfold hna ih heq
   | tflam hd₁ hd₂ _ ih => exact HasType.tflam hd₁ hd₂ ih
   | tfclos hv _ hd₁ hd₂ _ hs₁ hs₂ hs₃ ih₁ ih₂ => exact HasType.tfclos hv ih₁ hd₁ hd₂ ih₂ hs₁ hs₂ hs₃
+  | tblam hnb _ ih => exact HasType.tblam hnb ih
+  | tbclos hv _ hnb _ ih₁ ih₂ => exact HasType.tbclos hv ih₁ hnb ih₂
+  | tbapp _ hbc heq ih => exact HasType.tbapp ih hbc heq
 
 end Seal
