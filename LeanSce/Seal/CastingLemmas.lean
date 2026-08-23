@@ -568,14 +568,14 @@ theorem value_weaken {v : Exp} {Γ A : Typ} (ht : HasType Δ Γ v A)
   | tinl _ ih => intro _ hv; cases hv with | vinl hv' => exact HasType.tinl (ih hv')
   | tinr _ ih => intro _ hv; cases hv with | vinr hv' => exact HasType.tinr (ih hv')
   | tcase _ _ _ _ _ _ _ _ => intro _ hv; nomatch hv
-  | tfold _ ih => intro _ hv; cases hv with | vfold hv' => exact HasType.tfold (ih hv')
-  | tunfold _ _ _ => intro _ hv; nomatch hv
+  | tfold hna _ ih => intro _ hv; cases hv with | vfold hv' => exact HasType.tfold hna (ih hv')
+  | tunfold _ _ _ _ => intro _ hv; nomatch hv
   | tflam _ _ _ _ => intro _ hv; nomatch hv
   | tfclos hv' henv hd₁ hd₂ hb hs₁ hs₂ hs₃ _ _ =>
     intro Γ' _
     exact HasType.tfclos hv' henv hd₁ hd₂ hb hs₁ hs₂ hs₃
   | tanno _ _ _ => intro _ hv; nomatch hv
-  | twrap hΔ hv' hp _ => intro Γ' _; exact HasType.twrap hΔ hv' hp
+  | twrap hΔ hnb hv' hp _ => intro Γ' _; exact HasType.twrap hΔ hnb hv' hp
   | tseal _ _ _ _ _ => intro _ hv; nomatch hv
   | tunseal _ _ _ _ _ _ => intro _ hv; nomatch hv
 
@@ -887,7 +887,7 @@ theorem cast_preservation : {v : Exp} → {A : Typ} → {w : Exp} → Cast v A w
   | _, _, _, .cwrap => by
     intro _ ht
     cases ht with
-    | twrap hΔ hv' hp => exact HasType.twrap hΔ hv' hp
+    | twrap hΔ hnb hv' hp => exact HasType.twrap hΔ hnb hv' hp
   -- Vacuous until tbclos lands: no typing rule concludes a bclos yet.
   | _, _, _, .cbclos => by
     intro _ ht
@@ -905,7 +905,7 @@ theorem cast_preservation : {v : Exp} → {A : Typ} → {w : Exp} → Cast v A w
   | _, _, _, .cfold => by
     intro _ ht
     cases ht with
-    | tfold hp => exact HasType.tfold hp
+    | tfold hna hp => exact HasType.tfold hna hp
   | _, _, _, .cfarrow _ hsC hsB => by
     intro _ ht
     cases ht with
@@ -973,14 +973,14 @@ theorem cast_progress {A : Typ}
     | tlam _ _ _ => intro hv _; nomatch hv
     | tclos _ _ _ _ _ _ _ _ => intro _ hs; nomatch hs
     | tanno _ _ _ => intro hv _; nomatch hv
-    | twrap _ _ _ _ => intro _ hs; nomatch hs
+    | twrap _ _ _ _ _ => intro _ hs; nomatch hs
     | tseal _ _ _ _ _ => intro hv _; nomatch hv
     | tunseal _ _ _ _ _ _ => intro hv _; nomatch hv
     | tinl _ _ => intro _ hs; nomatch hs
     | tinr _ _ => intro _ hs; nomatch hs
     | tcase _ _ _ _ _ _ _ _ => intro hv _; nomatch hv
-    | tfold _ _ => intro _ hs; nomatch hs
-    | tunfold _ _ _ => intro hv _; nomatch hv
+    | tfold _ _ _ => intro _ hs; nomatch hs
+    | tunfold _ _ _ _ => intro hv _; nomatch hv
     | tflam _ _ _ _ => intro hv _; nomatch hv
     | tfclos _ _ _ _ _ _ _ _ _ _ => intro _ hs; nomatch hs
   | brand n =>
@@ -1028,7 +1028,7 @@ theorem cast_progress {A : Typ}
     | tlam _ _ _ => intro hv _; nomatch hv
     | tclos _ _ _ _ _ _ _ _ => intro _ hs; nomatch hs
     | tanno _ _ _ => intro hv _; nomatch hv
-    | twrap _ _ _ _ =>
+    | twrap _ _ _ _ _ =>
       intro _ hs
       cases hs with
       | sbrand => exact ⟨_, Cast.cwrap⟩
@@ -1037,8 +1037,8 @@ theorem cast_progress {A : Typ}
     | tinl _ _ => intro _ hs; nomatch hs
     | tinr _ _ => intro _ hs; nomatch hs
     | tcase _ _ _ _ _ _ _ _ => intro hv _; nomatch hv
-    | tfold _ _ => intro _ hs; nomatch hs
-    | tunfold _ _ _ => intro hv _; nomatch hv
+    | tfold _ _ _ => intro _ hs; nomatch hs
+    | tunfold _ _ _ _ => intro hv _; nomatch hv
     | tflam _ _ _ _ => intro hv _; nomatch hv
     | tfclos _ _ _ _ _ _ _ _ _ _ => intro _ hs; nomatch hs
   | arr C D _ _ =>
@@ -1092,14 +1092,14 @@ theorem cast_progress {A : Typ}
         | inl htl => exact ⟨_, Cast.carrowtl htl (sub_trans hsC hs₂) hsD⟩
         | inr hntl => exact ⟨_, Cast.carrow hntl (sub_trans hsC hs₂) hsD⟩
     | tanno _ _ _ => intro hv _; nomatch hv
-    | twrap _ _ _ _ => intro _ hs; nomatch hs
+    | twrap _ _ _ _ _ => intro _ hs; nomatch hs
     | tseal _ _ _ _ _ => intro hv _; nomatch hv
     | tunseal _ _ _ _ _ _ => intro hv _; nomatch hv
     | tinl _ _ => intro _ hs; nomatch hs
     | tinr _ _ => intro _ hs; nomatch hs
     | tcase _ _ _ _ _ _ _ _ => intro hv _; nomatch hv
-    | tfold _ _ => intro _ hs; nomatch hs
-    | tunfold _ _ _ => intro hv _; nomatch hv
+    | tfold _ _ _ => intro _ hs; nomatch hs
+    | tunfold _ _ _ _ => intro hv _; nomatch hv
     | tflam _ _ _ _ => intro hv _; nomatch hv
     | tfclos _ _ _ _ _ _ _ hs₃ _ _ =>
       intro _ hs
@@ -1159,14 +1159,14 @@ theorem cast_progress {A : Typ}
     | tlam _ _ _ => intro hv _; nomatch hv
     | tclos _ _ _ _ _ _ _ _ => intro _ hs; nomatch hs
     | tanno _ _ _ => intro hv _; nomatch hv
-    | twrap _ _ _ _ => intro _ hs; nomatch hs
+    | twrap _ _ _ _ _ => intro _ hs; nomatch hs
     | tseal _ _ _ _ _ => intro hv _; nomatch hv
     | tunseal _ _ _ _ _ _ => intro hv _; nomatch hv
     | tinl _ _ => intro _ hs; nomatch hs
     | tinr _ _ => intro _ hs; nomatch hs
     | tcase _ _ _ _ _ _ _ _ => intro hv _; nomatch hv
-    | tfold _ _ => intro _ hs; nomatch hs
-    | tunfold _ _ _ => intro hv _; nomatch hv
+    | tfold _ _ _ => intro _ hs; nomatch hs
+    | tunfold _ _ _ _ => intro hv _; nomatch hv
     | tflam _ _ _ _ => intro hv _; nomatch hv
     | tfclos _ _ _ _ _ _ _ _ _ _ => intro _ hs; nomatch hs
   | or A₁ B₁ ihA₁ ihB₁ =>
@@ -1214,7 +1214,7 @@ theorem cast_progress {A : Typ}
     | tlam _ _ _ => intro hv _; nomatch hv
     | tclos _ _ _ _ _ _ _ _ => intro _ hs; nomatch hs
     | tanno _ _ _ => intro hv _; nomatch hv
-    | twrap _ _ _ _ => intro _ hs; nomatch hs
+    | twrap _ _ _ _ _ => intro _ hs; nomatch hs
     | tseal _ _ _ _ _ => intro hv _; nomatch hv
     | tunseal _ _ _ _ _ _ => intro hv _; nomatch hv
     | tflam _ _ _ _ => intro hv _; nomatch hv
@@ -1234,8 +1234,8 @@ theorem cast_progress {A : Typ}
         obtain ⟨w, hc⟩ := ihB₁ hv' hp hs₂
         exact ⟨.inr A₁ w, Cast.cinr hc⟩
     | tcase _ _ _ _ _ _ _ _ => intro hv _; nomatch hv
-    | tfold _ _ => intro _ hs; nomatch hs
-    | tunfold _ _ _ => intro hv _; nomatch hv
+    | tfold _ _ _ => intro _ hs; nomatch hs
+    | tunfold _ _ _ _ => intro hv _; nomatch hv
   | var m =>
     intro v Γ B hv ht hs
     revert hv hs
@@ -1281,7 +1281,7 @@ theorem cast_progress {A : Typ}
     | tlam _ _ _ => intro hv _; nomatch hv
     | tclos _ _ _ _ _ _ _ _ => intro _ hs; nomatch hs
     | tanno _ _ _ => intro hv _; nomatch hv
-    | twrap _ _ _ _ => intro _ hs; nomatch hs
+    | twrap _ _ _ _ _ => intro _ hs; nomatch hs
     | tseal _ _ _ _ _ => intro hv _; nomatch hv
     | tunseal _ _ _ _ _ _ => intro hv _; nomatch hv
     | tflam _ _ _ _ => intro hv _; nomatch hv
@@ -1289,8 +1289,8 @@ theorem cast_progress {A : Typ}
     | tinl _ _ => intro _ hs; nomatch hs
     | tinr _ _ => intro _ hs; nomatch hs
     | tcase _ _ _ _ _ _ _ _ => intro hv _; nomatch hv
-    | tfold _ _ => intro _ hs; nomatch hs
-    | tunfold _ _ _ => intro hv _; nomatch hv
+    | tfold _ _ _ => intro _ hs; nomatch hs
+    | tunfold _ _ _ _ => intro hv _; nomatch hv
   | mu T _ =>
     intro v Γ B hv ht hs
     revert hv hs
@@ -1336,7 +1336,7 @@ theorem cast_progress {A : Typ}
     | tlam _ _ _ => intro hv _; nomatch hv
     | tclos _ _ _ _ _ _ _ _ => intro _ hs; nomatch hs
     | tanno _ _ _ => intro hv _; nomatch hv
-    | twrap _ _ _ _ => intro _ hs; nomatch hs
+    | twrap _ _ _ _ _ => intro _ hs; nomatch hs
     | tseal _ _ _ _ _ => intro hv _; nomatch hv
     | tunseal _ _ _ _ _ _ => intro hv _; nomatch hv
     | tflam _ _ _ _ => intro hv _; nomatch hv
@@ -1348,7 +1348,7 @@ theorem cast_progress {A : Typ}
       intro hv hs
       cases hs with
       | smu => exact ⟨_, Cast.cfold⟩
-    | tunfold _ _ _ => intro hv _; nomatch hv
+    | tunfold _ _ _ _ => intro hv _; nomatch hv
 
   | bvar i =>
     intro v Γ B hv ht hs
@@ -1395,7 +1395,7 @@ theorem cast_progress {A : Typ}
     | tlam _ _ _ => intro hv _; nomatch hv
     | tclos _ _ _ _ _ _ _ _ => intro _ hs; nomatch hs
     | tanno _ _ _ => intro hv _; nomatch hv
-    | twrap _ _ _ _ => intro _ hs; nomatch hs
+    | twrap _ _ _ _ _ => intro _ hs; nomatch hs
     | tseal _ _ _ _ _ => intro hv _; nomatch hv
     | tunseal _ _ _ _ _ _ => intro hv _; nomatch hv
     | tflam _ _ _ _ => intro hv _; nomatch hv
@@ -1403,8 +1403,8 @@ theorem cast_progress {A : Typ}
     | tinl _ _ => intro _ hs; nomatch hs
     | tinr _ _ => intro _ hs; nomatch hs
     | tcase _ _ _ _ _ _ _ _ => intro hv _; nomatch hv
-    | tfold _ _ => intro _ hs; nomatch hs
-    | tunfold _ _ _ => intro hv _; nomatch hv
+    | tfold _ _ _ => intro _ hs; nomatch hs
+    | tunfold _ _ _ _ => intro hv _; nomatch hv
   | allb A' _ =>
     intro v Γ B hv ht hs
     revert hv hs
@@ -1450,7 +1450,7 @@ theorem cast_progress {A : Typ}
     | tlam _ _ _ => intro hv _; nomatch hv
     | tclos _ _ _ _ _ _ _ _ => intro _ hs; nomatch hs
     | tanno _ _ _ => intro hv _; nomatch hv
-    | twrap _ _ _ _ => intro _ hs; nomatch hs
+    | twrap _ _ _ _ _ => intro _ hs; nomatch hs
     | tseal _ _ _ _ _ => intro hv _; nomatch hv
     | tunseal _ _ _ _ _ _ => intro hv _; nomatch hv
     | tflam _ _ _ _ => intro hv _; nomatch hv
@@ -1458,6 +1458,6 @@ theorem cast_progress {A : Typ}
     | tinl _ _ => intro _ hs; nomatch hs
     | tinr _ _ => intro _ hs; nomatch hs
     | tcase _ _ _ _ _ _ _ _ => intro hv _; nomatch hv
-    | tfold _ _ => intro _ hs; nomatch hs
-    | tunfold _ _ _ => intro hv _; nomatch hv
+    | tfold _ _ _ => intro _ hs; nomatch hs
+    | tunfold _ _ _ _ => intro hv _; nomatch hv
 end Seal

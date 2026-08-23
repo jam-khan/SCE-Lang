@@ -163,7 +163,8 @@ theorem eval_typed {A : SCE.Typ} {vs : SCE.Exp} {vc : Seal.Exp} (h : EVal Δ A v
     exact HasType.tclos (eval_value h) ih hd (seal_type_preservation hbody)
       (sub_refl _) (sub_refl _)
   | gen htl _ _ => exact genVal_typed htl .top
-  | wrap hΔ h ih => exact HasType.twrap (sealStore_some hΔ) (eval_value h) ih
+  | wrap hΔ h ih =>
+    exact HasType.twrap (sealStore_some hΔ) (sealTyp_no_hasbvar _) (eval_value h) ih
   | inl _ ih => exact HasType.tinl ih
   | inr _ ih => exact HasType.tinr ih
   | fclos _ h hbody hd₁ hd₂ ih =>
@@ -171,7 +172,7 @@ theorem eval_typed {A : SCE.Typ} {vs : SCE.Exp} {vc : Seal.Exp} (h : EVal Δ A v
       (sub_refl _) (sub_refl _) (sub_refl _)
   | fold h ih =>
     rw [sealTyp_substTyp] at ih
-    exact HasType.tfold ih
+    exact HasType.tfold (sealTyp_no_allbin _) ih
 
 -- Raw value elaborations embed into the relation.
 theorem elab_eval {Γ A : SCE.Typ} {vs : SCE.Exp} {vc : Seal.Exp}

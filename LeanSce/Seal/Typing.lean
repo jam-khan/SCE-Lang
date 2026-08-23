@@ -174,8 +174,11 @@ inductive HasType : BrandStore → Typ → Exp → Typ → Prop where
   -- A branded value: the payload is a closed value of the representation type.  This is
   -- the only rule that gives a value type `brand n`, so brands are inhabited exactly by
   -- wrappers (canonical forms).
+  -- The representation is brand-variable-free (like tseal's): provider stores are
+  -- concrete, and this keeps the payload's typing invariant under ∀β-instantiation.
   | twrap {Δ : BrandStore} {Γ R : Typ} {n : Nat} {v : Exp}
     : Δ n = some R
+    → ¬ HasBVar R
     → Value v
     → HasType Δ .top v R
     → HasType Δ Γ (.wrap n v) (.brand n)
@@ -220,11 +223,16 @@ inductive HasType : BrandStore → Typ → Exp → Typ → Prop where
     → HasType Δ Γ (.case e e₁ e₂) C
   -- Iso-recursive types.  tunfold's result type is a variable guarded by an equation so
   -- that dependent elimination does not get stuck on substTyp (the tunseal trick).
+  -- The ¬AllbIn fence: substTyp does not shift brand variables, so a ∀ inside the
+  -- μ-body would let unfolding capture cross-binder bvars (bsubst_substTyp_comm needs
+  -- the fence).  μ-types over an OUTER β (∀β. μX. β × X) are unaffected.
   | tfold {Δ : BrandStore} {Γ T : Typ} {e : Exp}
-    : HasType Δ Γ e (substTyp 0 (.mu T) T)
+    : ¬ AllbIn T
+    → HasType Δ Γ e (substTyp 0 (.mu T) T)
     → HasType Δ Γ (.fold T e) (.mu T)
   | tunfold {Δ : BrandStore} {Γ T A : Typ} {e : Exp}
-    : HasType Δ Γ e (.mu T)
+    : ¬ AllbIn T
+    → HasType Δ Γ e (.mu T)
     → A = substTyp 0 (.mu T) T
     → HasType Δ Γ (.unfold e) A
   -- Fixpoints.  The body extends the context twice (self, then argument), so tflam carries
@@ -277,14 +285,14 @@ theorem hastype_weaken_store {Δ Δ' : BrandStore} (hle : StoreLe Δ Δ') {Γ : 
   | tlam hd _ ih => exact HasType.tlam hd ih
   | tclos hv _ hd _ hs₁ hs₂ ih₁ ih₂ => exact HasType.tclos hv ih₁ hd ih₂ hs₁ hs₂
   | tanno _ hs ih => exact HasType.tanno ih hs
-  | twrap hΔ hv _ ih => exact HasType.twrap (hle _ _ hΔ) hv ih
+  | twrap hΔ hnb hv _ ih => exact HasType.twrap (hle _ _ hΔ) hnb hv ih
   | tseal hΔ hnr hnb hwf _ ih => exact HasType.tseal (hle _ _ hΔ) hnr hnb hwf ih
   | tunseal hΔ hnr hnb hwf _ heq ih => exact HasType.tunseal (hle _ _ hΔ) hnr hnb hwf ih heq
   | tinl _ ih => exact HasType.tinl ih
   | tinr _ ih => exact HasType.tinr ih
   | tcase _ hd₁ hd₂ _ _ ih ih₁ ih₂ => exact HasType.tcase ih hd₁ hd₂ ih₁ ih₂
-  | tfold _ ih => exact HasType.tfold ih
-  | tunfold _ heq ih => exact HasType.tunfold ih heq
+  | tfold hna _ ih => exact HasType.tfold hna ih
+  | tunfold hna _ heq ih => exact HasType.tunfold hna ih heq
   | tflam hd₁ hd₂ _ ih => exact HasType.tflam hd₁ hd₂ ih
   | tfclos hv _ hd₁ hd₂ _ hs₁ hs₂ hs₃ ih₁ ih₂ => exact HasType.tfclos hv ih₁ hd₁ hd₂ ih₂ hs₁ hs₂ hs₃
 

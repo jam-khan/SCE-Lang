@@ -262,7 +262,8 @@ theorem coe_lr {n : Nat} {R₁ R₂ : Typ} (hb : OpenBrand Δ₁ Δ₂ η n R₁
         | brand_eq =>
           cases h₂ with
           | brand_eq =>
-            exact ⟨HasType.twrap hb.st₁ hv₁ ht₁, HasType.twrap hb.st₂ hv₂ ht₂,
+            exact ⟨HasType.twrap hb.st₁ hb.nobvar₁ hv₁ ht₁,
+              HasType.twrap hb.st₂ hb.nobvar₂ hv₂ ht₂,
               _, _, rfl, rfl, hη⟩
           | brand_ne hne => exact absurd rfl hne
         | brand_ne hne => exact absurd rfl hne
@@ -275,9 +276,9 @@ theorem coe_lr {n : Nat} {R₁ R₂ : Typ} (hb : OpenBrand Δ₁ Δ₂ η n R₁
           cases h₂ with
           | brand_eq =>
             cases ht₁ with
-            | twrap hst₁ hu₁ hp₁ =>
+            | twrap hst₁ _ hu₁ hp₁ =>
               cases ht₂ with
-              | twrap hst₂ hu₂ hp₂ =>
+              | twrap hst₂ _ hu₂ hp₂ =>
                 rw [hb.st₁] at hst₁; cases hst₁
                 rw [hb.st₂] at hst₂; cases hst₂
                 exact ⟨hu₁, hu₂, hp₁, hp₂, hη⟩

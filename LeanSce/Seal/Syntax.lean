@@ -90,6 +90,21 @@ def bsubst (d n : Nat) : Typ → Typ
   | .bvar i    => if i = d then .brand n else .bvar i
   | .allb A    => .allb (bsubst (d + 1) n A)
 
+-- `AllbIn T`: a ∀-type occurs somewhere in `T`.  Its negation fences the μ typing rules:
+-- the μ-unfolding substTyp does not shift brand variables, so inserting a μ-type under a
+-- ∀ INSIDE the μ-body would capture cross-binder bvars and break the ∀β-instantiation
+-- lemma.  μ-bodies OVER an outer β (no ∀ inside) remain fully allowed.
+inductive AllbIn : Typ → Prop where
+  | self {A}      : AllbIn (.allb A)
+  | arrl {A B}    : AllbIn A → AllbIn (.arr A B)
+  | arrr {A B}    : AllbIn B → AllbIn (.arr A B)
+  | andl {A B}    : AllbIn A → AllbIn (.and A B)
+  | andr {A B}    : AllbIn B → AllbIn (.and A B)
+  | rcd {l A}     : AllbIn A → AllbIn (.rcd l A)
+  | orl {A B}     : AllbIn A → AllbIn (.or A B)
+  | orr {A B}     : AllbIn B → AllbIn (.or A B)
+  | mu {T}        : AllbIn T → AllbIn (.mu T)
+
 -- `HasBVar T`: some brand variable occurs in `T` (ANY index — index-blind on purpose:
 -- it feeds the conservative COST rules and the bsubst-invariance side conditions, both
 -- of which quantify over every possible instantiation depth).

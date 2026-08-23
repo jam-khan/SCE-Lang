@@ -231,8 +231,8 @@ theorem lr_value {o : BrandOpen} : {T : Typ} → {v₁ v₂ : Exp} → LRg Δ₁
     have wrap_val : WrapRel Δ₁ Δ₂ η m v₁ v₂ → Value v₁ ∧ Value v₂ := by
       intro ⟨ht₁, ht₂, _, _, h₁, h₂, _⟩
       subst h₁; subst h₂
-      cases ht₁ with | twrap _ hv₁ _ =>
-      cases ht₂ with | twrap _ hv₂ _ =>
+      cases ht₁ with | twrap _ _ hv₁ _ =>
+      cases ht₂ with | twrap _ _ hv₂ _ =>
       exact ⟨Value.vwrap hv₁, Value.vwrap hv₂⟩
     cases o with
     | none => exact wrap_val h
@@ -1375,8 +1375,8 @@ theorem fundamental {Γ : Typ} {e : Exp} {A : Typ} (ht : HasType noBrands Γ e A
   -- Fixpoints and iso-recursive folds are outside the normalizing fragment.
   | tflam _ _ _ _ => nomatch hfin
   | tfclos _ _ _ _ _ _ _ _ _ _ => nomatch hfin
-  | tfold _ _ => nomatch hfin
-  | tunfold _ _ _ => nomatch hfin
+  | tfold _ _ _ => nomatch hfin
+  | tunfold _ _ _ _ => nomatch hfin
 
 -- ── Corollaries ──────────────────────────────────────────────────────────────────────
 

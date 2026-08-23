@@ -106,6 +106,42 @@ theorem sealModTyp_no_hasbvar : (mt : SCE.ModTyp) → ¬ HasBVar (sealModTyp mt)
     | arrr h' => exact sealModTyp_no_hasbvar mt h'
 end
 
+-- sealTyp images are likewise ∀-free (the source has no ∀-types), discharging the
+-- ¬AllbIn μ-fence of tfold/tunfold at every elaboration site.
+mutual
+theorem sealTyp_no_allbin : (S : SCE.Typ) → ¬ AllbIn (sealTyp S)
+  | .int => fun h => nomatch h
+  | .top => fun h => nomatch h
+  | .arr A B => fun h => by
+    cases h with
+    | arrl h' => exact sealTyp_no_allbin A h'
+    | arrr h' => exact sealTyp_no_allbin B h'
+  | .and A B => fun h => by
+    cases h with
+    | andl h' => exact sealTyp_no_allbin A h'
+    | andr h' => exact sealTyp_no_allbin B h'
+  | .or A B => fun h => by
+    cases h with
+    | orl h' => exact sealTyp_no_allbin A h'
+    | orr h' => exact sealTyp_no_allbin B h'
+  | .rcd _ A => fun h => by
+    cases h with
+    | rcd h' => exact sealTyp_no_allbin A h'
+  | .sig mt => sealModTyp_no_allbin mt
+  | .var _ => fun h => nomatch h
+  | .mu T => fun h => by
+    cases h with
+    | mu h' => exact sealTyp_no_allbin T h'
+  | .brand _ => fun h => nomatch h
+
+theorem sealModTyp_no_allbin : (mt : SCE.ModTyp) → ¬ AllbIn (sealModTyp mt)
+  | .TyIntf T => sealTyp_no_allbin T
+  | .TyArrM T mt => fun h => by
+    cases h with
+    | arrl h' => exact sealTyp_no_allbin T h'
+    | arrr h' => exact sealModTyp_no_allbin mt h'
+end
+
 -- sealTyp commutes with brand substitution (the representation view of a signature is
 -- sealed pointwise).
 mutual
@@ -625,7 +661,7 @@ theorem seal_type_preservation {Γ : SCE.Typ} {es : SCE.Exp} {A : SCE.Typ} {ce :
         (HasType.tapp ih₂ (wireArgSeal_typed hw ih₁)))
       hd₁ hd₂
   | ewrap hΔ hv h ih =>
-    exact HasType.twrap (sealStore_some hΔ) (elabSeal_value h hv) ih
+    exact HasType.twrap (sealStore_some hΔ) (sealTyp_no_hasbvar _) (elabSeal_value h hv) ih
   | emseal hΔ hnr hwf _ ih =>
     rw [sealTyp_substBrand] at ih
     exact HasType.tseal (sealStore_some hΔ) hnr (sealTyp_no_hasbvar _) hwf ih
@@ -646,11 +682,11 @@ theorem seal_type_preservation {Γ : SCE.Typ} {es : SCE.Exp} {A : SCE.Typ} {ce :
       (sub_refl _)
   | efold _ ih =>
     rw [sealTyp_substTyp] at ih
-    exact HasType.tfold ih
+    exact HasType.tfold (sealTyp_no_allbin _) ih
   | eunfold _ heq ih =>
     subst heq
     rw [sealTyp_substTyp]
-    exact HasType.tunfold ih rfl
+    exact HasType.tunfold (sealTyp_no_allbin _) ih rfl
 
 -- ── Value elaborations are context-irrelevant ────────────────────────────────────────
 

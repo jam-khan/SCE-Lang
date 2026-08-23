@@ -125,7 +125,7 @@ theorem sealv_preservation {n : Nat} {R : Typ} (hΔ : Δ n = some R) (hR : NoRes
   | brand_eq =>
     intro Γ _ hv ht
     simp only [substBrand, if_true] at ht
-    exact HasType.twrap hΔ hv (value_weaken ht hv)
+    exact HasType.twrap hΔ hRb hv (value_weaken ht hv)
   | brand_ne hne =>
     intro Γ _ hv ht
     simp only [substBrand, hne, if_false] at ht
@@ -220,7 +220,7 @@ theorem unsealv_preservation {n : Nat} {R : Typ} (hΔ : Δ n = some R) (hR : NoR
     intro Γ _ hv ht
     simp only [substBrand, if_true]
     cases ht with
-    | twrap hΔ' hv' hp =>
+    | twrap hΔ' _ hv' hp =>
       rw [hΔ] at hΔ'
       cases hΔ'
       exact value_weaken hp hv'
@@ -364,16 +364,16 @@ theorem gpreservation {venv e e' : Exp} (hstep : Step venv e e')
           (HasType.tmergev hv hv₁ henv hp' hd₂ (disjoint_consistent hv hv₁ henv hp' hd₂)) h₂
   | sfold _ _ ih =>
     cases ht with
-    | tfold h => exact HasType.tfold (ih h henv)
+    | tfold hna h => exact HasType.tfold hna (ih h henv)
   | sunfold _ _ ih =>
     cases ht with
-    | tunfold h heq => exact HasType.tunfold (ih h henv) heq
+    | tunfold hna h heq => exact HasType.tunfold hna (ih h henv) heq
   | sunfoldv _ _ =>
     cases ht with
-    | tunfold h heq =>
+    | tunfold _ h heq =>
       subst heq
       cases h with
-      | tfold hp => exact hp
+      | tfold _ hp => exact hp
   | sflam hv =>
     cases ht with
     | tflam hd₁ hd₂ hb =>
@@ -441,7 +441,7 @@ theorem gpreservation {venv e e' : Exp} (hstep : Step venv e e')
     | tanno h _ => exact cast_preservation hc hv₁ h
   | swrap _ hs _ =>
     cases ht with
-    | twrap _ hv _ => exact (value_not_step hv hs).elim
+    | twrap _ _ hv _ => exact (value_not_step hv hs).elim
   | sseal _ _ ih =>
     cases ht with
     | tseal hΔ hnr hnb hwf h => exact HasType.tseal hΔ hnr hnb hwf (ih h henv)

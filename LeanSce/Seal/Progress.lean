@@ -297,13 +297,13 @@ theorem gprogress {Γ A : Typ} {e : Exp} (ht : HasType Δ Γ e A)
   | tclos hu _ _ _ _ _ _ _ => exact Or.inl (Value.vclos hu)
   | tflam _ _ _ _ => exact Or.inr ⟨_, Step.sflam hv⟩
   | tfclos hu _ _ _ _ _ _ _ _ _ => exact Or.inl (Value.vfclos hu)
-  | tfold _ ih =>
+  | tfold _ _ ih =>
     cases ih hv henv with
     | inr hs =>
       obtain ⟨e', hs'⟩ := hs
       exact Or.inr ⟨_, Step.sfold hv hs'⟩
     | inl hve => exact Or.inl (Value.vfold hve)
-  | tunfold h _ ih =>
+  | tunfold _ h _ ih =>
     cases ih hv henv with
     | inr hs =>
       obtain ⟨e', hs'⟩ := hs
@@ -366,7 +366,7 @@ theorem gprogress {Γ A : Typ} {e : Exp} (ht : HasType Δ Γ e A)
     | inl hve =>
       obtain ⟨w, hc⟩ := cast_progress hve h hsub
       exact Or.inr ⟨_, Step.sannov hv hve hc⟩
-  | twrap _ hv' _ _ => exact Or.inl (Value.vwrap hv')
+  | twrap _ _ hv' _ _ => exact Or.inl (Value.vwrap hv')
   | tseal _ _ _ _ h ih =>
     cases ih hv henv with
     | inr hs =>
