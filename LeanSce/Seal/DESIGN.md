@@ -535,3 +535,101 @@ determinism). `Examples.lean` runs the `{mk} & {get}` example at the source leve
 (`sRun₁`/`sRun₂` evaluate the sealed source programs through the proxies to 5).
 Brand allocation remains a toolchain concern: the mechanization takes Δ as a
 hypothesis; the implementation allocates distinct brands per sealed unit, like symbols.
+
+## (h) Brand polymorphism: ∀β, conservative disjointness, and the instantiation-closed relation
+
+**Goal.** One generic client serving many sealed providers: `Λβ. λ(s : Sig β). …` typed
+once at `∀β. Sig β → Int` and instantiated at each provider's brand. The target-side
+mechanization is Phase 3 (`bvar`/`allb`/`blam`/`bclos`/`bapp` + the full safety layer +
+the relational ∀-clause and `generic_client_representation_independence`).
+
+**Syntax route.** Brand variables are their own de Bruijn namespace `Typ.bvar i`, bound
+by `Typ.allb` — disjoint from both `Typ.var` (μ) and `Typ.brand` (concrete names).
+Instantiation `bsubst d n T` substitutes the CLOSED `brand n`, so no shifting exists
+anywhere (the μ/substTyp trick). `blam A e` steps to `bclos ρ A e` capturing the ambient
+environment (the lam→clos pattern); both carry the ∀-body annotation because casting at
+a ∀-type is an identity the VALUE must pin (the fold/wrap precedent — else
+cast_preservation's `cbclos` case is unprovable). `bapp (bclos ρ A e) n` beta-steps to
+`box ρ (bsubstExp 0 n e)` — instantiation is pure annotation rewriting, no reseal.
+
+**Conservative COST at brand variables.** Disjointness must be stable under
+instantiation (`disj_bsubst`, unconditional), because the substitution lemma inducts
+over whole derivations whose intermediate types may mention the instantiation brand.
+Equivalently: `Cost` may only be LOST under `bsubst`, never gained. Hence `cbvar` (any
+two bvars), `cbvarbrand`/`cbrandbvar` (a bvar against any brand, both directions so
+`cost_symm` stays a permutation), and the HasBVar-guarded `callbbv`/`cmubv` (two
+syntactically distinct ∀- or μ-bodies can become equal after substitution — the subtle
+gain case; without `cmubv`, `disj_bsubst` is false). Consequence (the price of
+conservativity): nothing typed at a bvar, or at a bvar-containing μ/∀, can be MERGED
+with anything brand- or bvar-typed — the same "wrap them in records" discipline as
+`Cost.coror` for unions. Module-land disjointness is label-driven, so signatures like
+`{mk : Int→β} & {get : β→Int}` are unaffected. Fallout: the equality-keyed compose
+lemmas (`cost_mu_compose` etc.) are FALSE with the conservative rules and were replaced
+by refl-leaf peels (`sub_brand_peel`/`sub_var_peel`/`sub_mu_peel`/`sub_bvar_peel`/
+`sub_allb_peel`) — subtyping-derived costs end in the exact leaf, which is all
+`sub_sub_cost` needs.
+
+**The runtime-merge split (`tmergev`/`tmergevc`).** `Consistent` is not bsubst-stable
+(two closures with domains `bvar 0` and `brand 5` are consistent — no common cast
+target — until β:=5 identifies the domains), so `tmergev` gains a `Disj A B` premise.
+But casting one value at `A & B` (Casting-and) duplicates it into a merge with NO
+disjointness (`anno 3 (Int & Int)` steps to `mrg 3 3`) — a Disj-only rule falsifies
+preservation. Resolution: a second rule `tmergevc` for cast-duplicated merges that
+records the common ORIGIN (its typing and the two casts). That shape is bsubst-stable
+BY CONSTRUCTION: the substituted components are casts (`cast_bsubst`) of the
+substituted origin, so consistency is rebuilt semantically (`consistent_after_cast`)
+rather than assumed. Both rules keep `Consistent` so the ~60 inversion sites stay
+mechanical.
+
+**The three fences** (all liftable later, none needed by the motivating example):
+- `¬ AllbIn T` on `tfold`/`tunfold`: `substTyp` does not shift brand variables, so a ∀
+  INSIDE a μ-body would capture cross-binder bvars (`bsubst_substTyp_comm` holds exactly
+  under the fence). μ over an OUTER β stays allowed.
+- `BClosed 1 A` on `tbapp`: the shift-free beta is index-coherent only when the ∀-body's
+  bvars are bound by its own binder (single-binder polymorphism).
+- `¬ HasBVar` on captured contexts (`tblam`/`tbclos`), on representations
+  (`twrap`/`tseal`/`tunseal`), and on signatures (WfSig has NO bvar case;
+  `wfsig_no_hasbvar`): contexts, provider stores and sealing annotations are
+  bsubst-invariant. Sealing and ∀ therefore compose as seal-first, abstract-second —
+  the ∀ serves the CLIENT side, matching the motivating example.
+
+**The relational ∀-clause: instantiation closure.** The clause (Sealing.lean's `LRg`):
+related generic values are values, typed at the SYNTACTIC `∀β.A` (under the ambient
+view), and for EVERY concrete brand m the runs of `bapp · m` exist and are related at
+`bsubst 0 m A`. η is never extended and no freshness is demanded: at brand-m positions
+the relation is whatever η already says about m — exactly what representation
+independence needs, since the client instantiates at the provider's own allocated brand,
+where η relates the two representations. Two rejected designs, for the record:
+- *η-extension at a concrete brand* is unsound (a fresh-brand guard excludes
+  instantiation at allocated provider brands; an unguarded extension conflates β with
+  existing brands in the tblam intro case).
+- *δ-environments* (bvar-interpretation environments keeping the relation structural)
+  die on a fork: with typing conjuncts at δ-instantiated images, the fundamental at the
+  empty δ is false for degenerate bvar-annotated subjects (`lam (bvar 0) (bvar 0) e` is
+  well-typed but its closure is not typed at the image) unless a properly-bound
+  discipline (EBClosed) is threaded through the statement AND the tclos/tfclos
+  contravariant slacks; with syntactic typings, the δ-analog of the substitution lemma
+  is false, and a nonvacuous bvar interpretation demands runs of UNsubstituted bodies —
+  which are stuck (casts at bvar annotations are empty, `cast_bvar_empty`).
+The instantiation-closure clause keeps typings syntactic (degenerate subjects stay
+vacuously related through the False bvar clause — exactly as pre-∀) and runs only
+substituted bodies. Its one cost: `LRg` recurses at `bsubst 0 m A`, which is not a
+subterm — the definition descends on `tsize` (bsubst trades a bvar leaf for a brand
+leaf, so it is size-preserving) by well-founded recursion, and therefore no longer
+unfolds definitionally: clause construction/destruction goes through `simp only [LRg]`
+(and the `lr_and_intro` helper). What is NOT delivered: free theorems over arbitrary
+relations at β (relational parametricity proper). That needs the δ-environment
+machinery plus the EBClosed discipline — future work; RI of generic clients does not.
+
+**Fundamental over generics.** `Finitary` includes `blam`/`bclos`/`bapp` (sbappbeta
+rewrites only annotations — never duplicates subterms, so normalization is preserved).
+The lemma is proved by strong induction on `esize` (annotations excluded, so
+`esize_bsubstExp` is an equality): the tblam/tbclos cases recurse at the INSTANTIATED
+body — typed by `hastype_bsubst`, not a subderivation — because the unsubstituted body
+cannot run; the tbapp case instantiates the clause at its own brand and finishes by
+`mstep_bapp` composition. `generic_client_representation_independence`
+(Abstraction.lean) then runs the client to a generic value, instantiates the ∀-clause at
+the provider brand n (landing at `arr (bsubst 0 n Sig) Int` — the concrete-signature
+world), seals the providers through `coe_lr`, and reads off the equal literal.
+`Examples.lean` instantiates it: one `genClient`, two sealed providers over `Int` and
+`{v : Int}` at brand 0, same output.

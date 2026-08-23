@@ -523,6 +523,21 @@ example : ∃ w, Step .unit (.seal 0 .int (SigAt 0) impl₁) w :=
     (Value.vmrg (Value.vrcd (Value.vclos Value.vunit)) (Value.vrcd (Value.vclos Value.vunit)))
     (SealV.and (SealV.rcd SealV.arr) (SealV.rcd SealV.arr))⟩
 
+theorem genClient_finitary : Finitary genClient :=
+  Finitary.blam (Finitary.lam
+    (Finitary.app (Finitary.rproj (Finitary.proj Finitary.query))
+      (Finitary.app (Finitary.rproj (Finitary.proj Finitary.query)) Finitary.lit)))
+
+-- THE MILESTONE, concretely: the one generic client, instantiated at the provider brand
+-- and applied to either sealed provider — Int-as-β on the left, {v : Int}-as-β on the
+-- right, related through ηex — computes the SAME integer.  (This is RIExample's
+-- setup — stores store₁/store₂ both allocate brand 0 — consumed through the ∀-clause.)
+example : ∃ i,
+    MStep .unit (.app (.bapp genClient 0) (.seal 0 .int (SigAt 0) impl₁)) (.lit i)
+  ∧ MStep .unit (.app (.bapp genClient 0) (.seal 0 R₂ (SigAt 0) impl₂)) (.lit i) :=
+  generic_client_representation_independence (SigB := SigB) openbrand_ex wfsig_ex₁
+    wfsig_ex₂ impl_related genClient_typed genClient_finitary
+
 end GenericClientExample
 
 end BrandPolyExample

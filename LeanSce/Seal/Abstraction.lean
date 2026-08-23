@@ -541,4 +541,52 @@ theorem representation_independence {n : Nat} {R₁ R₂ : Typ}
     exact mstep_trans (mstep_boxr Value.vunit hvq₂ r₂)
       (mstep_one (Step.sboxv Value.vunit hvq₂ Value.vint))
 
+-- ── Generic-client representation independence ───────────────────────────────────────
+
+-- THE milestone-4 theorem.  A GENERIC client — typed ONCE at ∀β. Sig β → Int, with the
+-- signature abstract in the brand it will be instantiated at — observes the same integer
+-- against two sealed providers of that signature over different representations.  The
+-- client instantiates at the provider's own allocated brand n: the ∀-clause is
+-- instantiation-closed (no freshness guard), and η at n is exactly the relation between
+-- the two representations, so `bapp · n` lands the client in the concrete-signature
+-- world where `representation_independence` already lives.
+theorem generic_client_representation_independence {n : Nat} {R₁ R₂ : Typ}
+    (hb : OpenBrand Δ₁ Δ₂ η n R₁ R₂) {SigB : Typ}
+    (hwf₁ : WfSig n R₁ (bsubst 0 n SigB)) (hwf₂ : WfSig n R₂ (bsubst 0 n SigB))
+    {p₁ p₂ : Exp} (hrel : LRg Δ₁ Δ₂ η (some (n, R₁, R₂)) (bsubst 0 n SigB) p₁ p₂)
+    {ct : Exp} (hct : HasType noBrands .top ct (.allb (.arr SigB .int)))
+    (hfin : Finitary ct)
+    : ∃ i, MStep .unit (.app (.bapp ct n) (.seal n R₁ (bsubst 0 n SigB) p₁)) (.lit i)
+         ∧ MStep .unit (.app (.bapp ct n) (.seal n R₂ (bsubst 0 n SigB) p₂)) (.lit i) := by
+  -- the client runs to a related pair of generic values
+  obtain ⟨c₁, c₂, rc₁, rc₂, hc⟩ :=
+    fundamental (Δ₁ := Δ₁) (Δ₂ := Δ₂) (η := η) hct hfin lr_top_unit
+  simp only [LR, LRg] at hc
+  obtain ⟨hvc₁, hvc₂, _, _, hinst⟩ := hc
+  -- instantiate the ∀-clause at the provider brand
+  obtain ⟨f₁, f₂, rf₁, rf₂, hf⟩ := hinst n .unit .unit Value.vunit Value.vunit
+  simp only [bsubst, LRg] at hf
+  obtain ⟨hvf₁, hvf₂, _, _, CL⟩ := hf
+  -- seal the providers and carry their relation to the client-facing one
+  have hvp := lr_value hrel
+  have htp := lr_typed hrel
+  obtain ⟨q₁, hq₁⟩ := sealv_progress (n := n) (R := R₁) _ hvp.1 htp.1
+  obtain ⟨q₂, hq₂⟩ := sealv_progress (n := n) (R := R₂) _ hvp.2 htp.2
+  have hq := (coe_lr hb _ hwf₁ hwf₂).1 hrel hq₁ hq₂
+  -- apply the instantiated client to the sealed providers
+  obtain ⟨r₁, r₂, rr₁, rr₂, hr⟩ := CL q₁ q₂ hq .unit .unit Value.vunit Value.vunit
+  obtain ⟨i, e₁, e₂⟩ := hr
+  subst e₁; subst e₂
+  refine ⟨i, ?_, ?_⟩
+  · refine mstep_trans (mstep_appl Value.vunit
+      (mstep_trans (mstep_bapp Value.vunit rc₁) rf₁)) ?_
+    refine mstep_trans (mstep_appr Value.vunit hvf₁
+      (mstep_one (Step.ssealv Value.vunit hvp.1 hq₁))) ?_
+    exact rr₁
+  · refine mstep_trans (mstep_appl Value.vunit
+      (mstep_trans (mstep_bapp Value.vunit rc₂) rf₂)) ?_
+    refine mstep_trans (mstep_appr Value.vunit hvf₂
+      (mstep_one (Step.ssealv Value.vunit hvp.2 hq₂))) ?_
+    exact rr₂
+
 end Seal

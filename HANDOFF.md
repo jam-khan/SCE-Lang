@@ -1,4 +1,4 @@
-# HANDOFF: extensions + cleanup of LeanSce (updated 2026-08-23, session 3)
+# HANDOFF: extensions + cleanup of LeanSce (updated 2026-08-23, session 4)
 
 **Read this first in the next session.**  It is the complete working state of the
 "1 source + 1 target, sealing-based, with fix/unions/μ + brand polymorphism" effort.
@@ -10,9 +10,8 @@ polymorphism, motivating example).  This file is the execution log + precise nex
 clean/untouched until the user says otherwise.**
 
 Everything below is committed on `lambdae-sub` and green: `lake build` succeeds (62 jobs),
-**zero `sorry`, only standard axioms** (the flagship
-`Seal.source_representation_independence` still uses `propext` only; the ported
-determinism/preservation results use at most `propext, Quot.sound`; nothing uses
+**zero `sorry`, only standard axioms** (`propext, Quot.sound` — the WF-compiled LRg
+put Quot.sound into the relational layer's closure as of session 4; nothing uses
 `Classical.choice`).  Check via `lake env lean` on a scratch file importing `LeanSce`
 with `#print axioms …`.
 
@@ -22,18 +21,16 @@ target).  `LeanSce/Core` and the SCE→Core elaboration are DELETED (Phase 2e,
 commit `1a79fcd`); `grep -rn "Core\." LeanSce` and `grep -rn "elabExp" LeanSce`
 are empty.
 
-**▶ WHERE TO CONTINUE: Phase 3 milestones 1–3 (target-side ∀β with the FULL
-safety layer) are COMPLETE, including the two target-level examples
-(`BrandPolyExample`, `GenericClientExample`) — session 3, commits
-`49dbca0..d7a549f`; §3.6 has per-commit statuses, §3.9 the design corrections
-that supersede the §3.1–§3.5 sketches.  Milestone 4 (the relational ∀-clause)
-is DESIGNED (§3.7) and its infrastructure is landed (M4a `9892ce1`, M4b-prep
-`d7a549f`), but the LRg clause rewrite itself was attempted and ROLLED BACK on
-two open design problems (§3.7 ⚠ block: the demp-degeneracy problem and the
-tclos-slack leak).  FIRST ACTION NEXT SESSION = resolve that design choice
-(candidate fixes (i)/(ii)/(iii) in the ⚠ block; (i) is recommended), then
-resume the M4b–M4f commit order.  Alternative independent work: milestone 5
-(source-side generics, §3.7) or the §2 items.**
+**▶ WHERE TO CONTINUE: Phase 3 milestones 1–4 are COMPLETE.  Milestone 4 (the
+relational ∀-clause + `generic_client_representation_independence`) was
+finished in session 4 (commits `aba3726`, `0c3a508`, and the M4f′ docs commit)
+under a REDESIGN: the δ-environment plan of §3.7 was abandoned — both of its
+repairs fail or overreach (§3.10 has the full analysis) — in favor of an
+INSTANTIATION-CLOSURE ∀-clause with LRg well-founded on `tsize`.  DESIGN.md
+§(h) is the authoritative design record.  NEXT: milestone 5 (source-side
+generics, §3.7 tail) or the §2 items.  Note the new gotchas in §4 (WF-compiled
+LRg does not unfold definitionally — every clause use goes through
+`simp only [LRg]`).**
 
 ---
 
@@ -87,37 +84,45 @@ Commits `49dbca0..b36e51f`: hardened+split runtime merge rules
 sealing discipline, `Seal/BrandSubst.lean` (the full instantiation suite,
 keystone `hastype_bsubst`), progress/preservation/determinism for
 blam/bclos/bapp, LR fences, and two target-level examples.  Details, design
-corrections, and premise orders: §3 (esp. §3.6 statuses and §3.9).  Milestone
-4 in progress (blocked on a design choice, §3.7 ⚠); milestone 5 not started.
+corrections, and premise orders: §3 (esp. §3.6 statuses and §3.9).
+
+### Phase 3 milestone 4 — the relational ∀-clause + generic-client RI ✅ (session 4)
+Commits `aba3726` (M4b′: instantiation-closure ∀-clause, LRg well-founded on
+tsize, δ-env layer removed), `0c3a508` (M4e′: Finitary+blam/bclos/bapp, esize
+fuel induction for the fundamental, the three generic cases), M4f′ (this
+commit: `generic_client_representation_independence` + the concrete
+one-client/two-providers example + DESIGN.md §(h)).  §3.10 records the
+session-4 design pivot; DESIGN.md §(h) is the full design text.  M4c/M4d of
+the old plan are OBSOLETE.  Milestone 5 (source-side generics) not started.
 
 ---
 
 ## 2. Other open items (not the next step)
 
-- Phase 3 milestone 4 (blocked on the §3.7 ⚠ design choice) and milestone 5
-  (source-side generics; independent of milestone 4).
+- Phase 3 milestone 5 (source-side generics; §3.7 tail).
 - μ/fix examples in `Seal/Examples.lean` (sealed-interface factorial via flam;
   a tagged-union run; a μ-stream).  The target-level generic examples are DONE
-  (`BrandPolyExample`, `GenericClientExample`); the SOURCE-level ∀-functor
-  example belongs to milestone 5.
-- `DESIGN.md` §(h): document the §3.2/§3.3/§3.9 decisions (conservative COST,
-  tmergevc, the three fences: ¬AllbIn on μ, BClosed 1 on tbapp, ¬HasBVar on
-  contexts/representations).
+  (`BrandPolyExample`, `GenericClientExample`, incl. the relational run); the
+  SOURCE-level ∀-functor example belongs to milestone 5.
 - `doc/system.tex` stale w.r.t. Phases 1–3 (update or flag).
 - Step-indexed LR to lift the Finitary/SFinitary fence (future work).
 - Liftable fences (future work): ∀ inside μ-bodies (needs a bvar-shifting
-  substTyp); nested/multi-binder generics (needs shifting in bsubstExp/beta).
+  substTyp); nested/multi-binder generics (needs shifting in bsubstExp/beta);
+  relational parametricity proper (free theorems over arbitrary relations at β
+  — needs the δ-environment machinery PLUS an EBClosed properly-bound
+  discipline, see §3.10; RI of generic clients did NOT need it).
 - `origin` has NOT been pushed by any session; push only when the user says so.
 
 ---
 
-## 3. Phase 3 — brand polymorphism.  Milestones 1–3 ✅ DONE (session 3)
+## 3. Phase 3 — brand polymorphism.  Milestones 1–4 ✅ DONE (sessions 3–4)
 
 Milestones 1–3 — **target-side ∀β with the full safety layer** (syntax →
 subtyping → COST → casting → typing → small-step → CastingLemmas →
-determinism/progress/preservation), relational layer fenced — are implemented
-and green.  Milestone 4 (relational) is in progress, milestone 5 (source-side
-generics) not started: see §3.7.
+determinism/progress/preservation) — and milestone 4 — **the relational
+∀-clause + generic-client RI** (session 4, REDESIGNED: §3.10, DESIGN.md §(h))
+— are implemented and green.  Milestone 5 (source-side generics) not started:
+see §3.7 tail.
 
 **⚠ §3.1–§3.5 below are the session-2 DESIGN notes, kept for rationale.  They
 were implemented WITH CORRECTIONS: wherever they conflict with §3.9 (or with
@@ -420,96 +425,22 @@ Typ pull the Sub/Cost leaves in immediately), D-prep (`d94e193`), E
 
 ### 3.7 Deferred (after the safety layer)
 
-- **Milestone 4 (relational) — DESIGN FIXED (session 3), bvar-interpretation
-  environments** (an η-extension-at-a-concrete-brand formulation is UNSOUND: a
-  fresh-brand guard excludes instantiation at allocated provider brands, and an
-  unguarded ∀ conflates β with existing brands in the tblam intro case).  Keep
-  LRg STRUCTURAL by adding `δ : Nat → Nat × (Exp → Exp → Prop)` (de Bruijn env,
-  index 0 = nearest allb binder; single brand per binder — n₁ = n₂ suffices for
-  RI of generic clients; two-brand generalization later):
-  - `bsubstEnv (σ : Nat → Nat) (d : Nat) : Typ → Typ` — simultaneous
-    bvar→brand: `.bvar i ↦ if i < d then .bvar i else .brand (σ (i − d))`,
-    d+1 under allb.  Lemmas: `bsubstEnv_notin`; agreement with `bsubst` on
-    BClosed types (`BClosed 1 A → bsubstEnv (cons m σ) 0 A = bsubst 0 m A`,
-    `BClosed 0 A → bsubstEnv σ d A = A`).
-  - LRg clauses: every typing conjunct becomes `viewL/R o (bsubstEnv (σ of δ) 0 T)`
-    (values under binders are typed at CONCRETE brands, one per side is wrong —
-    same brand both sides).  New `.bvar i` clause: `Value v₁ ∧ Value v₂ ∧
-    typings at (viewL/R o (.brand (δ i).1)) ∧ (δ i).2 v₁ v₂`.  New `.allb A`
-    clause (mirror the arrow clause's extensional shape): values ∧ typings at
-    the bsubstEnv-image ∧ `∀ m rel, RelAdm o m rel → ∀ ρ₁ ρ₂ values, ∃ w₁ w₂,
-    MStep runs of (.bapp vᵢ m) ∧ LRg (cons (m,rel) δ) A w₁ w₂`.
-  - `RelAdm o m rel` := cast-closure of rel at `viewL/R o (.brand m)` (the
-    OpenAdm pattern); `DeltaAdm o δ` := RelAdm for every entry — threaded as a
-    LEMMA hypothesis (like hadm : OpenAdm) through cast_lr/coe_lr, trivially
-    satisfied by the empty δ.  Cast at `.bvar` is UNINHABITED
-    (`cast_bvar_empty`); cast at a brand on brand-typed values is the identity
-    (`cast_brand_id`, mirror cast_mu_id) — the o = none sbvar case of cast_lr;
-    the o = some sbvar case uses DeltaAdm.
-  - `LR := LRg δ∅` with `δ∅ := fun _ => (0, fun _ _ => False)`; δ-irrelevance
-    on bvar-free types (`lrg_delta_irrel`) keeps every existing statement.
-  - THE key lemma (`lrg_bsubst`, compositionality / the relational substitution
-    lemma; generalize over insertion depth like hastype_bsubst):
-    `BClosed 1 A → (LRg (cons (m, brandRel m) δ∅) A v₁ v₂ ↔
-    LRg δ∅ (bsubst 0 m A) v₁ v₂)` where `brandRel m := LRg δ∅ (.brand m)`.
-    This is what connects tbapp's conclusion type to the ∀-clause.  Budget it
-    like cost_bsubst_inv.
-  - Fundamental: add blam/bclos/bapp to `Finitary` (sbappbeta never duplicates
-    subterms → SN preserved); tbapp picks `rel := brandRel n` (RelAdm via
-    cast_brand_id / OpenAdm) and finishes by lrg_bsubst.  **The tblam case
-    CANNOT use the structural IH**: the ∀-clause runs `.bapp v m`, whose beta
-    yields the SUBSTITUTED body `bsubstExp 0 m body` — and the UNsubstituted
-    body cannot even run (bvar annotations make every cast stuck, by
-    cast_bvar_empty), so relating its runs is the wrong statement.  The case
-    must recurse on `hastype_bsubst hb` — non-structural.  FIX: `bsubstExp`
-    preserves expression size (it rewrites only annotations), so restructure
-    `fundamental` to STRONG INDUCTION ON EXPRESSION SIZE (define `esize`,
-    prove `esize_bsubstExp : esize (bsubstExp d n e) = esize e`), with inner
-    case analysis on the typing derivation.  Then `generic_client_representation_independence`.
-  - Commit order: M4a ✅ (`9892ce1`) infrastructure (cast_bvar_empty,
-    cast_brand_id, bsubstEnv + bvInsert + bsubstEnv_notin + bclosed_bsubstEnv +
-    bsubstEnv_insert) → M4b-prep ✅ (`d7a549f`: sub_bsubstEnv + the δ-env
-    definitions, LRg untouched) → M4b LRg refactor + call-site repair (BLOCKED,
-    see ⚠) → M4c cast_lr/coe_lr with DeltaAdm → M4d lrg_bsubst → M4e Finitary +
-    fundamental (size induction) → M4f RI corollary + example + docs.  Green
-    after each.
-  - **⚠ ▶ FIRST ACTION NEXT SESSION.  M4b ATTEMPTED AND ROLLED BACK
-    (session 3): two open design problems to resolve BEFORE writing code.**
-    M4a landed (`9892ce1`), plus sub_bsubstEnv (BrandSubst) and the δ-env
-    definitions DEnv/dbrands/demp/RelAdm/DeltaAdm/deltaAdm_demp/deltaAdm_insert
-    (Sealing, defined but NOT yet consumed by LRg).  The LRg-with-δ clause
-    rewrite itself was attempted and reverted because:
-    (1) **The demp-degeneracy problem.**  With typing conjuncts at
-    δ-instantiated images `viewL o (bsubstEnv (dbrands δ) 0 T)`, the
-    fundamental at δ = demp becomes FALSE for degenerate bvar-annotated
-    programs: `lam (bvar 0) (bvar 0) (proj query 0)` is closed, Finitary, and
-    typed at `arr (bvar 0) (bvar 0)` — but its closure value is NOT typed at
-    the image `arr (brand 0) (brand 0)` the new arrow clause demands.  (The
-    OLD clauses were satisfiable there because typings were at the syntactic
-    type; relatedness held vacuously via the False bvar clause.)  Candidate
-    fix: thread a properly-bound invariant — `EBClosed c e` (annotation
-    bvar-indices properly bound, c+1 under blam/bclos) with `BClosed 0 Γ` —
-    and derive `BClosed 0 A` for every type in the derivation, so the images
-    rewrite away by bclosed_bsubstEnv.  BUT:
-    (2) **The slack leak.**  `hastype_bclosed` is FALSE as stated: tclos's
-    subtyping slack `Sub C A` can introduce unbound bvars into derivation
-    types via contravariant domains — `Sub (arr .top .int) (arr (bvar 99)
-    .int)` holds (stop + refl), so a closure typed at `arr .top .int`
-    re-types at `arr (bvar 99) .int`.  Same for tfclos's three slacks and
-    tanno-with-slack chains through casts.  Candidate fixes to evaluate NEXT
-    SESSION, in order of appeal: (i) strengthen tclos/tfclos/tanno slacks
-    with BClosed-preservation side conditions (sub_bclosed holds in the
-    covariant direction; only the contravariant slack leaks — a
-    `BClosed c C` premise on tclos/tfclos mirrors the BClosed 1 premise on
-    tbapp and is bsubst-stable); (ii) restrict the fundamental's STATEMENT to
-    EBClosed subjects and prove clause-typings only up to the leaky slack by
-    re-deriving them from value_weaken + the subject's own annotations rather
-    than from the derivation's types; (iii) drop typing conjuncts from LRg
-    clauses entirely and re-engineer lr_typed as an external invariant
-    (biggest surgery, cleanest theory).  Also note for M4b proper: lr_typed's
-    statement becomes typings at the bsubstEnv-image; leaf arms need
-    `simp only [bsubstEnv]` before the viewL_* rewrites; the or-clause value
-    annotations also take images.
+- **Milestone 4 (relational) — DONE (session 4), REDESIGNED.**  The session-3
+  δ-environment design recorded here was abandoned; §3.10 has the failure
+  analysis and DESIGN.md §(h) the design that shipped: LRg's ∀-clause is
+  INSTANTIATION CLOSURE (values ∧ typings at the SYNTACTIC `∀β.A` ∧ for every
+  concrete brand m, runs of `bapp · m` exist and are related at
+  `bsubst 0 m A`), LRg recurses on `tsize` by well-founded recursion
+  (tsize_bsubst: bsubst is size-preserving), the fundamental is strong
+  induction on `esize` (`fundamental_size` + the public `fundamental`
+  wrapper, statement unchanged), Finitary includes blam/bclos/bapp, and
+  `generic_client_representation_independence` (Abstraction.lean) is the
+  milestone theorem, instantiated concretely in Examples.lean
+  (GenericClientExample: one genClient, providers over Int and {v : Int} at
+  brand 0, same output).  The M4a/M4b-prep infrastructure that only served
+  the δ-design (bsubstEnv, bvInsert, DEnv/RelAdm/DeltaAdm, sub_bsubstEnv,
+  bclosed_bsubstEnv, bsubstEnv_insert) was REMOVED (git has it at
+  `9892ce1`/`d7a549f`); cast_brand_id/cast_bvar_empty/cast_allb_id stayed.
 - **Milestone 5 (source)**: source `∀`-functors (`mfunctor` binding a brand or a
   separate `bfunctor`), `elabSeal` + Correctness cases, `mlinkn`-time
   instantiation; then the sepcomp obligations (plan §3(C) items 1–4:
@@ -557,9 +488,26 @@ Typ pull the Sub/Cost leaves in immediately), D-prep (`d94e193`), E
 - WfSig NOW: int/top/brand/arr/rcd(l ≠ reservedLabel)/and(+ both-view Disj)/or/
   mu(¬BrandIn + NoRes + ¬HasBVar)/allb(¬BrandIn + NoRes + ¬HasBVar) — NO var
   case and NO bvar case (signatures are bvar-free; wfsig_no_hasbvar).
-- Sizes NOW: CastingLemmas 1522, Sealing 1469, Correctness 1646,
-  Preservation 490, Progress 427, Determinism 213, BrandSubst 946 (new),
-  Examples 525.
+- **LRg is WF-compiled** (recursion on tsize through the ∀-clause's
+  `bsubst 0 m A`): it does NOT unfold definitionally.  Construct/destruct
+  clauses via `simp only [LRg]` (concrete type-constructor head required —
+  `simp only [bsubst]` first when the type argument is `bsubst`-headed), via
+  `lr_and_intro` for intersections, or wholesale-transfer via
+  lr_value/lr_typed + cast_mu_id/cast_allb_id (the cast_lr smu/sallb pattern).
+  viewL_none/viewR_none/viewL_some/viewR_some are the option-level rfl
+  equations (needed because `▸`/rw need syntactic substBrand, which
+  `simp only [LRg]`'s viewL-forms are not).
+- `lrg_notin_iff` (Abstraction.lean): ¬BrandIn n T → ¬HasBVar T → open and
+  client relations coincide at T — coe_lr's ∀-arm consumer.
+- Fundamental: `fundamental_size` (fuel = esize) + `fundamental` wrapper; the
+  structural arms get IHs as `have ih := ihk (by simp only [esize] at hk;
+  omega) h`; tblam/tbclos recurse at `hastype_bsubst hb` after
+  `rw [bsubst_notin hnb]` on the context; tbapp consumes the ∀-clause at its
+  own brand (name the brand via the `@tbapp` alternative — 5 implicits, Δ is
+  an inductive PARAMETER).
+- Sizes NOW: CastingLemmas 1522, Sealing 1668, Correctness 1646,
+  Preservation 490, Progress 427, Determinism 213, BrandSubst 839,
+  Examples 545, Abstraction 592, Syntax 482.
 
 ### 3.9 Session-3 design corrections (all implemented; trust these over §3.1–§3.5)
 
@@ -600,14 +548,54 @@ Typ pull the Sub/Cost leaves in immediately), D-prep (`d94e193`), E
    cost_bsubst_inv → disj_bsubst, sub/lookup/rlookup/toplike/ordinary/nores
    _bsubst, bsubstExp_value, bsubstExp_genVal, cast_bsubst,
    hasbvar_substBrand, allbin_bsubst_inv, bsubst_substTyp_comm,
-   bclosed_bsubst(_lower), hastype_bsubst; plus the M4a/M4b-prep layer:
-   bvInsert, bsubstEnv_notin, bclosed_bsubstEnv, bsubstEnv_insert,
-   sub_bsubstEnv.  CastingLemmas: cast_allb_cost.  Sealing: cast_allb_id,
-   cast_brand_id, cast_bvar_empty, viewL/R_allb, and the (not-yet-consumed)
-   δ-env layer DEnv/dbrands/demp/RelAdm/DeltaAdm/deltaAdm_demp/deltaAdm_insert.
-   Examples: BrandPolyExample (genId, genId_inst, genId_run) and
-   GenericClientExample (SigB/SigAt, genClient, providers at brands 0/1,
-   client₀/client₁_typed).
+   bclosed_bsubst(_lower), hastype_bsubst.  (The session-3 M4a/M4b-prep
+   δ-environment layer was REMOVED in session 4 — see §3.10.)
+   CastingLemmas: cast_allb_cost.  Sealing: cast_allb_id, cast_brand_id,
+   cast_bvar_empty, viewL/R_allb, viewL/R_none/_some, tsize-recursive LRg,
+   lr_and_intro, mstep_bapp, Finitary.blam/bclos/bapp (+ inversions),
+   finitary_bsubstExp, fundamental_size.  Syntax: tsize, tsize_bsubst, esize,
+   esize_pos, esize_bsubstExp.  Abstraction: lrg_notin_iff,
+   generic_client_representation_independence.  Examples: BrandPolyExample
+   (genId, genId_inst, genId_run) and GenericClientExample (SigB/SigAt,
+   genClient, providers at brands 0/1, client₀/client₁_typed,
+   genClient_finitary + the relational two-providers run).
+
+### 3.10 Session-4 design pivot (milestone 4; trust this over §3.7's sketch)
+
+The §3.7 δ-environment plan was evaluated against its two ⚠ blockers and
+abandoned; DESIGN.md §(h) has the full record.  Summary of the analysis:
+
+1. **Fix (i) (BClosed side conditions on the tclos/tfclos slacks) fails on
+   compositionality**: preservation's slam case re-types a top-level
+   `lam (bvar k) …` via tclos with C = the lam annotation, and
+   cast_preservation re-types at ARBITRARY cast targets — so the premise
+   cascades into tlam/tanno/tcase/… plus a hypothesis on cast_preservation:
+   an EBClosed-in-typing discipline across every rule and all inversion
+   sites.  (Also, its cutoff is not expressible in the ungraded HasType.)
+2. **Every δ-environment variant needs the full fix-(ii) apparatus**: with
+   image-typings the fundamental at demp is false for degenerate
+   bvar-annotated subjects unless an EBClosed discipline excludes them; with
+   syntactic typings the δ-analog of lrg_bsubst is false, and a nonvacuous
+   bvar interpretation demands runs of UNsubstituted bodies — stuck by
+   cast_bvar_empty.  (That stuckness is the root cause, and it is why the
+   ∀-clause must run SUBSTITUTED bodies.)
+3. **The shipped design — instantiation closure** — keeps typings at
+   syntactic types (degenerate subjects stay vacuously related through the
+   False bvar clause, exactly as pre-∀) and quantifies runs of `bapp · m`
+   at `bsubst 0 m A` over every concrete m, with η untouched.  It yields RI
+   of generic clients (the client instantiates at the provider's own brand,
+   where η relates the representations) but NOT free theorems over arbitrary
+   relations at β — that generalization needs δ-envs + EBClosed and is
+   future work.
+4. **Cost paid**: LRg is now well-founded on tsize → no definitional
+   unfolding → ~40 call sites across Sealing/Abstraction/Correctness/Examples
+   gained `simp only [LRg]` unfolds (or lr_and_intro); the relational layer's
+   axiom closure gained Quot.sound (WF machinery) — still no
+   Classical.choice anywhere.
+5. **Fundamental restructure**: `fundamental_size` (strong induction on
+   esize, fuel-style: `induction k` + `cases ht`) with the public
+   `fundamental` as a wrapper — statement UNCHANGED, so all downstream
+   consumers (normalization/sealing/RI, Correctness.lean) were untouched.
 
 ---
 
@@ -669,13 +657,37 @@ Typ pull the Sub/Cost leaves in immediately), D-prep (`d94e193`), E
 - Batch-editing scripts: `str.replace` on a 4-space-indented pattern also
   matches INSIDE a 6-space-indented line (substring!) — anchor patterns with
   leading newline or full-line content.
+- **WF-compiled defs (LRg) do not unfold definitionally**: anonymous
+  constructors `⟨…⟩`, `obtain`/`rcases`/`cases` against a clause, and
+  `exact`-by-defeq all FAIL.  Unfold first with `simp only [LRg]` (at ⊢ / at
+  h); the type argument must be CONSTRUCTOR-HEADED for the equations to fire
+  (`simp only [bsubst]` first when it is `bsubst 0 n (.arr …)`-shaped; a
+  `show`/def-unfold first when it is a plain def like `Sig`).  simp also
+  True-ifies refl equalities inside unfolded clauses (`v = v` → `True`), so
+  a former `rfl` component may need `trivial`, and a `simp [LRg]` can close
+  `.top`-clause goals outright.
+- The unifier will NOT invert `bsubst`: applying a lemma quantified over the
+  ∀-body `SigB` against a concrete instantiated type needs `(SigB := …)`
+  explicitly.
+- `seal`, `unseal`, and `case` are KEYWORDS: as induction/cases alternative
+  names write `| «seal» …`, `| «unseal» …`, `| «case» …`.
+- HasType's Δ is auto-promoted to an inductive PARAMETER (it never varies in
+  premises): `@`-alternatives under `cases` take 5 implicits {Γ A T e n} + the
+  premises, NOT 6.
+- Fuel-induction IH pattern (fundamental_size): `have ih := ihk (by simp only
+  [esize] at hk; omega) h` — the tactic block runs on a COPY of hk, and the
+  metavariable for the subject resolves from `h` before the tactic runs.
 - Build: `lake build` ≈ 62 jobs; single module `lake build LeanSce.SCE.Foo`;
   errors: `lake build 2>&1 | grep -E "^error" -A 6`.
 
 ## 5. Commit log (newest first; sessions 3 / 2 separated by lines)
 
 ```
-d7a549f Seal: M4b-prep — δ-env definitions + sub_bsubstEnv; LRg refactor ROLLED BACK (see §3.7 ⚠)
+(this)  Seal: generic-client representation independence + example + docs — milestone 4 complete (M4f′, session 4)
+0c3a508 Seal: fundamental over generics — esize fuel induction + blam/bclos/bapp (M4e′)
+aba3726 Seal: M4 redesign — instantiation-closure ∀-clause; δ-env layer removed (M4b′)
+────────
+d7a549f Seal: M4b-prep — δ-env definitions + sub_bsubstEnv; LRg refactor ROLLED BACK (superseded by the session-4 redesign, §3.10)
 b69909e HANDOFF: M4e correction — fundamental's tblam case needs size induction
 9892ce1 Seal: M4a infrastructure — bsubstEnv, bvInsert, cast_brand_id, cast_bvar_empty
 d477ac9 HANDOFF: milestone 4 design fixed — bvar-interpretation environments
