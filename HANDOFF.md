@@ -104,7 +104,11 @@ the old plan are OBSOLETE.  Milestone 5 (source-side generics) not started.
   a tagged-union run; a μ-stream).  The target-level generic examples are DONE
   (`BrandPolyExample`, `GenericClientExample`, incl. the relational run); the
   SOURCE-level ∀-functor example belongs to milestone 5.
-- `doc/system.tex` stale w.r.t. Phases 1–3 (update or flag).
+- `doc/system.tex`/`system.pdf` DE-STALED for Phases 1–3 (session 4, commit
+  `3d9c07e`): full rule sets incl. the ∀β layer, corrected Finitary-carrying
+  theorem statements, the generic-client RI, and an "Ongoing work" section
+  with the milestone-5 theorems typeset in red.  Re-stale it consciously when
+  milestone 5 lands (the planned theorems go black then).
 - Step-indexed LR to lift the Finitary/SFinitary fence (future work).
 - Liftable fences (future work): ∀ inside μ-bodies (needs a bvar-shifting
   substTyp); nested/multi-binder generics (needs shifting in bsubstExp/beta);
