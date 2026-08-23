@@ -420,6 +420,106 @@ theorem genId_run (m : Nat) : MStep .unit (.bapp genId m)
         (MStep.step (Step.sboxv Value.vunit Value.vunit (Value.vclos Value.vunit))
           MStep.refl)))
 
+-- ── ONE generic client, TWO sealed providers (the motivating example's target half) ──
+--
+-- The β-generic signature Sig β = {mk : Int → β} & {get : β → Int}.  A single
+-- polymorphic client Λβ. λ(s : Sig β). s.get (s.mk 5) types once at ∀β. Sig β → Int and
+-- serves every sealed provider: brand 0 represents β as Int (RIExample's impl₁), brand 1
+-- as {v : Int} (impl₂).  Instantiation is pure type-level bookkeeping — bsubst pushes the
+-- concrete brand into the annotations (bsubst_SigB is rfl), and the ∀-body is BClosed, so
+-- the shift-free beta applies.
+namespace GenericClientExample
+
+def SigB : Typ :=
+  .and (.rcd "mk" (.arr .int (.bvar 0))) (.rcd "get" (.arr (.bvar 0) .int))
+
+def SigAt (m : Nat) : Typ :=
+  .and (.rcd "mk" (.arr .int (.brand m))) (.rcd "get" (.arr (.brand m) .int))
+
+theorem bsubst_SigB (m : Nat) : bsubst 0 m (.arr SigB .int) = .arr (SigAt m) .int := rfl
+
+theorem bclosed_SigB : BClosed 1 (.arr SigB .int) :=
+  BClosed.arr
+    (BClosed.and (BClosed.rcd (BClosed.arr BClosed.int (BClosed.bvar Nat.zero_lt_one)))
+      (BClosed.rcd (BClosed.arr (BClosed.bvar Nat.zero_lt_one) BClosed.int)))
+    BClosed.int
+
+def genClient : Exp := .blam (.arr SigB .int)
+  (.lam SigB .int
+    (.app (.rproj (.proj .query 0) "get") (.app (.rproj (.proj .query 0) "mk") (.lit 5))))
+
+theorem genClient_typed {Δ : BrandStore}
+    : HasType Δ .top genClient (.allb (.arr SigB .int)) :=
+  HasType.tblam (fun h => nomatch h)
+    (HasType.tlam disj_top
+      (HasType.tapp
+        (HasType.trproj (HasType.tproj HasType.tquery Lookup.zero)
+          (RLookup.landr RLookup.zero (lin_rcd_ne (by decide))))
+        (HasType.tapp
+          (HasType.trproj (HasType.tproj HasType.tquery Lookup.zero)
+            (RLookup.landl RLookup.zero (lin_rcd_ne (by decide))))
+          HasType.tint)))
+
+-- One store, two abstract types: brand 0 ≈ Int, brand 1 ≈ {v : Int}.
+def store01 : BrandStore :=
+  fun n => if n = 0 then some .int else if n = 1 then some R₂ else none
+
+theorem wfsig_at₀ : WfSig 0 .int (SigAt 0) :=
+  WfSig.and (WfSig.rcd (by decide) (WfSig.arr WfSig.int WfSig.brand))
+    (WfSig.rcd (by decide) (WfSig.arr WfSig.brand WfSig.int))
+    (disj_rcd_ne (by decide)) (disj_rcd_ne (by decide))
+
+theorem wfsig_at₁ : WfSig 1 R₂ (SigAt 1) :=
+  WfSig.and (WfSig.rcd (by decide) (WfSig.arr WfSig.int WfSig.brand))
+    (WfSig.rcd (by decide) (WfSig.arr WfSig.brand WfSig.int))
+    (disj_rcd_ne (by decide)) (disj_rcd_ne (by decide))
+
+theorem idClos_typed {Δ : BrandStore} {Γ : Typ} : HasType Δ Γ idClos (.arr .int .int) :=
+  HasType.tclos Value.vunit HasType.tunit disj_top
+    (HasType.tproj HasType.tquery Lookup.zero) (sub_refl _) (sub_refl _)
+
+theorem boxClos_typed {Δ : BrandStore} {Γ : Typ} : HasType Δ Γ boxClos (.arr .int R₂) :=
+  HasType.tclos Value.vunit HasType.tunit disj_top
+    (HasType.trcd (HasType.tproj HasType.tquery Lookup.zero)) (sub_refl _) (sub_refl _)
+
+theorem unboxClos_typed {Δ : BrandStore} {Γ : Typ} : HasType Δ Γ unboxClos (.arr R₂ .int) :=
+  HasType.tclos Value.vunit HasType.tunit disj_top
+    (HasType.trproj (HasType.tproj HasType.tquery Lookup.zero) RLookup.zero)
+    (sub_refl _) (sub_refl _)
+
+-- The two sealed providers, each typed at ITS brand's view of the generic signature.
+theorem provider₀_typed
+    : HasType store01 .top (.seal 0 .int (SigAt 0) impl₁) (SigAt 0) :=
+  HasType.tseal rfl NoRes.int (fun h => nomatch h) wfsig_at₀
+    (HasType.tmrg (HasType.trcd idClos_typed) (HasType.trcd idClos_typed)
+      disj_top_r (disj_rcd_ne (by decide)))
+
+theorem provider₁_typed
+    : HasType store01 .top (.seal 1 R₂ (SigAt 1) impl₂) (SigAt 1) :=
+  HasType.tseal rfl (NoRes.rcd (by decide) NoRes.int)
+    (fun h => by cases h with | rcd h' => nomatch h') wfsig_at₁
+    (HasType.tmrg (HasType.trcd boxClos_typed) (HasType.trcd unboxClos_typed)
+      disj_top_r (disj_rcd_ne (by decide)))
+
+-- The payoff: the SAME generic client, instantiated at each provider's brand, applied to
+-- that provider — both well-typed at Int against the same one store.
+theorem client₀_typed : HasType store01 .top
+    (.app (.bapp genClient 0) (.seal 0 .int (SigAt 0) impl₁)) .int :=
+  HasType.tapp (HasType.tbapp genClient_typed bclosed_SigB rfl) provider₀_typed
+
+theorem client₁_typed : HasType store01 .top
+    (.app (.bapp genClient 1) (.seal 1 R₂ (SigAt 1) impl₂)) .int :=
+  HasType.tapp (HasType.tbapp genClient_typed bclosed_SigB rfl) provider₁_typed
+
+-- ... and the sealing coercion actually fires: impl₁ seals in one step (the arrow
+-- components become the unseal∘f∘seal proxy closures).
+example : ∃ w, Step .unit (.seal 0 .int (SigAt 0) impl₁) w :=
+  ⟨_, Step.ssealv Value.vunit
+    (Value.vmrg (Value.vrcd (Value.vclos Value.vunit)) (Value.vrcd (Value.vclos Value.vunit)))
+    (SealV.and (SealV.rcd SealV.arr) (SealV.rcd SealV.arr))⟩
+
+end GenericClientExample
+
 end BrandPolyExample
 
 end Seal
