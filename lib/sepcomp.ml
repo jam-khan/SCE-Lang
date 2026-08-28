@@ -79,12 +79,41 @@ let print_typ (t : S.typ) : string =
   in
   pt [] 0 t
 
+(* ---------------- .scei aliases ----------------
+
+   An interface is aliases + a type, resolved before it meets the importing
+   file's scope, so its aliases are substituted away at the named level: what
+   `import` splices into the unit is a self-contained surface type. A mu of the
+   same name shadows an alias inside its body. *)
+
+let rec subst_tname (name : string) (body : Ast.typ) (t : Ast.typ) : Ast.typ =
+  let nd it : Ast.typ = { it; loc = t.loc } in
+  let s = subst_tname name body in
+  match t.it with
+  | Ast.TVar a -> if String.equal a name then body else t
+  | Ast.TInt | Ast.TBool | Ast.TString | Ast.TTop -> t
+  | Ast.TArr (a, b) -> nd (Ast.TArr (s a, s b))
+  | Ast.TAnd (a, b) -> nd (Ast.TAnd (s a, s b))
+  | Ast.TOr (a, b) -> nd (Ast.TOr (s a, s b))
+  | Ast.TSig (a, b) -> nd (Ast.TSig (s a, s b))
+  | Ast.TRcd fs -> nd (Ast.TRcd (List.map (fun (l, ft) -> (l, s ft)) fs))
+  | Ast.TMu (b, t') ->
+    if String.equal b.Ast.bd_name name then t else nd (Ast.TMu (b, s t'))
+
+let expand_aliases (i : Ast.intf) : Ast.typ =
+  let subst t (n, body) = subst_tname n body t in
+  (* each body is expanded against the earlier ones, so one pass suffices *)
+  List.fold_left subst i.Ast.i_typ
+    (List.fold_left
+       (fun acc ((b : Ast.binder), tb) ->
+         acc @ [ (b.Ast.bd_name, List.fold_left subst tb acc) ])
+       [] i.Ast.i_aliases)
+
 (* Parse a type in surface syntax back to S.typ (aliases allowed first). *)
 let parse_typ_exn ~what (src : string) : S.typ =
   match Driver.parse_intf src with
   | Error e -> err "%s:%d:%d: %s" what e.line e.col e.message
-  | Ok intf ->
-    Sugar.conv_intf intf
+  | Ok intf -> Sugar.conv_typ_closed (expand_aliases intf)
 
 (* Effects enter through a unit like any other dependency. `sys` is a
    host-implemented leaf provider, built next to the dispatcher below; its
@@ -125,7 +154,7 @@ let import_typ ~dir (b : Ast.binder) (src : Ast.import_source) : Ast.typ =
     in
     match Driver.parse_intf content with
     | Error e -> err "%s:%d:%d: %s" path e.line e.col e.message
-    | Ok intf -> Sugar.expand_aliases intf.i_aliases intf.i_typ
+    | Ok intf -> expand_aliases intf
   in
   match src with
   | Ast.IAuto -> from_file b.bd_name

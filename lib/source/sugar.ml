@@ -115,32 +115,8 @@ let rec conv_typ env (t : typ) : S.typ =
       | Some rt -> rt
       | None -> err t.loc "unbound type name '%s'" a))
 
-(* A .scei is aliases + a type, resolved before it meets the importing file's
-   scope, so its aliases are substituted away here. A mu of the same name
-   shadows an alias inside its body. *)
-let rec subst_tname (name : string) (body : typ) (t : typ) : typ =
-  let nd it = { it; loc = t.loc } in
-  let s = subst_tname name body in
-  match t.it with
-  | TVar a -> if String.equal a name then body else t
-  | TInt | TBool | TString | TTop -> t
-  | TArr (a, b) -> nd (TArr (s a, s b))
-  | TAnd (a, b) -> nd (TAnd (s a, s b))
-  | TOr (a, b) -> nd (TOr (s a, s b))
-  | TSig (a, b) -> nd (TSig (s a, s b))
-  | TRcd fs -> nd (TRcd (List.map (fun (l, ft) -> (l, s ft)) fs))
-  | TMu (b, t') -> if String.equal b.bd_name name then t else nd (TMu (b, s t'))
-
-let expand_aliases (aliases : (binder * typ) list) (t : typ) : typ =
-  let subst t (n, body) = subst_tname n body t in
-  (* each body is expanded against the earlier ones, so one pass suffices *)
-  List.fold_left subst t
-    (List.fold_left
-       (fun acc (b, tb) -> acc @ [ (b.bd_name, List.fold_left subst tb acc) ])
-       [] aliases)
-
-(* A parsed .scei, as one λSCE type. *)
-let conv_intf (i : intf) : S.typ = conv_typ empty_env (expand_aliases i.i_aliases i.i_typ)
+(* A type with nothing in scope: a .scei interface, aliases already expanded. *)
+let conv_typ_closed (t : typ) : S.typ = conv_typ empty_env t
 
 (* ---------------- leaves ---------------- *)
 
