@@ -130,8 +130,89 @@ let rec desugar env (e : (path, int) exp) : S.typ * S.exp =
     | S.TMu body -> (E.unfold_mu body, S.Unfold c)
     | _ -> 
       err e1.loc "`unfold` expects a recursive type, got %s" (P.typ_to_string t))
-  
-  | _ -> (TTop, S.Unit)
+  (* `&&` and `||` are short-circuiting sugar for `if`; they never reach the
+     core, which is why `conv_binop` asserts on them. *)
+  | EBinop (And, e1, e2) ->
+  (* 
+    expect_bool ensures e1 desugared has Bool type,
+    otherwise it throws an error.
+  *)
+    let c1 = expect_bool env e1 in
+    let c2 = expect_bool env e2 in
+    (S.TBool, S.If (c1, c2, bfalse))
+  | EBinop (Or, e1, e2) ->
+    let c1 = expect_bool env e1 in
+    let c2 = expect_bool env e2 in
+    (S.TBool, S.If (c1, btrue, c2))
+  | EBinop (bop, e1, e2) ->
+    let ty1, c1 = desugar env e1 in
+    let ty2, c2 = desugar env e2 in
+    ( lift e.loc (fun () -> E.typ_of_binop (conv_binop bop) ty1 ty2),
+      S.Binop (conv_binop bop, c1, c2) )
+  (* `not` and unary `-` are sugar too: the core has no unary operators. *)
+  | EUnop (Not, e1) -> (S.TBool, S.If (expect_bool env e1, bfalse, btrue))
+  | EUnop (Neg, e1) ->
+    let t, c = desugar env e1 in
+    if t <> S.TInt then ty_mismatch e1.loc "negation" S.TInt t;
+    (S.TInt, S.Binop (S.Sub, S.Lit (S.Int 0), c))
+  (* No subtyping, so there is no join to compute: the branches must agree. *)
+  | EIf (c, t, f) ->
+    let cc      = expect_bool env c in
+    let tt, ct  = desugar env t     in
+    let tf, cf  = desugar env f     in
+    if tt <> tf 
+      then ty_mismatch f.loc "the branches of `if` disagree" tt tf;
+    (tt, S.If (cc, ct, cf))
+  (* Curried: the parameters extend the context left to right, but the term
+     nests right to left — hence fold_left for the env, fold_right to build. *)
+  | ELam (params, body) ->
+    let tys = List.map (fun p -> conv_typ p.p_typ) params in
+    (* This is constructing the environment by pushing the 
+      lambda arguments into the environment *)
+    let env' = 
+      List.fold_left
+        (fun env a -> 
+          { slots = F.lam a env.slots; base = env.base })
+        env tys                    in
+    let bt, cb = desugar env' body in
+    List.fold_right (fun a (t, c) -> (S.TArr (a, t), S.Lam (a, c))) tys (bt, cb)
+  (* Here, we overload application,
+    and then, use types to decide whether it is a functor
+    or function application. *)
+  | EApp (e1, e2) ->
+    let ty1, c1 = desugar env e1 in
+    let ty2, c2 = desugar env e2 in
+    (match ty1 with
+     | S.TArr (dom, cod) ->
+       if ty2 <> dom then ty_mismatch e2.loc "argument" dom ty2;
+       (cod, S.App (c1, c2))
+     | S.TSig (S.TyArrM (dom, S.TyIntf cod)) ->
+       if ty2 <> dom then ty_mismatch e2.loc "functor argument" dom ty2;
+       (cod, S.Mapp (c1, c2))
+     | _ ->
+       err e1.loc "this is applied to an argument but has type %s"
+         (P.typ_to_string ty1))
+  | ERcd []   -> (S.TTop, S.Unit)
+  (* Nmrg, and every field desugared under the *same* env — matching Debruijn,
+     which pushes no slot for a record literal. *)
+  | ERcd ((l, fe) :: rest) ->
+    let t0, c0 = desugar env fe in
+    List.fold_left
+      (fun (accT, accC) (l, fe) ->
+        let t, c = desugar env fe in
+        (S.TAnd (accT, S.TRcd (l, t)), S.Nmrg (accC, S.Lrec (l, c))))
+      (S.TRcd (l, t0), S.Lrec (l, c0))
+      rest
+  | EField _  -> err e.loc "TODO: EField"
+  | EMerge _  -> err e.loc "TODO: EMerge"
+  | ELet _    -> err e.loc "TODO: ELet"
+  | EOpen _   -> err e.loc "TODO: EOpen"
+  | ECase _   -> err e.loc "TODO: ECase"
+  | EStruct _ -> err e.loc "TODO: EStruct"
+  | EFunctor _ -> err e.loc "TODO: EFunctor"
+  | ELink _   -> err e.loc "TODO: ELink"
+  | EBox _    -> err e.loc "TODO: EBox"
+  | EMatch _  -> err e.loc "TODO: EMatch"
 
 and ascribe env loc (inner : (path, int) exp) (ty : S.typ) =
   match (inner.it, ty) with
@@ -161,3 +242,9 @@ and ascribe env loc (inner : (path, int) exp) (ty : S.typ) =
     let t, c = desugar env inner in
     if t <> ty then ty_mismatch loc "type annotation" ty t;
     (ty, c)
+
+and expect_bool env e =
+  let t, e' = desugar env e in
+  if t <> S.TBool then
+    ty_mismatch e.loc "condition" S.TBool t;
+  e'
