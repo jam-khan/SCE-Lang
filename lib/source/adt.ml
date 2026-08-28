@@ -18,7 +18,7 @@ type info = {
   a_name : string;
   a_rec : bool;
   a_ctors : (string * int) array;  (* name, payload count, declaration order *)
-  a_sums : string typ array;       (* a_sums.(k) = payloads 0..k, left-nested | *)
+  a_sums : typ array;       (* a_sums.(k) = payloads 0..k, left-nested | *)
 }
 
 type item = Ctor of int * info | Shadow
@@ -35,7 +35,7 @@ let shadow env names =
 let drop_adt env name =
   List.filter (function _, Ctor (_, ad) -> ad.a_name <> name | _ -> true) env
 
-let rec mentions name (t : string typ) =
+let rec mentions name (t : typ) =
   match t.it with
   | TVar a -> String.equal a name
   | TInt | TBool | TString | TTop -> false
@@ -119,7 +119,7 @@ let inject loc (ad : info) i v =
     in
     at (n - 1)
 
-let construct loc (ad : info) i (arg : (string, string) exp option) =
+let construct loc (ad : info) i (arg : exp option) =
   let cname, arity = ad.a_ctors.(i) in
   let v =
     match (arity, arg) with
@@ -147,7 +147,7 @@ let is_ctor env = function
   | { it = EVar c; _ } -> Option.is_some (lookup env c)
   | _ -> false
 
-let rec walk env (e : (string, string) exp) : (string, string) exp =
+let rec walk env (e : exp) : exp =
   let nd it = { it; loc = e.loc } in
   match e.it with
   | EVar c -> (
@@ -202,7 +202,7 @@ let rec walk env (e : (string, string) exp) : (string, string) exp =
       (EFunctor (sb, ps, walk (shadow env (List.map (fun p -> p.p_bind) ps)) body))
   | ELink (k, m, f) -> nd (ELink (k, walk env m, walk env f))
 
-and walk_binding env (b : (string, string) binding) =
+and walk_binding env (b : binding) =
   let inner = shadow env (List.map (fun p -> p.p_bind) b.b_params) in
   let inner = if b.b_rec then shadow inner [ b.b_bind ] else inner in
   { b with b_exp = walk inner b.b_exp }
@@ -335,9 +335,9 @@ and rewrite_match env loc scrut arms =
 
 (* ---------------- declarations and programs ---------------- *)
 
-and walk_decls env (ds : (string, string) decl list) :
-    (string, string) decl list * env =
-  let step (acc, env) (d : (string, string) decl) =
+and walk_decls env (ds : decl list) :
+    decl list * env =
+  let step (acc, env) (d : decl) =
     match d.it with
     | DAdt (b, ctors) ->
       let alias, env = process_adt env b ctors in
@@ -353,7 +353,7 @@ and walk_decls env (ds : (string, string) decl list) :
   let acc, env = List.fold_left step ([], env) ds in
   (List.rev acc, env)
 
-let expand (p : Ast.named) : Ast.named =
+let expand (p : Ast.program) : Ast.program =
   counter := 0;
   let decls, env = walk_decls [] p.decls in
   { p with decls; main = Option.map (walk env) p.main }

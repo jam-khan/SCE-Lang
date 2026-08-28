@@ -157,7 +157,7 @@ let () =
   (match compile dir "evil.sce" with
    | Error e ->
      check "a plugin reaching for Sys is a scope error"
-       (e.stage = "scope" && contains e.message "Sys")
+       (e.stage = "desugar" && contains e.message "Sys")
    | Ok _ -> check "a plugin reaching for Sys is a scope error" false);
   (* plugins are loaded at run time from their artifacts *)
   Sce.Sepcomp.save_artifact (Filename.concat dir "shout.sceo") shout;

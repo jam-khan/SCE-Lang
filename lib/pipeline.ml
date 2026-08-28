@@ -1,6 +1,6 @@
 (* The whole front-to-back pipeline:
 
-     parse -> resolve -> desugar -> elaborate -> check -> evaluate
+     parse -> desugar -> resolve -> elaborate -> check -> evaluate
 
    Every stage reports failures the same way, so a caller only ever has to
    render one kind of error. *)
@@ -17,7 +17,7 @@ type error = {
 
 type outcome = {
   sce_typ : S.typ;      (* the type synthesized while desugaring *)
-  sce_exp : S.exp;      (* the λSCE term *)
+  sce_exp : S.nameless; (* the λSCE term *)
   core_typ : C.typ;     (* the type λE independently assigns to the elaboration *)
   core_exp : C.exp;     (* the elaborated λE term *)
   value : C.exp;        (* the result of evaluating it *)
@@ -39,23 +39,24 @@ let strip_error_prefix m =
   else m
 
 (* Parse, then run `k` with every later stage's exception mapped to `error`. *)
-let staged (src : string) (k : Ast.named -> 'a) : ('a, error) result =
+let staged (src : string) (k : Ast.program -> 'a) : ('a, error) result =
   match Driver.parse src with
   | Error e -> Error { stage = "parse"; message = e.message; line = e.line; col = e.col }
   | Ok named -> (
     try Ok (k named) with
     | Adt.Error (m, loc) -> Error (at "adt" loc m)
-    | Debruijn.Error (m, loc) -> Error (at "scope" loc m)
     | Sugar.Error (m, loc) -> Error (at "desugar" loc m)
+    (* Sugar resolved every name, so this only fires on a front-end bug. *)
+    | Sce_core.Debruijn.Error m -> Error (whole "internal" m)
     | Sce_core.Elab.Elab_error m -> Error (whole "elaborate" m)
     | Core_lambdae.Check.Type_error m -> Error (whole "typecheck" m)
     | Sepcomp.Error m -> Error (whole "unit" m)
     | Failure m -> Error (whole "runtime" (strip_error_prefix m)))
 
-(* resolve -> desugar -> elaborate -> check, shared by every entry point. *)
-let core_stages (named : Ast.named) : S.typ * S.exp * C.typ * C.exp =
-  let indexed = Debruijn.resolve (Adt.expand named) in
-  let sce_typ, sce_exp = Sugar.desugar_program indexed in
+(* desugar -> resolve -> elaborate -> check, shared by every entry point. *)
+let core_stages (p : Ast.program) : S.typ * S.nameless * C.typ * C.exp =
+  let sce_typ, named = Sugar.desugar_program (Adt.expand p) in
+  let sce_exp = Sce_core.Debruijn.resolve named in
   let _, core_exp = Sce_core.Elab.elab S.TTop sce_exp in
   let core_typ = Core_lambdae.Check.typecheck core_exp in
   (sce_typ, sce_exp, core_typ, core_exp)
@@ -96,7 +97,7 @@ let compile_unit ~(path : string) (src : string) :
       List.map
         (fun (b, isrc) ->
           try (b, Sepcomp.import_typ ~dir b isrc)
-          with Sepcomp.Error m -> raise (Debruijn.Error (m, b.Ast.bd_loc)))
+          with Sepcomp.Error m -> raise (Sugar.Error (m, b.Ast.bd_loc)))
         p.imports
     in
     let t, _, _, core = core_stages (Sepcomp.unit_wrapper imports p) in

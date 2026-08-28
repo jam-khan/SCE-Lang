@@ -1,4 +1,16 @@
-(* AST for core λSCE (Source language core) *)
+(* AST for core λSCE (Source language core).
+
+   The tree is parametric in how a *variable occurrence* is spelled, so one type
+   serves both sides of scope resolution:
+
+     Sugar     produces  named    = string exp
+     Debruijn  produces  nameless = void exp
+
+   λSCE itself has no variables: a name becomes `Proj (Query, i)`, so `Var` is
+   uninhabited in the nameless instance and the calculus is exactly the one the
+   mechanization describes. Binders keep their source name in both instances,
+   but after resolution the name is only a hint — Debruijn reads it to count
+   slots, and printers and internal errors report it. *)
 
 type typ =
   | TInt
@@ -52,53 +64,68 @@ type binop =
   | Eq  | Ne                      (* A -> A -> Bool, A primitive *)
   | Cat                           (* String -> String -> String *)
 
-type exp =
+(* The name a binder pushes, kept for Debruijn to count against and for
+   diagnostics. Every form that extends the context carries one; the ones the
+   evaluator manufactures at runtime bind nothing a name could reach. *)
+type binder = string
+
+let anon : binder = "_"
+
+(* Uninhabited, so `nameless` provably has no `Var`. *)
+type void = |
+
+type 'v exp =
+  | Var   of 'v                (* named only; Debruijn turns it into Proj (Query, i) *)
   | Query
-  | Proj  of exp * int
+  | Proj  of 'v exp * int
   | Lit   of lit
   | Unit
-  | Lam   of typ * exp
-  | Box   of exp * exp
-  | Clos  of exp * typ * exp
-  | App   of exp * exp
-  | Mrg   of exp * exp
-  | Lrec  of string * exp
-  | Rproj of exp * string
+  | Lam   of binder * typ * 'v exp
+  | Box   of 'v exp * 'v exp
+  | Clos  of 'v exp * typ * 'v exp
+  | App   of 'v exp * 'v exp
+  | Mrg   of binder * 'v exp * 'v exp
+  | Lrec  of string * 'v exp
+  | Rproj of 'v exp * string
   (* primitives *)
-  | Binop of binop * exp * exp
-  | If    of exp * exp * exp
+  | Binop of binop * 'v exp * 'v exp
+  | If    of 'v exp * 'v exp * 'v exp
   (* to be elaborated *)
-  | Mstruct  of sandbox * exp
-  | Mfunctor of sandbox * typ * exp
-  | Mclos    of exp * typ * exp
-  | Mlink    of exp * exp
-  | Mapp     of exp * exp
+  | Mstruct  of sandbox * 'v exp
+  | Mfunctor of sandbox * binder * typ * 'v exp
+  | Mclos    of 'v exp * typ * 'v exp
+  | Mlink    of 'v exp * 'v exp
+  | Mapp     of 'v exp * 'v exp
   (* more terms *)
-  | Nmrg  of exp * exp
-  | Letb  of exp * typ * exp
-  | Openm of exp * exp
+  | Nmrg  of 'v exp * 'v exp                    (* binds nothing: see Frames.nmrg *)
+  | Letb  of binder * 'v exp * typ * 'v exp
+  | Openm of binder * 'v exp * 'v exp
   (* n-ary linking: satisfy every labeled import of a functor at once *)
-  | Mlinkn of exp * exp
+  | Mlinkn of 'v exp * 'v exp
   (* unions: Inl (B, e) injects into _ ∨ B, Inr (A, e) into A ∨ _ *)
-  | Inl  of typ * exp
-  | Inr  of typ * exp
-  | Case of exp * exp * exp
-  (* fixpoint: Flam (A, B, e) is a recursive function of type A → B;
-     its body sees ?.0 = argument, ?.1 = the function itself *)
-  | Flam  of typ * typ * exp
-  | Fclos of exp * typ * typ * exp
+  | Inl  of typ * 'v exp
+  | Inr  of typ * 'v exp
+  | Case of 'v exp * binder * 'v exp * binder * 'v exp
+  (* fixpoint: Flam (f, x, A, B, e) is a recursive function of type A → B;
+     its body sees ?.0 = the argument x, ?.1 = the function itself f *)
+  | Flam  of binder * binder * typ * typ * 'v exp
+  | Fclos of 'v exp * typ * typ * 'v exp
   (* iso-recursive types: Fold (T, e) stores the mu-body T, folds into mu T *)
-  | Fold   of typ * exp
-  | Unfold of exp
+  | Fold   of typ * 'v exp
+  | Unfold of 'v exp
+
+(* The two instantiations the pipeline uses. *)
+type named = string exp
+type nameless = void exp
 
 (* Value judgment from the Lean `Value : Exp → Prop` inductive *)
-let rec is_value = function
-  | Lit _ | Unit    -> true
-  | Clos  (v, _, _) -> is_value v
-  | Mclos (v, _, _) -> is_value v
-  | Mrg   (v1, v2)  -> is_value v1 && is_value v2
-  | Lrec  (_, v)    -> is_value v
+let rec is_value : 'v. 'v exp -> bool = function
+  | Lit _ | Unit     -> true
+  | Clos  (v, _, _)  -> is_value v
+  | Mclos (v, _, _)  -> is_value v
+  | Mrg   (_, v1, v2) -> is_value v1 && is_value v2
+  | Lrec  (_, v)     -> is_value v
   | Inl (_, v) | Inr (_, v) -> is_value v
   | Fclos (v, _, _, _)      -> is_value v
-  | Fold  (_, v)    -> is_value v
-  | _               -> false
+  | Fold  (_, v)     -> is_value v
+  | _                -> false

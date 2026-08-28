@@ -136,121 +136,142 @@ let test_parsing () =
 
 (* ---------------- scope resolution ---------------- *)
 
-let resolve_exn src = Debruijn.resolve (parse_exn src)
+module S = Sce_core.Ast
+module C = Core_lambdae.Ast
 
-(* `main` is now an ordinary declaration, and the program's own main is just an
-   occurrence of it; these tests want the bound expression. *)
-let resolved_main src =
-  let p = resolve_exn src in
-  let rec find = function
-    | { Ast.it = Ast.DLet b; _ } :: _ when b.Ast.b_bind.Ast.bd_name = "main" ->
-      Some b.Ast.b_exp
-    | _ :: rest -> find rest
-    | [] -> None
-  in
-  match find (List.rev p.decls) with
-  | Some e -> e
-  | None -> ( match p.main with Some e -> e | None -> assert false)
+(* Names are resolved on the λSCE side now: Sugar produces a named λSCE term
+   and Debruijn turns each name into the index of the slot it denotes. These
+   tests are about what came out of the second pass. *)
+let resolve_exn src =
+  let _, named = Sugar.desugar_program (Adt.expand (parse_exn src)) in
+  Sce_core.Debruijn.resolve named
 
 let scope_error src =
   match resolve_exn src with
   | _ -> None
-  | exception Debruijn.Error (msg, _) -> Some msg
+  | exception Sugar.Error (msg, _) -> Some msg
 
-(* Follow a chain of constructors down to the single variable occurrence a test
-   cares about, so the assertions read as "this name resolves to that slot". *)
-let rec find_var (e : (Ast.path, int) Ast.exp) : Ast.path option =
-  let open Ast in
-  match e.it with
-  | EVar p -> Some p
-  | ELam (_, b) | EFunctor (_, _, b) | EInl b | EInr b | EFold b | EUnfold b
-  | EUnop (_, b) | EAnnot (b, _) | EIndex (b, _) | EField (b, _) ->
+(* Top-level declarations chain with `Letb`, so declaration k's value sits under
+   k of them and the program's own body follows all of them. *)
+let rec bound_at k (t : S.nameless) =
+  match (t, k) with
+  | S.Letb (_, e1, _, _), 0 -> e1
+  | S.Letb (_, _, _, e2), _ -> bound_at (k - 1) e2
+  | _ -> failwith "no such top-level declaration"
+
+let rec body_after k (t : S.nameless) =
+  if k = 0 then t
+  else
+    match t with
+    | S.Letb (_, _, _, e2) -> body_after (k - 1) e2
+    | _ -> failwith "no such top-level declaration"
+
+let rec main_value (t : S.nameless) =
+  match t with
+  | S.Letb ("main", e1, _, _) -> e1
+  | S.Letb (_, _, _, e2) -> main_value e2
+  | _ -> failwith "no main"
+
+(* The expression an inner `let ... in` binds. *)
+let letb_value = function
+  | S.Letb (_, e1, _, _) -> e1
+  | _ -> failwith "not a let"
+
+(* λSCE has no variables, so a resolved name is a context projection: a slot
+   directly, or a label of one. *)
+type occ = Idx of int | Field of int * string
+
+(* Follow a chain of constructors down to the single occurrence a test cares
+   about, so the assertions read as "this name resolves to that slot". *)
+let rec find_var (e : S.nameless) : occ option =
+  match e with
+  | S.Proj (S.Query, i) -> Some (Idx i)
+  | S.Rproj (S.Proj (S.Query, i), l) -> Some (Field (i, l))
+  | S.Lam (_, _, b) | S.Mfunctor (_, _, _, b) | S.Mstruct (_, b)
+  | S.Flam (_, _, _, _, b) | S.Inl (_, b) | S.Inr (_, b) | S.Fold (_, b)
+  | S.Unfold b | S.Lrec (_, b) | S.Proj (b, _) | S.Rproj (b, _)
+  | S.Letb (_, _, _, b) | S.Openm (_, _, b) | S.Box (_, b) ->
     find_var b
-  | ELet (_, b) | EOpen (_, b) | EBox (_, b) -> find_var b
-  | EApp (a, b) | EMerge (_, a, b) | EBinop (_, a, b) -> (
+  | S.App (a, b) | S.Mapp (a, b) -> (
+    match find_var a with Some p -> Some p | None -> find_var b)
+  | S.Mrg (_, a, b) | S.Nmrg (a, b) | S.Binop (_, a, b) | S.Mlink (a, b)
+  | S.Mlinkn (a, b) -> (
     match find_var b with Some p -> Some p | None -> find_var a)
-  | EIf (_, t, _) -> find_var t
-  | ECase (_, _, b, _, _) -> find_var b
-  | ERcd ((_, f) :: _) -> find_var f
+  | S.If (_, t, _) -> find_var t
+  | S.Case (_, _, b, _, _) -> find_var b
   | _ -> None
 
 let test_scoping () =
-  let open Ast in
   print_endline "-- scope resolution --";
   let var name src expected =
-    check name (find_var (resolved_main src) = Some expected)
+    check name (find_var (main_value (resolve_exn src)) = Some expected)
   in
 
   (* plain binders *)
-  var "lambda parameter is index 0" "let main = fun (x : Int) -> x" (PIdx 0);
+  var "lambda parameter is index 0" "let main = fun (x : Int) -> x" (Idx 0);
   var "outer lambda parameter is index 1" "let main = fun (x : Int) (y : Int) -> x"
-    (PIdx 1);
+    (Idx 1);
   var "inner lambda parameter is index 0" "let main = fun (x : Int) (y : Int) -> y"
-    (PIdx 0);
-  var "let binds at index 0" "let main = let x = 1 in x" (PIdx 0);
-  var "shadowing takes the innermost" "let main = let x = 1 in let x = 2 in x" (PIdx 0);
-  var "earlier let is index 1" "let main = let x = 1 in let y = 2 in x" (PIdx 1);
+    (Idx 0);
+  var "let binds at index 0" "let main = let x = 1 in x" (Idx 0);
+  var "shadowing takes the innermost" "let main = let x = 1 in let x = 2 in x" (Idx 0);
+  var "earlier let is index 1" "let main = let x = 1 in let y = 2 in x" (Idx 1);
   var "case binder is index 0"
-    {|let main = case (inl 1 : Int | String) of inl n -> n | inr s -> "" end|}
-    (PIdx 0);
+    {|let main = case (inl 1 : Int | String) of inl n -> n | inr s -> 0 end|}
+    (Idx 0);
 
   (* Flam pushes the function itself, then the argument, so inside the bound
      expression the parameters sit below the recursive name. *)
   let bound name src expected =
-    check name
-      (match (resolved_main src).it with
-       | ELet (b, _) -> find_var b.b_exp = Some expected
-       | _ -> false)
+    check name (find_var (letb_value (main_value (resolve_exn src))) = Some expected)
   in
   bound "let rec: parameter is index 0"
-    "let main = let rec f (n : Int) : Int = n in 0" (PIdx 0);
+    "let main = let rec f (n : Int) : Int = n in 0" (Idx 0);
   bound "let rec: the recursive name is index 1"
-    "let main = let rec f (n : Int) : Int = f in 0" (PIdx 1);
+    "let main = let rec f (n : Int) : Int = f n in 0" (Idx 1);
   bound "let rec: two parameters, second is index 0"
-    "let main = let rec f (x : Int) (y : Int) : Int = y in 0" (PIdx 0);
+    "let main = let rec f (x : Int) (y : Int) : Int = y in 0" (Idx 0);
   bound "let rec: two parameters, first is index 1"
-    "let main = let rec f (x : Int) (y : Int) : Int = x in 0" (PIdx 1);
+    "let main = let rec f (x : Int) (y : Int) : Int = x in 0" (Idx 1);
   bound "let rec: two parameters, the recursive name is index 2"
-    "let main = let rec f (x : Int) (y : Int) : Int = f in 0" (PIdx 2);
+    "let main = let rec f (x : Int) (y : Int) : Int = f x y in 0" (Idx 2);
   bound "non-recursive let does not bind its own name in the body"
-    "let main = let g (x : Int) : Int = x in 0" (PIdx 0);
+    "let main = let g (x : Int) : Int = x in 0" (Idx 0);
 
   (* a struct is one widening frame, not one frame per declaration *)
   check "struct: a later field sees an earlier one at index 0"
-    (match (resolve_exn "module M = struct\n\
-                         let a : Int = 1\n\
-                         let b : Int = a\n\
-                         end").decls with
-     | [ { it = DModule (_, { it = EStruct (_, [ _; { it = DLet b; _ } ]); _ }); _ } ] ->
-       find_var b.b_exp = Some (PField (0, "a"))
-     | _ -> false);
+    (find_var
+       (bound_at 0
+          (resolve_exn "module M = struct\n\
+                        let a : Int = 1\n\
+                        let b : Int = a\n\
+                        end"))
+     = Some (Field (0, "a")));
   check "struct: the third field still sees the first at index 0"
-    (match (resolve_exn "module M = struct\n\
-                         let a : Int = 1\n\
-                         let b : Int = 2\n\
-                         let c : Int = a\n\
-                         end").decls with
-     | [ { it = DModule (_, { it = EStruct (_, [ _; _; { it = DLet b; _ } ]); _ }); _ } ] ->
-       find_var b.b_exp = Some (PField (0, "a"))
-     | _ -> false);
+    (find_var
+       (bound_at 0
+          (resolve_exn "module M = struct\n\
+                        let a : Int = 1\n\
+                        let b : Int = 2\n\
+                        let c : Int = a\n\
+                        end"))
+     = Some (Field (0, "a")));
 
   (* dependent vs non-dependent merge *)
   var "dependent merge exposes the left operand" "let main = { a = 1 } ;; { b = a }"
-    (PField (0, "a"));
+    (Field (0, "a"));
   check "non-dependent merge does not"
     (scope_error "let main = { a = 1 } ; { b = a }" <> None);
 
   (* open *)
-  var "open brings fields into scope" "let main = open { a = 1 } in a" (PField (0, "a"));
+  var "open brings fields into scope" "let main = open { a = 1 } in a" (Field (0, "a"));
   var "a binding survives an open" "let main = let z = 1 in open { a = 2 } in z"
-    (PIdx 1);
+    (Idx 1);
   var "open of a functor parameter uses its signature"
-    "let main = functor (X : { a : Int }) -> open X in a" (PField (0, "a"));
+    "let main = functor (X : { a : Int }) -> open X in a" (Field (0, "a"));
   check "open of an opaque expression is rejected"
     (match scope_error "let main = open (fun (x : Int) -> x) in a" with
-     | Some m ->
-       String.length m > 0
-       && String.starts_with ~prefix:"cannot determine the fields" m
+     | Some m -> String.starts_with ~prefix:"cannot determine the fields" m
      | None -> false);
 
   (* sandboxing genuinely cuts the outer context *)
@@ -263,42 +284,27 @@ let test_scoping () =
 
   (* top-level declarations chain with Letb *)
   check "top level: a later declaration sees an earlier one"
-    (match (resolve_exn "let a : Int = 1\nlet b : Int = a\nlet main = b").decls with
-     | [ _; { it = DLet b; _ }; _ ] -> find_var b.b_exp = Some (PIdx 0)
-     | _ -> false);
+    (find_var (bound_at 1 (resolve_exn "let a : Int = 1\nlet b : Int = a\nlet main = b"))
+     = Some (Idx 0));
   var "top level: main sees the last declaration at index 0"
-    "let a : Int = 1\nlet b : Int = 2\nlet main = b" (PIdx 0);
+    "let a : Int = 1\nlet b : Int = 2\nlet main = b" (Idx 0);
   var "top level: main sees an earlier declaration at index 1"
-    "let a : Int = 1\nlet b : Int = 2\nlet main = a" (PIdx 1);
+    "let a : Int = 1\nlet b : Int = 2\nlet main = a" (Idx 1);
   check "a program with no main returns a record of its bindings"
-    (match (resolve_exn "let a : Int = 1\nlet b : Int = 2").main with
-     | Some { it = ERcd [ ("a", _); ("b", _) ]; _ } -> true
+    (match body_after 2 (resolve_exn "let a : Int = 1\nlet b : Int = 2") with
+     | S.Nmrg (S.Lrec ("a", _), S.Lrec ("b", _)) -> true
      | _ -> false);
 
-  (* type variables *)
-  let decl_typ src =
-    match (resolve_exn src).decls with
-    | [ { it = DType (_, t); _ } ] -> Some t
-    | _ -> None
-  in
-  check "mu binds its variable to index 0"
-    (match decl_typ "type T = mu a. a" with
-     | Some { it = TMu (_, { it = TVar 0; _ }); _ } -> true
-     | _ -> false);
+  (* type variables: mu binders become de Bruijn indices and aliases are
+     expanded, both while desugaring *)
+  let styp src = Sce.Sepcomp.parse_typ_exn ~what:"test" src in
+  check "mu binds its variable to index 0" (styp "mu a. a" = S.TMu (S.TVar 0));
   check "nested mu: the outer binder is index 1"
-    (match decl_typ "type T = mu a. mu b. a" with
-     | Some { it = TMu (_, { it = TMu (_, { it = TVar 1; _ }); _ }); _ } -> true
-     | _ -> false);
+    (styp "mu a. mu b. a" = S.TMu (S.TMu (S.TVar 1)));
   check "nested mu: the inner binder is index 0"
-    (match decl_typ "type T = mu a. mu b. b" with
-     | Some { it = TMu (_, { it = TMu (_, { it = TVar 0; _ }); _ }); _ } -> true
-     | _ -> false);
-  check "a type alias is expanded"
-    (match (resolve_exn "type A = Int\ntype B = A").decls with
-     | [ _; { it = DType (_, { it = TInt; _ }); _ } ] -> true
-     | _ -> false);
-  check "an unbound type name is rejected"
-    (scope_error "type T = Nope" <> None);
+    (styp "mu a. mu b. b" = S.TMu (S.TMu (S.TVar 0)));
+  check "a type alias is expanded" (styp "type A = Int\ntype B = A\nB" = S.TInt);
+  check "an unbound type name is rejected" (scope_error "type T = Nope" <> None);
 
   (* duplicate labels *)
   check "duplicate record labels are rejected"
@@ -312,19 +318,16 @@ let test_scoping () =
 
 (* ---------------- end to end ---------------- *)
 
-module S = Sce_core.Ast
-module C = Core_lambdae.Ast
-
 (* The two calculi have distinct value types, so compare their first-order
    fragment structurally. Closures are opaque on both sides. *)
-let rec same_value (s : S.exp) (c : C.exp) =
+let rec same_value (s : S.nameless) (c : C.exp) =
   match (s, c) with
   | S.Lit (S.Int a), C.Lit (C.Int b) -> a = b
   | S.Lit (S.Bool a), C.Lit (C.Bool b) -> a = b
   | S.Lit (S.String a), C.Lit (C.String b) -> String.equal a b
   | S.Unit, C.Unit -> true
   | S.Lrec (l1, v1), C.Lrec (l2, v2) -> String.equal l1 l2 && same_value v1 v2
-  | S.Mrg (a1, b1), C.Mrg (a2, b2) -> same_value a1 a2 && same_value b1 b2
+  | S.Mrg (_, a1, b1), C.Mrg (a2, b2) -> same_value a1 a2 && same_value b1 b2
   | S.Inl (_, v1), C.Inl (_, v2) | S.Inr (_, v1), C.Inr (_, v2) -> same_value v1 v2
   | S.Fold (_, v1), C.Fold (_, v2) -> same_value v1 v2
   | (S.Clos _ | S.Mclos _ | S.Fclos _), (C.Clos _ | C.Fclos _) -> true
@@ -487,15 +490,15 @@ let test_failures () =
         Printf.printf "        expected %s at %d:%d, got %s at %d:%d — %s\n"
           stage line col e.stage e.line e.col e.message)
   in
-  rejects "unbound variable" "let main = nope" "scope" 1 11;
-  rejects "unbound type name" "type T = Nope\nlet main = 1" "scope" 1 9;
-  rejects "duplicate record labels" "let main = { a = 1, a = 2 }" "scope" 1 11;
+  rejects "unbound variable" "let main = nope" "desugar" 1 11;
+  rejects "unbound type name" "type T = Nope\nlet main = 1" "desugar" 1 9;
+  rejects "duplicate record labels" "let main = { a = 1, a = 2 }" "desugar" 1 11;
   rejects "duplicate structure fields"
-    "module M = struct let a : Int = 1 let a : Int = 2 end let main = 1" "scope" 1 34;
+    "module M = struct let a : Int = 1 let a : Int = 2 end let main = 1" "desugar" 1 34;
   rejects "open of an opaque expression"
-    "let main = open (fun (x : Int) -> x) in a" "scope" 1 16;
+    "let main = open (fun (x : Int) -> x) in a" "desugar" 1 16;
   rejects "sandbox hides the outer context"
-    "let main = let z = 1 in sandbox struct let w : Int = z end" "scope" 1 53;
+    "let main = let z = 1 in sandbox struct let w : Int = z end" "desugar" 1 53;
   rejects "annotation mismatch" "let main = (1 : String)" "desugar" 1 11;
   rejects "argument mismatch"
     {|let f (x : Int) : Int = x let main = f "s"|} "desugar" 1 39;

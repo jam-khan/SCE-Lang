@@ -249,12 +249,12 @@ let expect name err_opt (stage, needle) =
 let () =
   expect "missing .scei"
     (compile_err "noscei.sce" "import Missing\nlet main : Int = 1\n")
-    ("scope", "Missing.scei not found");
+    ("desugar", "Missing.scei not found");
   expect "whole-program file cannot import"
     (match Sce.Pipeline.run "import Counter\nlet main = 1" with
      | Error e -> Some e
      | Ok _ -> None)
-    ("scope", "unit");
+    ("desugar", "unit");
   (* the imports record is synthesized by unit_wrapper; it must still carry a
      real location, or this reports at the dummy 1:0 *)
   (match

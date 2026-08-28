@@ -37,11 +37,11 @@ let parse_with entry (src : string) =
     let line, col = line_col pos in
     Error { message = msg; line; col }
 
-let parse (src : string) : (Ast.named, error) result =
+let parse (src : string) : (Ast.program, error) result =
   parse_with Parser.Incremental.program src
 
 (* Parse the contents of a .scei interface file. *)
-let parse_intf (src : string) : (string Ast.intf, error) result =
+let parse_intf (src : string) : (Ast.intf, error) result =
   parse_with Parser.Incremental.intf_file src
 
 (* Render an error with the offending source line and a caret under it. A node

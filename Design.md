@@ -17,10 +17,13 @@ three times, not three subsystems.
 context — a left-nested intersection — and `?.n` projects its n-th component.
 Every binder extends that intersection: `Lam` appends the parameter type,
 `Letb` the bound type, `Mrg` the type of its left operand. The surface
-language's central job is therefore to turn a *name* into a *position*
-([lib/source/debruijn.ml](lib/source/debruijn.ml)), and the context discipline
-lives in exactly one place ([lib/source/frames.ml](lib/source/frames.ml)),
-shared by the resolver and the desugarer so the two cannot drift.
+language's central job is therefore to turn a *name* into a *position*. Which
+slot a name means is settled by the desugarer, against the types it is already
+synthesizing ([lib/source/sugar.ml](lib/source/sugar.ml)); turning that into an
+index is a separate, purely syntactic pass over λSCE itself
+([lib/sce/debruijn.ml](lib/sce/debruijn.ml)). The context discipline lives in
+exactly one place ([lib/sce/frames.ml](lib/sce/frames.ml)), shared by both so
+they cannot drift.
 
 **Why.** Because the context is a first-class value, "run this code under that
 environment" (`box`), "cut the environment off" (`sandbox`), and "extend the
@@ -218,7 +221,7 @@ covers it.
 
 `?` reifies the world; `box e in body` enters another one; inside a box the
 body sees *only* what the value contains — names from the enclosing scope do
-not resolve ([lib/source/frames.ml](lib/source/frames.ml) resets the frame).
+not resolve ([lib/sce/frames.ml](lib/sce/frames.ml) resets the frame).
 
 [worlds/](examples/worlds/) uses both directions with the toolchain:
 a **loaded artifact is entered as the current environment**

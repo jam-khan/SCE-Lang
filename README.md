@@ -4,7 +4,7 @@ An ML-flavoured surface language for **λSCE**, a merge calculus with first-clas
 modules, and its elaboration to the core calculus **λE**.
 
 ```
-source text ──parse──▶ named AST ──de Bruijn──▶ indexed AST ──desugar──▶ λSCE ──elab──▶ λE ──eval──▶ value
+source text ──parse──▶ named AST ──desugar──▶ named λSCE ──de Bruijn──▶ λSCE ──elab──▶ λE ──eval──▶ value
 ```
 
 ```console
@@ -32,10 +32,14 @@ So the surface language's central job is to turn a name into a position:
 | a plain binding | `Proj (Query, i)` |
 | a field of a structure or an `open` | `Rproj (Proj (Query, i), l)` |
 
-That is what [lib/source/debruijn.ml](lib/source/debruijn.ml) does, on its own,
-before any types are involved. The context discipline both it and the desugarer
-index into lives in one place, [lib/source/frames.ml](lib/source/frames.ml), so
-the two cannot drift apart.
+Deciding *which* slot a name means needs the labels each slot carries, and
+those are exactly the types the desugarer synthesizes on its way down — so
+[lib/source/sugar.ml](lib/source/sugar.ml) does both at once, resolving a name
+with the same `srlookup` the elaborator uses. What it emits is λSCE with names
+still on it; [lib/sce/debruijn.ml](lib/sce/debruijn.ml) then turns each name
+into its index, on its own and without types. The context discipline the two
+agree on lives in one place, [lib/sce/frames.ml](lib/sce/frames.ml), so they
+cannot drift apart.
 
 ## Language tour
 
@@ -243,8 +247,8 @@ plugin manager loading plugin modules inside a running wasm instance.
 |---|---|
 | [lib/core/](lib/core/) | λE: AST, typechecker, big- and small-step evaluators, printer |
 | [wasm/](wasm/) | the WasmGC backend: IR, binary emitter, WAT printer, node host |
-| [lib/sce/](lib/sce/) | λSCE: AST, evaluators, and the elaboration to λE |
-| [lib/source/](lib/source/) | lexer, parser, `frames`, `debruijn`, `sugar`, `driver` |
+| [lib/sce/](lib/sce/) | λSCE: AST, `frames`, `debruijn`, evaluators, and the elaboration to λE |
+| [lib/source/](lib/source/) | lexer, parser, `adt`, `sugar`, `driver` |
 | [lib/pipeline.ml](lib/pipeline.ml) | the five stages behind one `run` and one error type |
 | [Design.md](Design.md) | the design decisions, why each was made, and the example + test that demonstrates it |
 | [examples/](examples/) | runnable programs, every one a test fixture — see [examples/README.md](examples/README.md) for the annotated index |

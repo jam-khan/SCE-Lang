@@ -91,8 +91,7 @@ let parse_typ_exn ~what (src : string) : S.typ =
   match Driver.parse_intf src with
   | Error e -> err "%s:%d:%d: %s" what e.line e.col e.message
   | Ok intf ->
-    let named = Debruijn.expand_aliases intf.i_aliases intf.i_typ in
-    Sugar.conv_typ (Debruijn.resolve_typ Debruijn.empty_env named)
+    Sugar.conv_typ_closed (Sugar.expand_aliases intf.i_aliases intf.i_typ)
 
 (* ---------------- the sys interface ----------------
 
@@ -119,8 +118,7 @@ let str_typ : S.typ =
 (* Resolve one import header to a self-contained *named* type, so it can be
    spliced into the unit file before scope resolution. File-based interfaces
    live next to the importing source file. *)
-let import_typ ~dir (b : Ast.binder) (src : string Ast.import_source) :
-    string Ast.typ =
+let import_typ ~dir (b : Ast.binder) (src : Ast.import_source) : Ast.typ =
   let from_file base =
     let path = Filename.concat dir (base ^ ".scei") in
     let content =
@@ -138,7 +136,7 @@ let import_typ ~dir (b : Ast.binder) (src : string Ast.import_source) :
     in
     match Driver.parse_intf content with
     | Error e -> err "%s:%d:%d: %s" path e.line e.col e.message
-    | Ok intf -> Debruijn.expand_aliases intf.i_aliases intf.i_typ
+    | Ok intf -> Sugar.expand_aliases intf.i_aliases intf.i_typ
   in
   match src with
   | Ast.IAuto -> from_file b.bd_name
@@ -150,12 +148,12 @@ let imports_binder = "%imports"
 (* The whole design in one function: a unit is its declarations wrapped as a
    sandboxed struct, or — when it imports — a sandboxed functor whose
    parameter is the record of imports, opened over the body. Everything
-   downstream (Debruijn, Sugar, Elab) is the unchanged whole-program
+   downstream (Sugar, Debruijn, Elab) is the unchanged whole-program
    machinery. *)
-let unit_wrapper (imports : (Ast.binder * string Ast.typ) list)
-    (p : Ast.named) : Ast.named =
+let unit_wrapper (imports : (Ast.binder * Ast.typ) list) (p : Ast.program) :
+    Ast.program =
   let loc = Ast.dummy_loc in
-  let node it : (string, string) Ast.exp = { it; loc } in
+  let node it : Ast.exp = { it; loc } in
   let wrapped =
     match imports with
     | [] -> node (Ast.EStruct (Ast.Sandboxed, p.decls))
