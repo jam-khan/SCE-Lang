@@ -61,10 +61,10 @@ let compose (arts : t list) (uref : int -> C.exp) :
              calculus's `linkall` cannot drift. *)
           let core =
             match u.a_imports with
-            | None -> E.nmrg_core (E.elab_typ accT) acc (uref k)
+            | None -> E.nmrg_core C.TTop acc (uref k)
             | Some d ->
               check_imports_satisfied ~unit_name:u.a_name accT d;
-              E.linked_core_n (E.elab_typ accT) d acc (uref k)
+              E.linked_core_n C.TTop d acc (uref k)
           in
           ( S.TAnd (accT, u.a_exports),
             core,
