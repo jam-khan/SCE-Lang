@@ -18,8 +18,8 @@ let bd (s, e) name = { bd_name = name; bd_loc = { start_p = s; end_p = e } }
 %token COMMA
 %token PLUS MINUS STAR SLASH CARET QUERY EOF
 
-%start <Ast.named> program
-%start <string Ast.intf> intf_file
+%start <Ast.program> program
+%start <Ast.intf> intf_file
 
 %%
 

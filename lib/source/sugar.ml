@@ -1,4 +1,12 @@
-(* Desugaring layer from Source to SCE (source core). *)
+(* Desugaring: named surface AST -> named λSCE.
+
+   Resolves names and synthesizes types in one pass, because each needs the
+   other: a name is a slot of the context or an unambiguous field of one, and
+   `Elab.srlookup_opt` on the type just synthesized settles which. Types are
+   synthesized, never *checked* — Elab checks the term this builds. What is
+   rejected here is what would otherwise make the translation itself
+   meaningless: an unbound name, or a form whose type has the wrong shape to
+   continue from. lib/sce/debruijn.ml turns each name into its index. *)
 
 open Ast
 module S = Sce_core.Ast
@@ -9,113 +17,146 @@ exception Error of string * loc
 
 let err loc fmt = Printf.ksprintf (fun s -> raise (Error (s, loc))) fmt
 
-(* 
-  The judgement helpers in Elab signal failures with their own exception 
-  Basically, takes the elaboration error, and raises it to the desugaring error
-  with `loc`.
+(* Elab's judgement helpers raise their own exception. *)
+let lift loc f = try f () with E.Elab_error m -> raise (Error (m, loc))
 
-  Run `f`, get `elab error` and then, raise it.
-*)
-let lift loc f = 
-  try f () with 
-    E.Elab_error m -> raise (Error (m, loc))
+(* Left-nested chain of a non-empty list. *)
+let fold1 f = function [] -> None | x :: xs -> Some (List.fold_left f x xs)
 
-let ty_mismatch loc what expected got =
-  err loc "%s: expected %s, got %s" what (P.typ_to_string expected)
-    (P.typ_to_string got)
+(* A duplicate label makes *both* copies unreachable: srlookup refuses it. *)
+let check_unique what items =
+  ignore
+    (List.fold_left
+       (fun seen (l, loc) ->
+         if List.mem l seen then
+           err loc "duplicate field '%s' in this %s; it would be unreachable" l
+             what
+         else l :: seen)
+       [] items)
 
-module F = Frames.Make (struct type t = S.typ end)
+let decl_labels ds =
+  List.filter_map (fun d -> Option.map (fun l -> (l, d.loc)) (name_of_decl d)) ds
 
-(*
-  `base` is the context a `box` or a sandbox installed underneath
-  the slots; it is Top everywhere else.
-*)
-type env      = { slots : F.env; base : S.typ }
+(* ---------------- the context ---------------- *)
 
-let empty_env = { slots = F.empty; base = S.TTop }
+(* A binder, reached by its name; or an anonymous merge/open/struct slot with a
+   generated `%`-name, reached by the labels of its type. Both take an index. *)
+type slot = { name : string; typ : S.typ; fields : bool }
 
+module F = Sce_core.Frames.Make (struct
+  type t = slot
+end)
+
+type env = {
+  slots : F.env;
+  base : S.typ;                    (* what a box or sandbox installed underneath *)
+  mus : string list;               (* mu binders in scope, innermost first *)
+  aliases : (string * S.typ) list; (* alias bodies, resolved and closed *)
+}
+
+let empty_env = { slots = F.empty; base = S.TTop; mus = []; aliases = [] }
+
+(* `base` keeps ctx exact rather than a left-nested approximation. *)
 let ctx env =
-  List.fold_left 
-    (fun acc t -> S.TAnd (acc, t)) 
-    env.base 
-    (List.rev env.slots)
+  List.fold_left (fun acc s -> S.TAnd (acc, s.typ)) env.base (List.rev env.slots)
 
-let slot env loc i =
-  match F.nth env.slots i with
-  | Some t  -> t
-  | None    -> err loc "no context component at index %d" i
+let reset env = { env with slots = F.sandbox env.slots; base = S.TTop }
 
-let reset env = { slots = F.sandbox env.slots; base = S.TTop }
+(* `push` is the Frames rule for the form, so the slot lands where Debruijn
+   will count it. `%` cannot start a surface identifier, and there is one slot
+   per depth, so a generated name is unique wherever it is in scope. *)
+let bind push x t env =
+  { env with slots = push { name = x; typ = t; fields = false } env.slots }
 
-(* Types desugaring *)
-let rec conv_typ (t : int typ) : S.typ =
+let bind_fields push t env =
+  let x = "%" ^ string_of_int (List.length env.slots) in
+  (x, { env with slots = push { name = x; typ = t; fields = true } env.slots })
+
+(* The innermost slot providing x. Ambiguity is not a match. *)
+let find env x =
+  let hit s =
+    if String.equal s.name x then Some (S.Var x, s.typ)
+    else if s.fields then
+      Option.map
+        (fun t -> (S.Rproj (S.Var s.name, x), t))
+        (E.srlookup_opt s.typ x)
+    else None
+  in
+  List.find_map hit env.slots
+
+(* ---------------- types ---------------- *)
+
+let rec conv_typ env (t : typ) : S.typ =
+  let conv = conv_typ env in
   match t.it with
-  | TInt    -> S.TInt
-  | TBool   -> S.TBool
+  | TInt -> S.TInt
+  | TBool -> S.TBool
   | TString -> S.TString
-  | TTop    -> S.TTop
-  | TVar i  -> S.TVar i
-  | TArr (a, b) -> S.TArr (conv_typ a, conv_typ b)
-  | TAnd (a, b) -> S.TAnd (conv_typ a, conv_typ b)
-  | TOr  (a, b) -> S.TOr  (conv_typ a, conv_typ b)
-  | TMu  (_x, a) -> S.TMu (conv_typ a)
-  | TSig (a, b) -> S.TSig (S.TyArrM (conv_typ a, S.TyIntf (conv_typ b)))
-  | TRcd ls -> (
-    match ls with
-    | [] -> S.TTop
-    | (l, ft) :: rest ->
-      List.fold_left
-        (fun acc (l, ft) -> 
-          S.TAnd (acc, S.TRcd (l, conv_typ ft)))
-        (S.TRcd (l, conv_typ ft))
-        rest
-    )
+  | TTop -> S.TTop
+  | TArr (a, b) -> S.TArr (conv a, conv b)
+  | TAnd (a, b) -> S.TAnd (conv a, conv b)
+  | TOr (a, b) -> S.TOr (conv a, conv b)
+  (* `A => B => C` curries: Mfunctor's result is an interface that is itself a
+     signature, never a nested TyArrM. *)
+  | TSig (a, b) -> S.TSig (S.TyArrM (conv a, S.TyIntf (conv b)))
+  | TMu (b, body) -> S.TMu (conv_typ { env with mus = b.bd_name :: env.mus } body)
+  | TRcd fs ->
+    check_unique "record type" (List.map (fun (l, _) -> (l, t.loc)) fs);
+    Option.value ~default:S.TTop
+      (fold1
+         (fun a b -> S.TAnd (a, b))
+         (List.map (fun (l, ft) -> S.TRcd (l, conv ft)) fs))
+  | TVar a -> (
+    match List.find_index (String.equal a) env.mus with
+    | Some i -> S.TVar i
+    (* Alias bodies are closed, so they drop in under any mu unshifted. *)
+    | None -> (
+      match List.assoc_opt a env.aliases with
+      | Some rt -> rt
+      | None -> err t.loc "unbound type name '%s'" a))
+
+(* A type with nothing in scope: a .scei interface, aliases already expanded. *)
+let conv_typ_closed (t : typ) : S.typ = conv_typ empty_env t
+
+(* ---------------- leaves ---------------- *)
 
 let conv_lit = function
-  | LInt n    -> (S.TInt,    S.Int n)
-  | LBool b   -> (S.TBool,   S.Bool b)
+  | LInt n -> (S.TInt, S.Int n)
+  | LBool b -> (S.TBool, S.Bool b)
   | LString s -> (S.TString, S.String s)
 
 let conv_binop = function
   | Add -> S.Add | Sub -> S.Sub | Mul -> S.Mul | Div -> S.Div | Mod -> S.Mod
   | Lt -> S.Lt | Le -> S.Le | Gt -> S.Gt | Ge -> S.Ge
   | Eq -> S.Eq | Ne -> S.Ne | Cat -> S.Cat
-  (* eliminated *)
-  | And | Or -> assert false
+  | And | Or -> assert false (* eliminated into If below *)
+
+let conv_sandbox = function Sandboxed -> S.Sandboxed | Open -> S.Open
 
 let btrue = S.Lit (S.Bool true)
 let bfalse = S.Lit (S.Bool false)
 
-(*
-  An `%open` is a label used to wrap a pure record
-  when `open m in ...` is directly used with `m` not a record.
-  So, it wraps in {`%open` : m} and then, de-sugars further,
-  allowing later to unwrap. 
-*)
+(* The label an `open` subject is wrapped in, so Openm sees a record. *)
 let open_label = "%open"
 
-(* desugaring is type-directed
- as info is required
-*)
-let rec desugar env (e : (path, int) exp) : S.typ * S.exp =
+(* ---------------- expressions ---------------- *)
+
+let rec desugar env (e : exp) : S.typ * S.named =
+  let only e = snd (desugar env e) in
   match e.it with
-  (* x ~> ?.i *)
-  | EVar (PIdx i) -> (slot env e.loc i, S.Proj (S.Query, i))
-  (* x ~> ?.i.l *)
-  | EVar (PField (i, l)) ->
-    let t = slot env e.loc i in
-    (lift e.loc (fun () -> E.srlookup t l), S.Rproj (S.Proj (S.Query, i), l))
+  | EVar x -> (
+    match find env x with
+    | Some (occ, t) -> (t, occ)
+    | None -> err e.loc "unbound variable '%s'" x)
   | ELit l ->
     let t, cl = conv_lit l in
     (t, S.Lit cl)
-  (* Just avoiding noise for now *)
-  | EUnit           -> (S.TTop, S.Unit)
-  | EQuery          -> (ctx env, S.Query)
-  | EIndex (e1, n)  ->
+  | EUnit -> (S.TTop, S.Unit)
+  | EQuery -> (ctx env, S.Query)
+  | EIndex (e1, n) ->
     let t, c = desugar env e1 in
     (lift e.loc (fun () -> E.slookup t n), S.Proj (c, n))
-  | EAnnot (e, ty)  ->
-    ascribe env e.loc e (conv_typ ty)
+  | EAnnot (inner, t) -> ascribe env e.loc inner (conv_typ env t)
   | EInl _ | EInr _ ->
     err e.loc
       "an injection needs a type ascription so the other side of the union is \
@@ -125,126 +166,255 @@ let rec desugar env (e : (path, int) exp) : S.typ * S.exp =
       "`fold` needs a type ascription naming the recursive type, as in \
        `(fold e : mu a. A)`"
   | EUnfold e1 -> (
-    let t, c = desugar env e1 in
-    match t with
-    | S.TMu body -> (E.unfold_mu body, S.Unfold c)
-    | _ -> 
+    match desugar env e1 with
+    | S.TMu body, c -> (E.unfold_mu body, S.Unfold c)
+    | t, _ ->
       err e1.loc "`unfold` expects a recursive type, got %s" (P.typ_to_string t))
-  (* `&&` and `||` are short-circuiting sugar for `if`; they never reach the
-     core, which is why `conv_binop` asserts on them. *)
-  | EBinop (And, e1, e2) ->
-  (* 
-    expect_bool ensures e1 desugared has Bool type,
-    otherwise it throws an error.
-  *)
-    let c1 = expect_bool env e1 in
-    let c2 = expect_bool env e2 in
-    (S.TBool, S.If (c1, c2, bfalse))
-  | EBinop (Or, e1, e2) ->
-    let c1 = expect_bool env e1 in
-    let c2 = expect_bool env e2 in
-    (S.TBool, S.If (c1, btrue, c2))
-  | EBinop (bop, e1, e2) ->
-    let ty1, c1 = desugar env e1 in
-    let ty2, c2 = desugar env e2 in
-    ( lift e.loc (fun () -> E.typ_of_binop (conv_binop bop) ty1 ty2),
-      S.Binop (conv_binop bop, c1, c2) )
-  (* `not` and unary `-` are sugar too: the core has no unary operators. *)
-  | EUnop (Not, e1) -> (S.TBool, S.If (expect_bool env e1, bfalse, btrue))
-  | EUnop (Neg, e1) ->
-    let t, c = desugar env e1 in
-    if t <> S.TInt then ty_mismatch e1.loc "negation" S.TInt t;
-    (S.TInt, S.Binop (S.Sub, S.Lit (S.Int 0), c))
-  (* No subtyping, so there is no join to compute: the branches must agree. *)
+  (* `&&`, `||`, `not` are short-circuiting sugar for `if`; unary `-` for
+     subtraction. None reach the core. *)
+  | EBinop (And, a, b) -> (S.TBool, S.If (only a, only b, bfalse))
+  | EBinop (Or, a, b) -> (S.TBool, S.If (only a, btrue, only b))
+  | EUnop (Not, a) -> (S.TBool, S.If (only a, bfalse, btrue))
+  | EUnop (Neg, a) -> (S.TInt, S.Binop (S.Sub, S.Lit (S.Int 0), only a))
+  | EBinop (op, a, b) ->
+    let ta, ca = desugar env a in
+    let tb, cb = desugar env b in
+    ( lift e.loc (fun () -> E.typ_of_binop (conv_binop op) ta tb),
+      S.Binop (conv_binop op, ca, cb) )
+  (* No subtyping, so no join to compute: Elab makes the branches agree. *)
   | EIf (c, t, f) ->
-    let cc      = expect_bool env c in
-    let tt, ct  = desugar env t     in
-    let tf, cf  = desugar env f     in
-    if tt <> tf 
-      then ty_mismatch f.loc "the branches of `if` disagree" tt tf;
-    (tt, S.If (cc, ct, cf))
-  (* Curried: the parameters extend the context left to right, but the term
-     nests right to left — hence fold_left for the env, fold_right to build. *)
-  | ELam (params, body) ->
-    let tys = List.map (fun p -> conv_typ p.p_typ) params in
-    (* This is constructing the environment by pushing the 
-      lambda arguments into the environment *)
-    let env' = 
-      List.fold_left
-        (fun env a -> 
-          { slots = F.lam a env.slots; base = env.base })
-        env tys                    in
-    let bt, cb = desugar env' body in
-    List.fold_right (fun a (t, c) -> (S.TArr (a, t), S.Lam (a, c))) tys (bt, cb)
-  (* Here, we overload application,
-    and then, use types to decide whether it is a functor
-    or function application. *)
-  | EApp (e1, e2) ->
-    let ty1, c1 = desugar env e1 in
-    let ty2, c2 = desugar env e2 in
-    (match ty1 with
-     | S.TArr (dom, cod) ->
-       if ty2 <> dom then ty_mismatch e2.loc "argument" dom ty2;
-       (cod, S.App (c1, c2))
-     | S.TSig (S.TyArrM (dom, S.TyIntf cod)) ->
-       if ty2 <> dom then ty_mismatch e2.loc "functor argument" dom ty2;
-       (cod, S.Mapp (c1, c2))
-     | _ ->
-       err e1.loc "this is applied to an argument but has type %s"
-         (P.typ_to_string ty1))
-  | ERcd []   -> (S.TTop, S.Unit)
-  (* Nmrg, and every field desugared under the *same* env — matching Debruijn,
-     which pushes no slot for a record literal. *)
-  | ERcd ((l, fe) :: rest) ->
-    let t0, c0 = desugar env fe in
-    List.fold_left
-      (fun (accT, accC) (l, fe) ->
-        let t, c = desugar env fe in
-        (S.TAnd (accT, S.TRcd (l, t)), S.Nmrg (accC, S.Lrec (l, c))))
-      (S.TRcd (l, t0), S.Lrec (l, c0))
-      rest
-  | EField _  -> err e.loc "TODO: EField"
-  | EMerge _  -> err e.loc "TODO: EMerge"
-  | ELet _    -> err e.loc "TODO: ELet"
-  | EOpen _   -> err e.loc "TODO: EOpen"
-  | ECase _   -> err e.loc "TODO: ECase"
-  | EStruct _ -> err e.loc "TODO: EStruct"
-  | EFunctor _ -> err e.loc "TODO: EFunctor"
-  | ELink _   -> err e.loc "TODO: ELink"
-  | EBox _    -> err e.loc "TODO: EBox"
-  | EMatch _  -> err e.loc "TODO: EMatch"
+    let cc = only c in
+    let tt, ct = desugar env t in
+    (tt, S.If (cc, ct, only f))
+  | ELam (ps, body) -> params env ps (fun env -> desugar env body)
+  (* The head's type is what says whether this is a function or a functor. *)
+  | EApp (f, a) -> (
+    let tf, cf = desugar env f in
+    match tf with
+    | S.TArr (_, cod) -> (cod, S.App (cf, only a))
+    | S.TSig (S.TyArrM (_, S.TyIntf cod)) -> (cod, S.Mapp (cf, only a))
+    | _ ->
+      err f.loc "this is applied to an argument but has type %s"
+        (P.typ_to_string tf))
+  (* Fields are independent, so a record is a non-dependent merge chain. *)
+  | ERcd fs ->
+    check_unique "record" (List.map (fun (l, _) -> (l, e.loc)) fs);
+    let field (l, fe) =
+      let t, c = desugar env fe in
+      (S.TRcd (l, t), S.Lrec (l, c))
+    in
+    Option.value ~default:(S.TTop, S.Unit)
+      (fold1
+         (fun (ta, ca) (tb, cb) -> (S.TAnd (ta, tb), S.Nmrg (ca, cb)))
+         (List.map field fs))
+  | EField (b, l) ->
+    let t, c = desugar env b in
+    (lift e.loc (fun () -> E.srlookup t l), S.Rproj (c, l))
+  (* `;` binds nothing: its right operand cannot see the left one. *)
+  | EMerge (MNon, a, b) ->
+    let ta, ca = desugar env a in
+    let tb, cb = desugar env b in
+    (S.TAnd (ta, tb), S.Nmrg (ca, cb))
+  | EMerge (MDep, a, b) ->
+    let ta, ca = desugar env a in
+    let x, env = bind_fields F.mrg ta env in
+    let tb, cb = desugar env b in
+    (S.TAnd (ta, tb), S.Mrg (x, ca, cb))
+  | ELet (b, body) ->
+    let x = b.b_bind.bd_name in
+    let vt, cv = binding env b in
+    let bt, cb = desugar (bind F.letb x vt env) body in
+    (bt, S.Letb (x, cv, vt, cb))
+  | EOpen (m, body) ->
+    let subj, x, env = opening env m in
+    let bt, cb = desugar env body in
+    (bt, S.Openm (x, subj, cb))
+  | EBox (m, body) ->
+    let mt, cm = desugar env m in
+    let bt, cb = desugar { env with slots = F.box env.slots; base = mt } body in
+    (bt, S.Box (cm, cb))
+  | ECase (scrut, x, e1, y, e2) -> (
+    match desugar env scrut with
+    | S.TOr (a, b), cs ->
+      let branch (bnd : binder) t body =
+        desugar (bind F.case_branch bnd.bd_name t env) body
+      in
+      let t1, c1 = branch x a e1 in
+      (t1, S.Case (cs, x.bd_name, c1, y.bd_name, snd (branch y b e2)))
+    | ts, _ ->
+      err scrut.loc "`case` expects a union type, got %s" (P.typ_to_string ts))
+  | EStruct (sb, ds) ->
+    let t, c = structure (match sb with Sandboxed -> reset env | Open -> env) ds in
+    (t, S.Mstruct (conv_sandbox sb, c))
+  | EFunctor (sb, ps, body) -> functors env sb ps body
+  | ELink (k, m, f) -> link env e.loc k m f
+  | EMatch _ -> err e.loc "internal: `match` survived Adt.expand"
 
-and ascribe env loc (inner : (path, int) exp) (ty : S.typ) =
+(* Curried parameters extend the context left to right; the term nests to
+   match. Shared by `fun`, `let f x y`, and a `let rec`'s extra parameters. *)
+and params env ps k =
+  match ps with
+  | [] -> k env
+  | p :: rest ->
+    let x = p.p_bind.bd_name in
+    let a = conv_typ env p.p_typ in
+    let bt, cb = params (bind F.lam x a env) rest k in
+    (S.TArr (a, bt), S.Lam (x, a, cb))
+
+(* `open m`: the wrapped subject, the slot's name, and the extended env. A
+   subject with no labels brings nothing into scope. *)
+and opening env (m : exp) =
+  let mt, cm = desugar env m in
+  if E.record_fields mt = [] then
+    err m.loc
+      "cannot determine the fields of this expression, so `open` does not know \
+       what it brings into scope; add a type annotation";
+  let x, env = bind_fields F.openm mt env in
+  (S.Lrec (open_label, cm), x, env)
+
+(* Ascription has no core counterpart: it supplies the types Inl, Inr and Fold
+   cannot infer, and hands Elab something to check the term against. *)
+and ascribe env loc (inner : exp) (ty : S.typ) =
+  let payload a node = (ty, node (snd (desugar env a))) in
   match (inner.it, ty) with
-  | EInl e, S.TOr (l, r) ->
-    (* desugaring `e` gives its type *)
-    (* `ta` is type of desugared SCE expression `ca` *)
-    let ta, ce = desugar env e in
-    if ta <> l
-      then ty_mismatch e.loc "left injection" l ta;
-    (ty, S.Inl (r, ce))
-  | EInr e, S.TOr (l, r) ->
-    let tb, ce = desugar env e in
-    if tb <> r then ty_mismatch e.loc "right rejection" r tb;
-    (ty, S.Inr (l, ce))
+  | EInl a, S.TOr (_, r) -> payload a (fun c -> S.Inl (r, c))
+  | EInr a, S.TOr (l, _) -> payload a (fun c -> S.Inr (l, c))
   | (EInl _ | EInr _), _ ->
     err loc "an injection must be ascribed a union type, got %s"
       (P.typ_to_string ty)
-  | EFold e, S.TMu ty_body ->
-    let ta, ce    = desugar env e    in
-    let unrolled  = E.unfold_mu ty_body in
-    if ta <> unrolled then ty_mismatch e .loc "fold body" unrolled ta;
-    (ty, S.Fold (ty_body, ce))
+  | EFold a, S.TMu body -> payload a (fun c -> S.Fold (body, c))
   | EFold _, _ ->
     err loc "`fold` must be ascribed a recursive type, got %s"
       (P.typ_to_string ty)
-  | _ ->
-    let t, c = desugar env inner in
-    if t <> ty then ty_mismatch loc "type annotation" ty t;
-    (ty, c)
+  | _ -> (ty, snd (desugar env inner))
 
-and expect_bool env e =
-  let t, e' = desugar env e in
-  if t <> S.TBool then
-    ty_mismatch e.loc "condition" S.TBool t;
-  e'
+(* Only the outermost functor carries the sandbox flag; the curried ones inside
+   it inherit an already-sandboxed context. *)
+and functors env sb ps body =
+  match ps with
+  | [] -> desugar env body
+  | p :: rest ->
+    let outer = match sb with Sandboxed -> reset env | Open -> env in
+    let x = p.p_bind.bd_name in
+    let a = conv_typ outer p.p_typ in
+    let bt, cb = functors (bind F.lam x a outer) Open rest body in
+    (S.TSig (S.TyArrM (a, S.TyIntf bt)), S.Mfunctor (conv_sandbox sb, x, a, cb))
+
+and link env loc k m f =
+  let mt, cm = desugar env m in
+  match desugar env f with
+  | S.TSig (S.TyArrM (_, S.TyIntf result)), cf ->
+    ( S.TAnd (mt, result),
+      match k with LOne -> S.Mlink (cm, cf) | LAll -> S.Mlinkn (cm, cf) )
+  | ft, _ ->
+    err loc "the target of `link` must be a functor, but has type %s"
+      (P.typ_to_string ft)
+
+(* An annotation is reported rather than checked, so Elab's Letb rule is what
+   compares it against the bound term. *)
+and binding env (b : binding) : S.typ * S.named =
+  if b.b_rec then recursive_binding env b
+  else
+    params env b.b_params (fun env ->
+      let bt, cb = desugar env b.b_exp in
+      ((match b.b_ann with Some t -> conv_typ env t | None -> bt), cb))
+
+(* Flam types its body under `(ctx & (A -> B)) & A`, so the recursive name sits
+   below the parameters; extra parameters become plain lambdas inside it. *)
+and recursive_binding env (b : binding) : S.typ * S.named =
+  let f = b.b_bind.bd_name in
+  match (b.b_ann, b.b_params) with
+  | None, _ ->
+    err b.b_bind.bd_loc
+      "'let rec %s' needs a return type annotation: the recursive call has to \
+       be typed before the body is checked" f
+  | _, [] -> err b.b_bind.bd_loc "'let rec %s' needs at least one parameter" f
+  | Some ann, p :: rest ->
+    let ret = conv_typ env ann in
+    let x = p.p_bind.bd_name in
+    let a = conv_typ env p.p_typ in
+    let cod =
+      List.fold_right (fun q acc -> S.TArr (conv_typ env q.p_typ, acc)) rest ret
+    in
+    let self = S.TArr (a, cod) in
+    let slot n t = { name = n; typ = t; fields = false } in
+    let inner =
+      { env with slots = F.flam ~self:(slot f self) ~arg:(slot x a) env.slots }
+    in
+    let _, body = params inner rest (fun env -> (ret, snd (desugar env b.b_exp))) in
+    (self, S.Flam (f, x, a, cod, body))
+
+and declared env (d : decl) =
+  match d.it with
+  | DLet b -> (b.b_bind.bd_name, binding env b)
+  | DModule (bn, me) -> (bn.bd_name, desugar env me)
+  | _ -> assert false
+
+(* A struct is a left-nested *dependent* merge chain: each declaration is
+   desugared under one slot holding everything before it — one slot that
+   widens, never one per declaration. *)
+and structure env (ds : decl list) : S.typ * S.named =
+  let step env = function
+    | None -> (env, fun tc -> tc)
+    | Some (pt, pc) ->
+      let x, here = bind_fields F.mrg pt env in
+      (here, fun (t, c) -> (S.TAnd (pt, t), S.Mrg (x, pc, c)))
+  in
+  let rec go env chain ds =
+    let here, add = step env chain in
+    match ds with
+    | [] -> ( match chain with Some tc -> tc | None -> (S.TTop, S.Unit))
+    | d :: rest -> (
+      match d.it with
+      | DType (b, t) ->
+        go { env with aliases = (b.bd_name, conv_typ here t) :: env.aliases }
+          chain rest
+      | DLet _ | DModule _ ->
+        let l, (vt, cv) = declared here d in
+        go env (Some (add (S.TRcd (l, vt), S.Lrec (l, cv)))) rest
+      (* The declarations after an `open` are its body, on a fresh chain. *)
+      | DOpen m ->
+        let subj, o, inner = opening here m in
+        let rt, rc = go inner None rest in
+        add (rt, S.Openm (o, subj, rc))
+      | DAdt _ -> err d.loc "internal: ADT declaration survived Adt.expand")
+  in
+  check_unique "structure" (decl_labels ds);
+  go env None ds
+
+(* Top-level declarations chain with Letb, not with a struct's dependent merge,
+   so each binds a plain name at index 0. With no `main`, the program is the
+   record of everything it binds — matching how a linked unit is run. *)
+let desugar_program (p : Ast.program) : S.typ * S.named =
+  (match p.imports with
+   | [] -> ()
+   | (b, _) :: _ ->
+     err b.bd_loc "imports make this file a unit; compile it with -c");
+  check_unique "program" (decl_labels p.decls);
+  let main =
+    match p.main with
+    | Some e -> e
+    | None ->
+      let occ n = mk dummy_loc (EVar n) in
+      let names = List.filter_map name_of_decl p.decls in
+      if List.mem "main" names then occ "main"
+      else mk dummy_loc (ERcd (List.map (fun n -> (n, occ n)) names))
+  in
+  let rec go env ds =
+    match ds with
+    | [] -> desugar env main
+    | d :: rest -> (
+      match d.it with
+      | DType (b, t) ->
+        go { env with aliases = (b.bd_name, conv_typ env t) :: env.aliases } rest
+      | DLet _ | DModule _ ->
+        let x, (vt, cv) = declared env d in
+        let bt, cb = go (bind F.letb x vt env) rest in
+        (bt, S.Letb (x, cv, vt, cb))
+      | DOpen m ->
+        let subj, o, inner = opening env m in
+        let bt, cb = go inner rest in
+        (bt, S.Openm (o, subj, cb))
+      | DAdt _ -> err d.loc "internal: ADT declaration survived Adt.expand")
+  in
+  go empty_env p.decls

@@ -34,6 +34,12 @@ let rec srlookup_opt (a : typ) (l : string) : typ option =
     | _ -> None)
   | _ -> None
 
+(* The fields of a left-nested intersection of records. *)
+let rec record_fields = function
+  | TRcd (l, t)   -> [ (l, t) ]
+  | TAnd (a, b)   -> record_fields a @ record_fields b
+  | _             -> []
+
 let srlookup (a : typ) (l : string) : typ =
   match srlookup_opt a l with
   | Some t  -> t
