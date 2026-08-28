@@ -1,6 +1,16 @@
 (* Evaluation for λE. *)
 open Ast
 
+(* Host capabilities: `Hostfn` values apply through this dispatcher, which the
+   embedding layer installs (lib/units/host.ml). The core stays closed — with no
+   dispatcher installed, every capability application fails. *)
+let host_dispatch : (string -> (exp -> exp) option) ref = ref (fun _ -> None)
+
+let host_apply (name : string) (v : exp) : exp =
+  match !host_dispatch name with
+  | Some f -> f v
+  | None -> failwith ("Error: no host capability named " ^ name)
+
 (* lookupV: index is the *right-most* component of `v`. *)
 let rec lookup (v : exp) (i : int) : exp =
   match v with
@@ -73,6 +83,7 @@ let rec eval (env : exp) (e : exp) : exp =
         eval (Mrg (cenv, v2)) body
       | Fclos (cenv, _tyA, _tyB, body)  ->
         eval (Mrg (Mrg (cenv, v1), v2)) body
+      | Hostfn (name, _, _)             -> host_apply name v2
       | _ -> failwith "Error: Application (e1 e2) must have e1 as closure."
     end
   | Proj (e1, i)  -> lookup (eval env e1) i
@@ -100,7 +111,7 @@ let rec eval (env : exp) (e : exp) : exp =
       | Fold (_, v) -> v
       | _ -> failwith "Error: Unfold applied to a non-fold value."  
     end
-  | Lit _ | Unit | Clos _ | Fclos _ -> e
+  | Lit _ | Unit | Clos _ | Fclos _ | Hostfn _ -> e
 
 (* Interpreter based on small-step semantics. *)
 let rec step (env : exp) (e : exp) : exp =
@@ -118,6 +129,7 @@ let rec step (env : exp) (e : exp) : exp =
     else begin match e1 with
       | Clos (cenv, _ty, body) -> Box (Mrg (cenv, e2), body)
       | Fclos (cenv, _tyA, _tyB, body) -> Box (Mrg (Mrg (cenv, e1), e2), body)
+      | Hostfn (name, _, _) -> host_apply name e2
       | _ -> failwith "Error: Application (e1 e2) must have e1 as closure."
     end
   | Box (e1, e2) ->
@@ -151,7 +163,7 @@ let rec step (env : exp) (e : exp) : exp =
       | Fold (_, v) -> v
       | _ -> failwith "Error: Unfold applied to a non-fold value."
     end
-  | Lit _ | Unit | Clos _ | Fclos _ -> e
+  | Lit _ | Unit | Clos _ | Fclos _ | Hostfn _ -> e
 
 (* Driver for small-step based interpreter. *)
 let rec eval' (env : exp) (e : exp) : exp =
