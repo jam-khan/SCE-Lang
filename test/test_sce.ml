@@ -297,7 +297,7 @@ let test_scoping () =
 
   (* type variables: mu binders become de Bruijn indices and aliases are
      expanded, both while desugaring *)
-  let styp src = Sce.Sepcomp.parse_typ_exn ~what:"test" src in
+  let styp src = Units.Artifact.parse_typ ~what:"test" src in
   check "mu binds its variable to index 0" (styp "mu a. a" = S.TMu (S.TVar 0));
   check "nested mu: the outer binder is index 1"
     (styp "mu a. mu b. a" = S.TMu (S.TMu (S.TVar 1)));

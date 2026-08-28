@@ -65,7 +65,7 @@ equality is checked at three different times:
 
 | when | where | example |
 |---|---|---|
-| static link time | [lib/sepcomp.ml](lib/sepcomp.ml) `check_imports_satisfied` | [units/hello/](examples/units/hello/) |
+| static link time | [lib/units/linker.ml](lib/units/linker.ml) `check_imports_satisfied` | [units/hello/](examples/units/hello/) |
 | run time, by the loader | `do_load`: `slot_typ a = want` | [plugins/](examples/plugins/) |
 | wasm instantiation | `sce.slot` custom section, printed-type equality | [dynconfig/](examples/dynconfig/) under node |
 
@@ -125,7 +125,7 @@ side under one name. Dependency hell becomes a wiring decision.
 ## 5. A compilation unit is a sandboxed functor
 
 Compiling a unit wraps it as a sandboxed functor from its imports (a record)
-to its exports ([lib/sepcomp.ml](lib/sepcomp.ml) `unit_wrapper`). Linking
+to its exports ([lib/units/unit.ml](lib/units/unit.ml) `wrapper`). Linking
 applies it to a record of projections wired out of the providers — built by
 `Elab.link_step`, *the very term the in-language `link` elaborates to*, so
 the toolchain's linker and the calculus's linking construct cannot drift.
@@ -172,7 +172,7 @@ materializes; a program performs IO only if its link line grants it, and
 **Design rule that follows:** host capabilities are few and explicit —
 `Sys` (`print`, `readfile`), `Str` (`head`, `tail` — strings are otherwise
 write-only, so even *inspecting text* is a granted capability), and
-`load:<type>` ([lib/sepcomp.ml](lib/sepcomp.ml) dispatcher), mirrored in
+`load:<type>` ([lib/units/host.ml](lib/units/host.ml) dispatcher), mirrored in
 [wasm/run.js](wasm/run.js). In [lambda/](examples/lambda/) only the lexer
 imports `Str`: the interface tells you which unit can look inside a string.
 
@@ -249,7 +249,7 @@ WasmGC, no linear memory, no tables. Design points that carry the thesis:
 - A unit's interface rides in an `sce.slot` custom section; the link module
   records expected unit names in `sce.units`; the host checks both.
 - The wasm linker compiles *the same composition term* the core linker uses
-  (`Sepcomp.compose`, parameterized only by how a unit occurrence is
+  (`Linker.compose`, parameterized only by how a unit occurrence is
   spelled) — one linker, two installations.
 - Host capabilities compile to ordinary closures over trampolines into
   imported `host.<name>` functions; the runtime loader rewrites `.sceo` to

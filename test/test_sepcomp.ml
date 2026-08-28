@@ -99,12 +99,12 @@ let app = compile_exn "app.sce" app_src
 let () =
   check "auto import resolves against generated .scei" (app.a_imports <> None);
   (* the artifact round-trips through disk *)
-  Sce.Sepcomp.save_artifact (path "app.sceo") app;
-  let app' = Sce.Sepcomp.load_artifact (path "app.sceo") in
+  Units.Artifact.save (path "app.sceo") app;
+  let app' = Units.Artifact.load (path "app.sceo") in
   check "artifact save/load round-trips" (app' = app);
   (* interface printer inverts the parser on every stored type *)
   let roundtrips t =
-    Sce.Sepcomp.parse_typ_exn ~what:"test" (Sce.Sepcomp.print_typ t) = t
+    Units.Artifact.parse_typ ~what:"test" (Units.Artifact.print_typ t) = t
   in
   check "print/parse round-trip: exports"
     (List.for_all roundtrips
@@ -113,8 +113,8 @@ let () =
   check "round-trip covers mu and =>"
     (List.for_all roundtrips
        [
-         Sce.Sepcomp.parse_typ_exn ~what:"t" "mu a. Top | a";
-         Sce.Sepcomp.parse_typ_exn ~what:"t"
+         Units.Artifact.parse_typ ~what:"t" "mu a. Top | a";
+         Units.Artifact.parse_typ ~what:"t"
            "{ a : Int } => { b : mu a. Top | (a & { c : Int -> Int }) }";
        ])
 
@@ -164,17 +164,17 @@ let () =
     print_endline "skipped: node is not installed"
   else begin
     (* path A: link at core, compile the linked artifact whole *)
-    let _, term = Sce.Sepcomp.runnable linked in
+    let _, term = Units.Linker.runnable linked in
     write "prog.wasm" (Wasm_backend.Compile.to_binary term);
     let st, text = node_run (path "prog.wasm") in
     check "wasm of the core-linked artifact agrees with the interpreter"
       (st = 0 && text = {|"[yes]"|});
     (* path B: compile each unit to its own module, link at the wasm level *)
     List.iter
-      (fun (a : Sce.Sepcomp.artifact) ->
+      (fun (a : Units.Artifact.t) ->
         write (a.a_name ^ ".wasm") (Wasm_backend.Compile.to_binary a.a_core))
       [ counter; fmt; app ];
-    let names, unit_types, body = Sce.Sepcomp.wasm_link_parts [ counter; fmt; app ] in
+    let names, unit_types, body = Units.Linker.wasm_parts [ counter; fmt; app ] in
     write "linked.wasm" (Wasm_backend.Compile.link_binary ~names ~unit_types body);
     let st, text =
       node_run
@@ -285,15 +285,15 @@ let () =
       | None -> check "stale .scei is caught at link time" false)
    | Error _ -> check "stale .scei is caught at link time" false);
   (* restore the good interface for anyone after us *)
-  write "Counter.scei" (Sce.Sepcomp.print_typ
+  write "Counter.scei" (Units.Artifact.print_typ
     (match Sce_core.Elab.srlookup_opt counter.a_exports "Counter" with
      | Some t -> t
      | None -> failwith "no Counter export") ^ "\n");
   (* an unreadable artifact is a clean error *)
   write "bad.sceo" "not an artifact at all";
   check "bad artifact magic is a clean error"
-    (match Sce.Sepcomp.load_artifact (path "bad.sceo") with
-     | exception Sce.Sepcomp.Error _ -> true
+    (match Units.Artifact.load (path "bad.sceo") with
+     | exception Units.Artifact.Error _ -> true
      | _ -> false)
 
 let () =

@@ -3,6 +3,8 @@
 
 module C = Core_lambdae.Ast
 module S = Sce_core.Ast
+module Artifact = Units.Artifact
+module Linker = Units.Linker
 
 type error = {
   stage : string;
@@ -45,7 +47,7 @@ let staged (src : string) (k : Ast.program -> 'a) : ('a, error) result =
     | Sce_core.Debruijn.Error m -> Error (whole "internal" m)
     | Sce_core.Elab.Elab_error m -> Error (whole "elaborate" m)
     | Core_lambdae.Check.Type_error m -> Error (whole "typecheck" m)
-    | Sepcomp.Error m -> Error (whole "unit" m)
+    | Artifact.Error m -> Error (whole "unit" m)
     | Failure m -> Error (whole "runtime" (strip_error_prefix m)))
 
 (* desugar -> resolve -> elaborate -> check, shared by every entry point. *)
@@ -85,18 +87,18 @@ let run_to_core (src : string) : (C.exp, error) result =
    struct/functor, and push the result through the unchanged pipeline. Also
    returns the generated interface texts, one per exported module. *)
 let compile_unit ~(path : string) (src : string) :
-    (Sepcomp.artifact * (string * string) list, error) result =
+    (Artifact.t * (string * string) list, error) result =
   staged src (fun p ->
     let dir = Filename.dirname path in
     let imports =
       List.map
         (fun (b, isrc) ->
-          try (b, Sepcomp.import_typ ~dir b isrc)
-          with Sepcomp.Error m -> raise (Sugar.Error (m, b.Ast.bd_loc)))
+          try (b, Units.Unit.import_typ ~dir b isrc)
+          with Artifact.Error m -> raise (Sugar.Error (m, b.Ast.bd_loc)))
         p.imports
     in
-    let t, _, _, core = core_stages (Sepcomp.unit_wrapper imports p) in
-    let a_imports, a_exports = Sepcomp.unit_info t in
+    let t, _, _, core = core_stages (Units.Unit.wrapper imports p) in
+    let a_imports, a_exports = Units.Unit.info t in
     let name = Filename.remove_extension (Filename.basename path) in
     let sceis =
       List.filter_map
@@ -105,23 +107,23 @@ let compile_unit ~(path : string) (src : string) :
           | Ast.DModule (b, _) -> (
             match Sce_core.Elab.srlookup_opt a_exports b.Ast.bd_name with
             | Some ft ->
-              Some (b.Ast.bd_name ^ ".scei", Sepcomp.print_typ ft ^ "\n")
+              Some (b.Ast.bd_name ^ ".scei", Artifact.print_typ ft ^ "\n")
             | None -> None)
           | _ -> None)
         p.decls
     in
-    ({ Sepcomp.a_name = name; a_imports; a_exports; a_core = core }, sceis))
+    ({ Artifact.a_name = name; a_imports; a_exports; a_core = core }, sceis))
 
-let link_artifacts (arts : Sepcomp.artifact list) :
-    (Sepcomp.artifact, error) result =
-  try Ok (Sepcomp.link arts) with Sepcomp.Error m -> Error (whole "link" m)
+let link_artifacts (arts : Artifact.t list) :
+    (Artifact.t, error) result =
+  try Ok (Linker.link arts) with Artifact.Error m -> Error (whole "link" m)
 
 (* Evaluate a linked artifact: project `main` if it exports one. *)
-let run_artifact (a : Sepcomp.artifact) : (string * string, error) result =
+let run_artifact (a : Artifact.t) : (string * string, error) result =
   try
-    let t, term = Sepcomp.runnable a in
+    let t, term = Linker.runnable a in
     let v = Core_lambdae.Eval.eval C.Unit term in
     Ok (Sce_core.Pretty.typ_to_string t, Core_lambdae.Pretty.exp_to_string v)
   with
-  | Sepcomp.Error m -> Error (whole "link" m)
+  | Artifact.Error m -> Error (whole "link" m)
   | Failure m -> Error (whole "runtime" (strip_error_prefix m))

@@ -130,7 +130,7 @@ let commute (set, units, alt_order) =
   (match alt_order with
    | None -> ()
    | Some order ->
-     let by_name n = List.find (fun (a : Sce.Sepcomp.artifact) -> a.a_name = n) arts in
+     let by_name n = List.find (fun (a : Units.Artifact.t) -> a.a_name = n) arts in
      let _, v = run_exn (link_exn (List.map by_name order)) in
      check (name "permuted link order, same main") (v = whole_v));
   if with_node then begin
@@ -143,7 +143,7 @@ let commute (set, units, alt_order) =
        check (name "whole-program wasm = whole") (st = 0 && text = whole_v)
      | Error e -> failwith (e.stage ^ ": " ^ e.message));
     (* 4: the core-linked term through wasm *)
-    let _, term = Sce.Sepcomp.runnable linked in
+    let _, term = Units.Linker.runnable linked in
     let f = Filename.concat dir "linked.wasm" in
     write_file f (Wasm_backend.Compile.to_binary term);
     let st, text = node_run f in
@@ -151,13 +151,13 @@ let commute (set, units, alt_order) =
     (* 5: linked at the wasm level *)
     let unit_wasms =
       List.map
-        (fun (a : Sce.Sepcomp.artifact) ->
+        (fun (a : Units.Artifact.t) ->
           let f = Filename.concat dir (a.a_name ^ ".wasm") in
           write_file f (Wasm_backend.Compile.to_binary a.a_core);
           f)
         arts
     in
-    let names, unit_types, body = Sce.Sepcomp.wasm_link_parts arts in
+    let names, unit_types, body = Units.Linker.wasm_parts arts in
     let lf = Filename.concat dir "wlinked.wasm" in
     write_file lf (Wasm_backend.Compile.link_binary ~names ~unit_types body);
     let st, text = node_run (String.concat " " (lf :: unit_wasms)) in

@@ -1,6 +1,6 @@
 (* Host capabilities and runtime linking (interpreter level).
 
-   Effects are captured by redirecting Sepcomp.host_out, so every test also
+   Effects are captured by redirecting Units.Host.out, so every test also
    checks the *trace* — which lines were printed, in which order — not just
    the final value. The fixtures are the shipped case studies under
    examples/effects, examples/plugins and examples/dynconfig. *)
@@ -58,12 +58,12 @@ let link_exn arts =
    capability captured; returns (type, value, trace lines). *)
 let run_traced dir art =
   let buf = Buffer.create 256 in
-  let saved_out = !Sce.Sepcomp.host_out in
+  let saved_out = !Units.Host.out in
   let saved_cwd = Sys.getcwd () in
-  Sce.Sepcomp.host_out := Buffer.add_string buf;
+  Units.Host.out := Buffer.add_string buf;
   Sys.chdir dir;
   let finish () =
-    Sce.Sepcomp.host_out := saved_out;
+    Units.Host.out := saved_out;
     Sys.chdir saved_cwd
   in
   match Sce.Pipeline.run_artifact art with
@@ -88,7 +88,7 @@ let fixture set =
     (Sys.readdir src);
   dir
 
-let sys = Sce.Sepcomp.sys_artifact
+let sys = Units.Host.sys
 
 (* ---------------- effects through linking ---------------- *)
 
@@ -160,12 +160,12 @@ let () =
        (e.stage = "desugar" && contains e.message "Sys")
    | Ok _ -> check "a plugin reaching for Sys is a scope error" false);
   (* plugins are loaded at run time from their artifacts *)
-  Sce.Sepcomp.save_artifact (Filename.concat dir "shout.sceo") shout;
-  Sce.Sepcomp.save_artifact (Filename.concat dir "quiet.sceo") quiet;
-  let prog = link_exn [ sys; Sce.Sepcomp.loader_artifact [ manager ]; manager ] in
+  Units.Artifact.save (Filename.concat dir "shout.sceo") shout;
+  Units.Artifact.save (Filename.concat dir "quiet.sceo") quiet;
+  let prog = link_exn [ sys; Units.Host.loader [ manager ]; manager ] in
   (* the linked program survives a disk round-trip, loader and all *)
-  Sce.Sepcomp.save_artifact (Filename.concat dir "prog.sceo") prog;
-  let prog = Sce.Sepcomp.load_artifact (Filename.concat dir "prog.sceo") in
+  Units.Artifact.save (Filename.concat dir "prog.sceo") prog;
+  let prog = Units.Artifact.load (Filename.concat dir "prog.sceo") in
   let _, v, trace = run_traced dir prog in
   check "plugins run under attenuated capabilities"
     (contains v "shout! (quiet) <");
@@ -182,10 +182,10 @@ let () =
   let plain = compile_exn dir "plain.sce" in
   let fancy = compile_exn dir "fancy.sce" in
   let chooser = compile_exn dir "chooser.sce" in
-  Sce.Sepcomp.save_artifact (Filename.concat dir "plain.sceo") plain;
-  Sce.Sepcomp.save_artifact (Filename.concat dir "fancy.sceo") fancy;
+  Units.Artifact.save (Filename.concat dir "plain.sceo") plain;
+  Units.Artifact.save (Filename.concat dir "fancy.sceo") fancy;
   let prog =
-    link_exn [ sys; Sce.Sepcomp.loader_artifact [ chooser ]; chooser ]
+    link_exn [ sys; Units.Host.loader [ chooser ]; chooser ]
   in
   let run () = let _, v, _ = run_traced dir prog in v in
   write_file (Filename.concat dir "skin.txt") "fancy.sceo";
@@ -197,7 +197,7 @@ let () =
   check "a missing config falls back in-language" (run () = {|"hello"|});
   (* an artifact with the wrong interface is refused by the runtime check *)
   write_file (Filename.concat dir "skin.txt") "prog.sceo";
-  Sce.Sepcomp.save_artifact (Filename.concat dir "prog.sceo") prog;
+  Units.Artifact.save (Filename.concat dir "prog.sceo") prog;
   check "the loader rejects a mismatched interface"
     (contains (run ()) "no skin:")
 
@@ -215,8 +215,8 @@ let () =
        (contains e.message "both export 'Lib'")
    | Ok _ ->
      check "linking both versions statically is an ambiguity error" false);
-  Sce.Sepcomp.save_artifact (Filename.concat dir "libv2.sceo") v2;
-  let prog = link_exn [ v1; Sce.Sepcomp.loader_artifact [ client ]; client ] in
+  Units.Artifact.save (Filename.concat dir "libv2.sceo") v2;
+  let prog = link_exn [ v1; Units.Host.loader [ client ]; client ] in
   let _, v, _ = run_traced dir prog in
   check "static v1 and loaded v2 coexist, chosen per use site"
     (v = {|"hello, world (v1) | HELLO, world (v2)"|})
@@ -229,9 +229,9 @@ let () =
   let exclaim = compile_exn dir "exclaim.sce" in
   let chain = compile_exn dir "chain.sce" in
   let host = compile_exn dir "host.sce" in
-  Sce.Sepcomp.save_artifact (Filename.concat dir "exclaim.sceo") exclaim;
-  Sce.Sepcomp.save_artifact (Filename.concat dir "chain.sceo") chain;
-  let prog = link_exn [ sys; Sce.Sepcomp.loader_artifact [ host ]; host ] in
+  Units.Artifact.save (Filename.concat dir "exclaim.sceo") exclaim;
+  Units.Artifact.save (Filename.concat dir "chain.sceo") chain;
+  let prog = link_exn [ sys; Units.Host.loader [ host ]; host ] in
   let _, v, trace = run_traced dir prog in
   check "the host wires one plugin's export into another's capability"
     (v = {|"<hi!>"|});
@@ -246,8 +246,8 @@ let () =
   let v1 = compile_exn dir "appv1.sce" in
   let v2 = compile_exn dir "appv2.sce" in
   let driver = compile_exn dir "driver.sce" in
-  Sce.Sepcomp.save_artifact (Filename.concat dir "appv2.sceo") v2;
-  let prog = link_exn [ v1; Sce.Sepcomp.loader_artifact [ driver ]; driver ] in
+  Units.Artifact.save (Filename.concat dir "appv2.sceo") v2;
+  let prog = link_exn [ v1; Units.Host.loader [ driver ]; driver ] in
   let run () = let _, v, _ = run_traced dir prog in v in
   check "the loaded v2 functor migrates v1's state"
     (run () = {|"v2 for jam (was: keep going)"|});
@@ -262,8 +262,8 @@ let () =
   let dir = fixture "linker" in
   let step = compile_exn dir "step.sce" in
   let host = compile_exn dir "host.sce" in
-  Sce.Sepcomp.save_artifact (Filename.concat dir "step.sceo") step;
-  let prog = link_exn [ Sce.Sepcomp.loader_artifact [ host ]; host ] in
+  Units.Artifact.save (Filename.concat dir "step.sceo") step;
+  let prog = link_exn [ Units.Host.loader [ host ]; host ] in
   let _, v, _ = run_traced dir prog in
   check "a hand-written link of a loaded functor agrees with the builtin"
     (v = {|"hand-written link = builtin link, both halves kept"|})
@@ -275,8 +275,8 @@ let () =
   let dir = fixture "worlds" in
   let fancy = compile_exn dir "fancy.sce" in
   let host = compile_exn dir "host.sce" in
-  Sce.Sepcomp.save_artifact (Filename.concat dir "fancy.sceo") fancy;
-  let prog = link_exn [ Sce.Sepcomp.loader_artifact [ host ]; host ] in
+  Units.Artifact.save (Filename.concat dir "fancy.sceo") fancy;
+  let prog = link_exn [ Units.Host.loader [ host ]; host ] in
   let _, v, _ = run_traced dir prog in
   check "a loaded world is entered with box; a failed load re-enters the snapshot"
     (v = {|"** hello ** / hello"|})
@@ -288,8 +288,8 @@ let () =
   let dir = fixture "harness" in
   let report = compile_exn dir "report.sce" in
   let host = compile_exn dir "host.sce" in
-  Sce.Sepcomp.save_artifact (Filename.concat dir "report.sceo") report;
-  let prog = link_exn [ sys; Sce.Sepcomp.loader_artifact [ host ]; host ] in
+  Units.Artifact.save (Filename.concat dir "report.sceo") report;
+  let prog = link_exn [ sys; Units.Host.loader [ host ]; host ] in
   let run () = let _, v, _ = run_traced dir prog in v in
   write_file (Filename.concat dir "data.txt") "live";
   check "the same loaded functor runs under live and canned environments"
@@ -307,7 +307,7 @@ let () =
     List.map (compile_exn dir)
       [ "lexer.sce"; "parser.sce"; "eval.sce"; "pretty.sce"; "main.sce" ]
   in
-  let prog = link_exn (Sce.Sepcomp.str_artifact :: units) in
+  let prog = link_exn (Units.Host.str :: units) in
   let _, v, _ = run_traced dir prog in
   check "lex, parse, normalize, print: Church 2+2 = 4; errors are values"
     (v = {|"\\f. \\x. f (f (f (f x)))  ;  a  ;  parse error: expected ')'"|})
@@ -351,8 +351,8 @@ let wasmify s =
   done;
   Buffer.contents b
 
-let write_unit_wasm dir (a : Sce.Sepcomp.artifact) =
-  let customs = [ ("sce.slot", Sce.Sepcomp.print_typ (Sce.Sepcomp.slot_typ a)) ] in
+let write_unit_wasm dir (a : Units.Artifact.t) =
+  let customs = [ ("sce.slot", Units.Artifact.print_typ (Units.Artifact.slot_typ a)) ] in
   write_file
     (Filename.concat dir (a.a_name ^ ".wasm"))
     (Wasm_backend.Compile.to_binary ~customs a.a_core)
@@ -361,7 +361,7 @@ let write_unit_wasm dir (a : Sce.Sepcomp.artifact) =
 let agree name ~dir linked ~units =
   let _, v, trace = run_traced dir linked in
   List.iter (write_unit_wasm dir) units;
-  let _, term = Sce.Sepcomp.runnable linked in
+  let _, term = Units.Linker.runnable linked in
   write_file (Filename.concat dir "prog.wasm")
     (Wasm_backend.Compile.to_binary term);
   let st, text = node_run ~dir "prog.wasm" in
@@ -376,12 +376,12 @@ let agree name ~dir linked ~units =
 let wasm_level name ~dir arts ~loads =
   let _, v, trace = run_traced dir (link_exn arts) in
   List.iter (write_unit_wasm dir) (arts @ loads);
-  let names, unit_types, body = Sce.Sepcomp.wasm_link_parts arts in
+  let names, unit_types, body = Units.Linker.wasm_parts arts in
   write_file (Filename.concat dir "wlinked.wasm")
     (Wasm_backend.Compile.link_binary ~names ~unit_types body);
   let mods =
     "wlinked.wasm"
-    :: List.map (fun (a : Sce.Sepcomp.artifact) -> a.a_name ^ ".wasm") arts
+    :: List.map (fun (a : Units.Artifact.t) -> a.a_name ^ ".wasm") arts
   in
   let st, text = node_run ~dir (String.concat " " mods) in
   let expected = String.concat "\n" (trace @ [ wasmify v ]) in
@@ -401,7 +401,7 @@ let () =
     agree "effects: wasm trace = interpreter trace" ~dir
       (link_exn [ sys; app ]) ~units:[];
     (* effects again, with sys as its own wasm module behind the link module *)
-    let names, unit_types, body = Sce.Sepcomp.wasm_link_parts [ sys; app ] in
+    let names, unit_types, body = Units.Linker.wasm_parts [ sys; app ] in
     List.iter (write_unit_wasm dir) [ sys; app ];
     write_file (Filename.concat dir "linked.wasm")
       (Wasm_backend.Compile.link_binary ~names ~unit_types body);
@@ -425,10 +425,10 @@ let () =
     let shout = compile_exn dir "shout.sce" in
     let quiet = compile_exn dir "quiet.sce" in
     let manager = compile_exn dir "manager.sce" in
-    Sce.Sepcomp.save_artifact (Filename.concat dir "shout.sceo") shout;
-    Sce.Sepcomp.save_artifact (Filename.concat dir "quiet.sceo") quiet;
+    Units.Artifact.save (Filename.concat dir "shout.sceo") shout;
+    Units.Artifact.save (Filename.concat dir "quiet.sceo") quiet;
     agree "plugins: wasm loads and traces agree with the interpreter" ~dir
-      (link_exn [ sys; Sce.Sepcomp.loader_artifact [ manager ]; manager ])
+      (link_exn [ sys; Units.Host.loader [ manager ]; manager ])
       ~units:[ shout; quiet ];
     (* config-driven loading, including the mismatch message *)
     let dir = fixture "dynconfig" in
@@ -436,11 +436,11 @@ let () =
     let fancy = compile_exn dir "fancy.sce" in
     let chooser = compile_exn dir "chooser.sce" in
     List.iter
-      (fun a -> Sce.Sepcomp.save_artifact
-          (Filename.concat dir (a.Sce.Sepcomp.a_name ^ ".sceo")) a)
+      (fun a -> Units.Artifact.save
+          (Filename.concat dir (a.Units.Artifact.a_name ^ ".sceo")) a)
       [ plain; fancy; chooser ];
     let linked =
-      link_exn [ sys; Sce.Sepcomp.loader_artifact [ chooser ]; chooser ]
+      link_exn [ sys; Units.Host.loader [ chooser ]; chooser ]
     in
     List.iter
       (fun skin ->
@@ -453,8 +453,8 @@ let () =
     let v1 = compile_exn dir "libv1.sce" in
     let v2 = compile_exn dir "libv2.sce" in
     let client = compile_exn dir "client.sce" in
-    Sce.Sepcomp.save_artifact (Filename.concat dir "libv2.sceo") v2;
-    let arts = [ v1; Sce.Sepcomp.loader_artifact [ client ]; client ] in
+    Units.Artifact.save (Filename.concat dir "libv2.sceo") v2;
+    let arts = [ v1; Units.Host.loader [ client ]; client ] in
     agree "versions: wasm agrees with the interpreter" ~dir (link_exn arts)
       ~units:[ v2 ];
     wasm_level "versions: wasm-level link agrees with the interpreter" ~dir
@@ -464,9 +464,9 @@ let () =
     let exclaim = compile_exn dir "exclaim.sce" in
     let chain = compile_exn dir "chain.sce" in
     let host = compile_exn dir "host.sce" in
-    Sce.Sepcomp.save_artifact (Filename.concat dir "exclaim.sceo") exclaim;
-    Sce.Sepcomp.save_artifact (Filename.concat dir "chain.sceo") chain;
-    let arts = [ sys; Sce.Sepcomp.loader_artifact [ host ]; host ] in
+    Units.Artifact.save (Filename.concat dir "exclaim.sceo") exclaim;
+    Units.Artifact.save (Filename.concat dir "chain.sceo") chain;
+    let arts = [ sys; Units.Host.loader [ host ]; host ] in
     agree "wiring: wasm delegation traces agree with the interpreter" ~dir
       (link_exn arts) ~units:[ exclaim; chain ];
     wasm_level "wiring: wasm-level link agrees with the interpreter" ~dir arts
@@ -476,8 +476,8 @@ let () =
     let av1 = compile_exn dir "appv1.sce" in
     let av2 = compile_exn dir "appv2.sce" in
     let driver = compile_exn dir "driver.sce" in
-    Sce.Sepcomp.save_artifact (Filename.concat dir "appv2.sceo") av2;
-    let arts = [ av1; Sce.Sepcomp.loader_artifact [ driver ]; driver ] in
+    Units.Artifact.save (Filename.concat dir "appv2.sceo") av2;
+    let arts = [ av1; Units.Host.loader [ driver ]; driver ] in
     agree "upgrade: wasm migration agrees with the interpreter" ~dir
       (link_exn arts) ~units:[ av2 ];
     wasm_level "upgrade: wasm-level link agrees with the interpreter" ~dir arts
@@ -488,7 +488,7 @@ let () =
       List.map (compile_exn dir)
         [ "lexer.sce"; "parser.sce"; "eval.sce"; "pretty.sce"; "main.sce" ]
     in
-    let arts = Sce.Sepcomp.str_artifact :: lunits in
+    let arts = Units.Host.str :: lunits in
     agree "lambda: wasm agrees with the interpreter" ~dir (link_exn arts)
       ~units:[];
     wasm_level "lambda: wasm-level link agrees with the interpreter" ~dir arts
@@ -497,8 +497,8 @@ let () =
     let dir = fixture "linker" in
     let step = compile_exn dir "step.sce" in
     let host = compile_exn dir "host.sce" in
-    Sce.Sepcomp.save_artifact (Filename.concat dir "step.sceo") step;
-    let arts = [ Sce.Sepcomp.loader_artifact [ host ]; host ] in
+    Units.Artifact.save (Filename.concat dir "step.sceo") step;
+    let arts = [ Units.Host.loader [ host ]; host ] in
     agree "linker: wasm agrees with the interpreter" ~dir (link_exn arts)
       ~units:[ step ];
     wasm_level "linker: wasm-level link agrees with the interpreter" ~dir arts
@@ -507,8 +507,8 @@ let () =
     let dir = fixture "worlds" in
     let fancy = compile_exn dir "fancy.sce" in
     let host = compile_exn dir "host.sce" in
-    Sce.Sepcomp.save_artifact (Filename.concat dir "fancy.sceo") fancy;
-    let arts = [ Sce.Sepcomp.loader_artifact [ host ]; host ] in
+    Units.Artifact.save (Filename.concat dir "fancy.sceo") fancy;
+    let arts = [ Units.Host.loader [ host ]; host ] in
     agree "worlds: wasm agrees with the interpreter" ~dir (link_exn arts)
       ~units:[ fancy ];
     wasm_level "worlds: wasm-level link agrees with the interpreter" ~dir arts
@@ -517,9 +517,9 @@ let () =
     let dir = fixture "harness" in
     let report = compile_exn dir "report.sce" in
     let host = compile_exn dir "host.sce" in
-    Sce.Sepcomp.save_artifact (Filename.concat dir "report.sceo") report;
+    Units.Artifact.save (Filename.concat dir "report.sceo") report;
     write_file (Filename.concat dir "data.txt") "live";
-    let arts = [ sys; Sce.Sepcomp.loader_artifact [ host ]; host ] in
+    let arts = [ sys; Units.Host.loader [ host ]; host ] in
     agree "harness: wasm agrees with the interpreter" ~dir (link_exn arts)
       ~units:[ report ];
     wasm_level "harness: wasm-level link agrees with the interpreter" ~dir arts

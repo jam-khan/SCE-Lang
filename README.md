@@ -249,6 +249,7 @@ plugin manager loading plugin modules inside a running wasm instance.
 | [wasm/](wasm/) | the WasmGC backend: IR, binary emitter, WAT printer, node host |
 | [lib/sce/](lib/sce/) | λSCE: AST, `frames`, `debruijn`, evaluators, and the elaboration to λE |
 | [lib/source/](lib/source/) | lexer, parser, `adt`, `sugar`, `driver` |
+| [lib/units/](lib/units/) | separate compilation: `artifact` (.sceo/.scei), `unit`, `linker`, `host` capabilities |
 | [lib/pipeline.ml](lib/pipeline.ml) | the five stages behind one `run` and one error type |
 | [Design.md](Design.md) | the design decisions, why each was made, and the example + test that demonstrates it |
 | [examples/](examples/) | runnable programs, every one a test fixture — see [examples/README.md](examples/README.md) for the annotated index |

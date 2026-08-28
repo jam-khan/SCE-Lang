@@ -80,7 +80,7 @@ let compile_unit ~out src_path =
     print_endline (Sce.Pipeline.render ~src e);
     exit 1
   | Ok (art, sceis) ->
-    Sce.Sepcomp.save_artifact out art;
+    Units.Artifact.save out art;
     let dir = Filename.dirname out in
     List.iter
       (fun (name, contents) -> write_file (Filename.concat dir name) contents)
@@ -96,33 +96,33 @@ let resolve_units paths =
   let real =
     List.filter_map
       (fun p ->
-        if Sce.Sepcomp.is_host_unit p then None
-        else Some (p, Sce.Sepcomp.load_artifact p))
+        if Units.Host.is_host_unit p then None
+        else Some (p, Units.Artifact.load p))
       paths
   in
   List.map
     (fun p ->
       match p with
-      | "sys" -> Sce.Sepcomp.sys_artifact
-      | "str" -> Sce.Sepcomp.str_artifact
-      | "loader" -> Sce.Sepcomp.loader_artifact (List.map snd real)
+      | "sys" -> Units.Host.sys
+      | "str" -> Units.Host.str
+      | "loader" -> Units.Host.loader (List.map snd real)
       | p -> List.assoc p real)
     paths
 
 let link_artifacts paths ~out =
   let arts = resolve_units paths in
   let linked = or_die (Sce.Pipeline.link_artifacts arts) in
-  Sce.Sepcomp.save_artifact out linked;
-  Printf.printf "wrote %s (%s)\n" out linked.Sce.Sepcomp.a_name
+  Units.Artifact.save out linked;
+  Printf.printf "wrote %s (%s)\n" out linked.Units.Artifact.a_name
 
 let run_artifact path =
-  let art = Sce.Sepcomp.load_artifact path in
+  let art = Units.Artifact.load path in
   let t, v = or_die (Sce.Pipeline.run_artifact art) in
   Printf.printf "- : %s = %s\n" t v
 
 let wasm_of_artifact ~out ?wat path =
-  let art = Sce.Sepcomp.load_artifact path in
-  let _, term = Sce.Sepcomp.runnable art in
+  let art = Units.Artifact.load path in
+  let _, term = Units.Linker.runnable art in
   write_file out (Wasm_backend.Compile.to_binary term);
   (match wat with
    | Some f -> write_file f (Wasm_backend.Compile.to_wat term)
@@ -137,16 +137,16 @@ let wasm_of_artifact ~out ?wat path =
 let unit_wasm ~out paths =
   let art = List.hd (resolve_units paths) in
   let customs =
-    [ ("sce.slot", Sce.Sepcomp.print_typ (Sce.Sepcomp.slot_typ art)) ]
+    [ ("sce.slot", Units.Artifact.print_typ (Units.Artifact.slot_typ art)) ]
   in
-  write_file out (Wasm_backend.Compile.to_binary ~customs art.Sce.Sepcomp.a_core);
-  Printf.printf "wrote %s (%s)\n" out art.Sce.Sepcomp.a_name
+  write_file out (Wasm_backend.Compile.to_binary ~customs art.Units.Artifact.a_core);
+  Printf.printf "wrote %s (%s)\n" out art.Units.Artifact.a_name
 
 (* The wasm-level link: the linkers' shared composition, compiled with units
    installed through imports. *)
 let link_wasm ~out ?wat paths =
   let arts = resolve_units paths in
-  let names, unit_types, body = Sce.Sepcomp.wasm_link_parts arts in
+  let names, unit_types, body = Units.Linker.wasm_parts arts in
   write_file out (Wasm_backend.Compile.link_binary ~names ~unit_types body);
   (match wat with
    | Some f -> write_file f (Wasm_backend.Compile.link_wat ~names ~unit_types body)
@@ -185,6 +185,6 @@ let () =
     | _ :: path :: _ -> run_file path
     | _ -> repl ()
   with
-  | Sce.Sepcomp.Error m | Wasm_backend.Compile.Error m | Failure m ->
+  | Units.Artifact.Error m | Wasm_backend.Compile.Error m | Failure m ->
     Printf.eprintf "error: %s\n" m;
     exit 1

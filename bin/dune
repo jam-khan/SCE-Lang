@@ -1,3 +1,3 @@
 (executable
  (name main)
- (libraries sce wasm_backend))
+ (libraries sce units wasm_backend))
