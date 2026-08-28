@@ -1,16 +1,7 @@
-(* AST for core λSCE (Source language core).
-
-   The tree is parametric in how a *variable occurrence* is spelled, so one type
-   serves both sides of scope resolution:
-
-     Sugar     produces  named    = string exp
-     Debruijn  produces  nameless = void exp
-
-   λSCE itself has no variables: a name becomes `Proj (Query, i)`, so `Var` is
-   uninhabited in the nameless instance and the calculus is exactly the one the
-   mechanization describes. Binders keep their source name in both instances,
-   but after resolution the name is only a hint — Debruijn reads it to count
-   slots, and printers and internal errors report it. *)
+(* AST for core λSCE. Parametric in how a variable occurrence is spelled:
+   Sugar produces `named = string exp`, Debruijn `nameless = void exp`. λSCE has
+   no variables, so `Var` is uninhabited in the nameless instance and what is
+   left is exactly the mechanized calculus. *)
 
 type typ =
   | TInt
@@ -64,14 +55,11 @@ type binop =
   | Eq  | Ne                      (* A -> A -> Bool, A primitive *)
   | Cat                           (* String -> String -> String *)
 
-(* The name a binder pushes, kept for Debruijn to count against and for
-   diagnostics. Every form that extends the context carries one; the ones the
-   evaluator manufactures at runtime bind nothing a name could reach. *)
+(* A binder's source name: what Debruijn counts against, a hint thereafter. *)
 type binder = string
 
-let anon : binder = "_"
+let anon : binder = "_"   (* merges the evaluator builds bind nothing *)
 
-(* Uninhabited, so `nameless` provably has no `Var`. *)
 type void = |
 
 type 'v exp =

@@ -1,10 +1,7 @@
-(* Scope resolution: named λSCE -> nameless λSCE.
-
-   Purely syntactic — no types are involved. Every `Var x` becomes the
-   `Proj (Query, i)` that addresses the slot `x` names, counting the context
-   the way Frames says every binder extends it. Sugar decided *which* slot a
-   source name means; this pass only turns that decision into a position, so an
-   unresolved name here is an internal error, not a user one. *)
+(* Scope resolution: named λSCE -> nameless λSCE. Purely syntactic — `Var x`
+   becomes the `Proj (Query, i)` addressing the slot x names, counting the
+   context as Frames says each binder extends it. Sugar already decided which
+   slot; an unresolved name here is a front-end bug, not a user error. *)
 
 open Ast
 
@@ -14,9 +11,7 @@ module F = Frames.Make (struct
   type t = binder
 end)
 
-(* Index 0 is the innermost slot, i.e. the right-most component of the
-   context intersection. A shadowed name is found at its innermost binding,
-   which is where Sugar looked it up too. *)
+(* Innermost first, as Sugar looked it up. *)
 let index (frames : F.env) (x : binder) : int option =
   let rec go i = function
     | [] -> None
@@ -64,8 +59,8 @@ let rec go (fr : F.env) (e : named) : nameless =
   | Inr (t, e1) -> Inr (t, here e1)
   | Fold (t, e1) -> Fold (t, here e1)
   | Unfold e1 -> Unfold (here e1)
-  (* Closures are manufactured by the evaluator, never by the front end. *)
   | Clos _ | Mclos _ | Fclos _ ->
+    (* manufactured by the evaluator, never by the front end *)
     raise (Error "a closure cannot appear in a source term")
 
 let resolve (e : named) : nameless = go F.empty e

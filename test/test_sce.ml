@@ -490,6 +490,9 @@ let test_failures () =
         Printf.printf "        expected %s at %d:%d, got %s at %d:%d — %s\n"
           stage line col e.stage e.line e.col e.message)
   in
+  (* Sugar rejects what would make the translation meaningless — an unbound
+     name, or a type whose shape it cannot continue from. Everything else is a
+     type error, which Elab raises on the term Sugar built. *)
   rejects "unbound variable" "let main = nope" "desugar" 1 11;
   rejects "unbound type name" "type T = Nope\nlet main = 1" "desugar" 1 9;
   rejects "duplicate record labels" "let main = { a = 1, a = 2 }" "desugar" 1 11;
@@ -499,16 +502,16 @@ let test_failures () =
     "let main = open (fun (x : Int) -> x) in a" "desugar" 1 16;
   rejects "sandbox hides the outer context"
     "let main = let z = 1 in sandbox struct let w : Int = z end" "desugar" 1 53;
-  rejects "annotation mismatch" "let main = (1 : String)" "desugar" 1 11;
+  rejects "annotation mismatch" "let main = (1 : String)" "elaborate" 1 0;
   rejects "argument mismatch"
-    {|let f (x : Int) : Int = x let main = f "s"|} "desugar" 1 39;
+    {|let f (x : Int) : Int = x let main = f "s"|} "elaborate" 1 0;
   rejects "application of a non-function" "let main = 1 2" "desugar" 1 11;
   rejects "case on a non-union" "let main = case 1 of inl a -> 1 | inr b -> 2 end"
     "desugar" 1 16;
-  rejects "if branches disagree" {|let main = if true then 1 else "s"|} "desugar" 1 31;
+  rejects "if branches disagree" {|let main = if true then 1 else "s"|} "elaborate" 1 0;
   rejects "case branches disagree"
-    {|let main = case (inl 1 : Int | String) of inl n -> n | inr s -> s end|} "desugar"
-    1 64;
+    {|let main = case (inl 1 : Int | String) of inl n -> n | inr s -> s end|}
+    "elaborate" 1 0;
   rejects "let rec without a return annotation"
     "let main = let rec f (n : Int) = n in 1" "desugar" 1 19;
   rejects "unascribed injection" "let main = inl 1" "desugar" 1 11;
@@ -516,7 +519,7 @@ let test_failures () =
   rejects "unfold of a non-recursive type" "let main = unfold 1" "desugar" 1 18;
   rejects "link against a non-functor" "let main = link { a = 1 } with 1" "desugar" 1 11;
   rejects "link with an unsatisfied import"
-    "let main = link { a = 1 } with functor (X : { b : Int }) -> X" "desugar" 1 11;
+    "let main = link { a = 1 } with functor (X : { b : Int }) -> X" "elaborate" 1 0;
   rejects "division by zero" "let main = 1 / 0" "runtime" 1 0;
   rejects "syntax error" "let main = 1 +" "parse" 1 14;
   (* Applying a wider module directly is rejected: the calculus has no
@@ -525,7 +528,7 @@ let test_failures () =
     "module M = struct let a : Int = 1 let b : Int = 2 end\n\
      module F (X : { a : Int }) = struct let c : Int = X.a end\n\
      module A = F(M)\n\
-     let main = 1" "desugar" 3 12;
+     let main = 1" "elaborate" 1 0;
   rejects "non-exhaustive match" "type c = | R | G\nlet main = match R with | R -> 1 end"
     "adt" 2 11;
   rejects "unknown constructor in a pattern"
@@ -539,9 +542,9 @@ let test_failures () =
   rejects "duplicate constructor" "type c = | R | R\nlet main = 1" "adt" 1 15;
   rejects "match on a non-adt value"
     "type c = | R | G\nlet f (x : Int) : Int = x\n\
-     let main = match f 1 with | R -> 1 | G -> 2 end" "desugar" 3 17;
+     let main = match f 1 with | R -> 1 | G -> 2 end" "elaborate" 1 0;
   rejects "wrong tuple payload arity"
-    "type s = | K of Int * Int\nlet main = K (1, 2, 3)" "desugar" 2 11
+    "type s = | K of Int * Int\nlet main = K (1, 2, 3)" "elaborate" 1 0
 
 let test_examples () =
   print_endline "-- examples --";

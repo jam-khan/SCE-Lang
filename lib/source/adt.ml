@@ -1,12 +1,8 @@
-(* ADT sugar: named AST -> named AST, before resolution.
-
-   `type t = | C of T * T | D` becomes a plain `type t = ...` alias over
-   binary unions (left-nested, matching the parser), records for tuple
-   payloads ({_1 : T; _2 : T}), Top for nullary payloads, and `mu t. ...`
-   when a payload mentions t. Constructor uses and `match` rewrite into the
-   ascribed inl/inr/fold/case idioms a user writes by hand — nothing after
-   this pass changes. Constructors scope exactly like type aliases
-   (sequential, shadowing, per-struct); value binders shadow them. *)
+(* ADT sugar: named AST -> named AST. `type t = | C of T * T | D` becomes a
+   plain alias over left-nested unions, records for tuple payloads, Top for
+   nullary ones, and `mu t. ...` when a payload mentions t; uses and `match`
+   become the ascribed inl/inr/fold/case idioms a user could write by hand.
+   Constructors scope like type aliases; value binders shadow them. *)
 
 open Ast
 
@@ -31,6 +27,8 @@ let lookup env c =
 let shadow env names =
   List.fold_left (fun env (b : binder) -> (b.bd_name, Shadow) :: env) env names
 
+let shadow_params env ps = shadow env (List.map (fun p -> p.p_bind) ps)
+
 (* A redeclared type name orphans the constructors of its predecessor. *)
 let drop_adt env name =
   List.filter (function _, Ctor (_, ad) -> ad.a_name <> name | _ -> true) env
@@ -43,6 +41,14 @@ let rec mentions name (t : typ) =
     mentions name a || mentions name b
   | TRcd fs -> List.exists (fun (_, ft) -> mentions name ft) fs
   | TMu (b, body) -> (not (String.equal b.bd_name name)) && mentions name body
+
+(* How a constructor must be written, for every arity error. *)
+let payload_hint c = function
+  | 0 -> "carries no payload"
+  | 1 -> Printf.sprintf "carries one payload, as in `%s x`" c
+  | k ->
+    Printf.sprintf "carries %d payloads, as in `%s (%s)`" k c
+      (String.concat ", " (List.init k (fun j -> "x" ^ string_of_int (j + 1))))
 
 let payload_typ loc = function
   | [] -> mk loc TTop
@@ -126,10 +132,7 @@ let construct loc (ad : info) i (arg : exp option) =
     | 0, None -> mk loc EUnit
     | 0, Some _ -> err loc "constructor `%s` takes no argument" cname
     | _, Some a -> a
-    | 1, None -> err loc "constructor `%s` carries a payload, as in `%s x`" cname cname
-    | _, None ->
-      err loc "constructor `%s` carries a tuple payload, as in `%s (x, y)`" cname
-        cname
+    | k, None -> err loc "constructor `%s` %s" cname (payload_hint cname k)
   in
   let n = Array.length ad.a_ctors in
   let self = mk loc (TVar ad.a_name) in
@@ -173,8 +176,7 @@ let rec walk env (e : exp) : exp =
   | EBinop (op, a, b) -> nd (EBinop (op, walk env a, walk env b))
   | EUnop (op, a) -> nd (EUnop (op, walk env a))
   | EIf (c, t, f) -> nd (EIf (walk env c, walk env t, walk env f))
-  | ELam (ps, body) ->
-    nd (ELam (ps, walk (shadow env (List.map (fun p -> p.p_bind) ps)) body))
+  | ELam (ps, body) -> nd (ELam (ps, walk (shadow_params env ps) body))
   | EApp (f, a) -> nd (EApp (walk env f, walk env a))
   | ERcd fs -> nd (ERcd (List.map (fun (l, fe) -> (l, walk env fe)) fs))
   | EField (b, l) -> nd (EField (walk env b, l))
@@ -198,12 +200,11 @@ let rec walk env (e : exp) : exp =
     let ds, _ = walk_decls env ds in
     nd (EStruct (sb, ds))
   | EFunctor (sb, ps, body) ->
-    nd
-      (EFunctor (sb, ps, walk (shadow env (List.map (fun p -> p.p_bind) ps)) body))
+    nd (EFunctor (sb, ps, walk (shadow_params env ps) body))
   | ELink (k, m, f) -> nd (ELink (k, walk env m, walk env f))
 
 and walk_binding env (b : binding) =
-  let inner = shadow env (List.map (fun p -> p.p_bind) b.b_params) in
+  let inner = shadow_params env b.b_params in
   let inner = if b.b_rec then shadow inner [ b.b_bind ] else inner in
   { b with b_exp = walk inner b.b_exp }
 
@@ -223,15 +224,6 @@ and rewrite_match env loc scrut arms =
       | None -> err c.bd_loc "unknown constructor `%s`" c.bd_name)
   in
   let n = Array.length ad.a_ctors in
-  let index_of (c : binder) =
-    let rec go i =
-      if i = n then
-        err c.bd_loc "`%s` is not a constructor of type `%s`" c.bd_name ad.a_name
-      else if fst ad.a_ctors.(i) = c.bd_name then i
-      else go (i + 1)
-    in
-    go 0
-  in
   (* one slot per constructor, filled from the arms in any order *)
   let slots = Array.make n None in
   let wild = ref None in
@@ -244,18 +236,16 @@ and rewrite_match env loc scrut arms =
           err c.bd_loc "the `_` arm must come last";
         wild := Some body
       end
-      else begin
-        (match lookup env c.bd_name with
-         | Some (_, ad') when ad'.a_name = ad.a_name && ad' == ad -> ()
-         | Some (_, ad') ->
-           err c.bd_loc "`%s` belongs to type `%s`, not `%s`" c.bd_name
-             ad'.a_name ad.a_name
-         | None -> err c.bd_loc "unknown constructor `%s`" c.bd_name);
-        let i = index_of c in
-        if slots.(i) <> None then
-          err c.bd_loc "duplicate arm for constructor `%s`" c.bd_name;
-        slots.(i) <- Some (c, args, body)
-      end)
+      else
+        match lookup env c.bd_name with
+        | None -> err c.bd_loc "unknown constructor `%s`" c.bd_name
+        | Some (_, ad') when ad' != ad ->
+          err c.bd_loc "`%s` belongs to type `%s`, not `%s`" c.bd_name
+            ad'.a_name ad.a_name
+        | Some (i, _) ->
+          if slots.(i) <> None then
+            err c.bd_loc "duplicate arm for constructor `%s`" c.bd_name;
+          slots.(i) <- Some (c, args, body))
     arms;
   (* each slot becomes a case binder and a walked body *)
   let branch i =
@@ -270,39 +260,27 @@ and rewrite_match env loc scrut arms =
     | Some (c, args, body) -> (
       match (arity, args) with
       | 0, [] -> (fresh "w" c.bd_loc, walk env body)
-      | 0, _ -> err c.bd_loc "constructor `%s` carries no payload" cname
-      | 1, [ x ] -> (x, walk (shadow env [ x ]) body)
-      | _, [ x ] when arity > 1 -> (x, walk (shadow env [ x ]) body)
+      (* one binder takes the whole payload, tuple or not *)
+      | k, [ x ] when k >= 1 -> (x, walk (shadow env [ x ]) body)
+      (* C (x, y): bind the payload record, then a let per field *)
       | k, xs when k > 1 && List.length xs = k ->
-        (* C (x, y): bind the payload record, then a let per field *)
         let p = fresh "p" c.bd_loc in
-        let body = walk (shadow env xs) body in
-        let wrapped =
-          List.fold_right
-            (fun (j, (x : binder)) acc ->
-              let proj =
-                mk x.bd_loc
-                  (EField
-                     ( mk x.bd_loc (EVar p.bd_name),
-                       "_" ^ string_of_int (j + 1) ))
-              in
-              mk x.bd_loc
-                (ELet
-                   ( { b_rec = false; b_bind = x; b_params = [];
-                       b_ann = None; b_exp = proj },
-                     acc )))
-            (List.mapi (fun j x -> (j, x)) xs)
-            body
+        let field j (x : binder) acc =
+          let proj =
+            mk x.bd_loc
+              (EField (mk x.bd_loc (EVar p.bd_name), "_" ^ string_of_int (j + 1)))
+          in
+          mk x.bd_loc
+            (ELet
+               ( { b_rec = false; b_bind = x; b_params = []; b_ann = None;
+                   b_exp = proj },
+                 acc ))
         in
-        (p, wrapped)
-      | 1, _ ->
-        err c.bd_loc "constructor `%s` carries one payload, as in `%s x`" cname
-          cname
-      | k, _ ->
-        err c.bd_loc "constructor `%s` carries %d payloads, as in `%s (%s)`"
-          cname k cname
-          (String.concat ", "
-             (List.init k (fun j -> "x" ^ string_of_int (j + 1)))))
+        ( p,
+          List.fold_right (fun (j, x) -> field j x)
+            (List.mapi (fun j x -> (j, x)) xs)
+            (walk (shadow env xs) body) )
+      | k, _ -> err c.bd_loc "constructor `%s` %s" cname (payload_hint cname k))
   in
   if !wild <> None && Array.for_all (fun s -> s <> None) slots then
     err loc "the `_` arm is unreachable: every constructor of `%s` is covered"

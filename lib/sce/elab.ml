@@ -39,6 +39,12 @@ let srlookup (a : typ) (l : string) : typ =
   | Some t  -> t
   | None    -> elab_error ("no unambiguous field labelled " ^ l)
 
+(* The fields of a left-nested intersection of records. *)
+let rec record_fields = function
+  | TRcd (l, t)   -> [ (l, t) ]
+  | TAnd (a, b)   -> record_fields a @ record_fields b
+  | _             -> []
+
 (* LinkOk: Γ₁ satisfies every labelled import of the interface
    D ::= rcd l A | D & rcd l A (left-nested intersections of records). *)
 let rec link_ok (g1 : typ) (d : typ) : bool =

@@ -1,15 +1,11 @@
 (* Separate compilation: units, interfaces, and the core-level linker.
 
-   A unit is a *sandboxed functor* from its imports to its exports — closed by
-   the calculus itself (`sandbox` elaborates under Top), not by toolchain
-   discipline. Its compiled form is an ordinary closed λE term stored in an
-   artifact together with its λSCE-level interface types.
-
-   Linking is the calculus's own first-class linking: each step applies the
-   unit functor to a record of projections wired out of the accumulated
-   provider — built with `Elab.wire_arg`, the very code `Mlink` elaboration
-   uses — and merges the result in. The linked program is an ordinary λE term,
-   re-checked by the ordinary λE typechecker. *)
+   A unit is a *sandboxed functor* from its imports to its exports, closed by
+   the calculus (`sandbox` elaborates under Top) rather than by toolchain
+   discipline. Linking is the calculus's own linking: each step applies the
+   unit functor to projections wired out of the accumulated provider with
+   `Elab.link_step` — the very term `Mlink` elaborates to — and merges the
+   result in, re-checked by the ordinary λE typechecker. *)
 
 module S = Sce_core.Ast
 module E = Sce_core.Elab
@@ -52,12 +48,9 @@ let load_artifact (path : string) : artifact =
   close_in ic;
   a
 
-(* ---------------- surface-type printer ----------------
-
-   Inverts the type grammar, so generated .scei files parse back to the same
-   λSCE type. Levels mirror the parser: 0 typ (mu, =>) < 1 arrow < 2 union <
-   3 intersection < 4 atom. Mu binders are de Bruijn in S.typ, so names are
-   invented on the way out. *)
+(* Inverts the type grammar, so a generated .scei parses back to the same type.
+   Levels mirror the parser: 0 typ (mu, =>) < 1 arrow < 2 union < 3 & < 4 atom.
+   Mu binders are de Bruijn, so names are invented on the way out. *)
 
 let mu_name k = if k < 26 then String.make 1 (Char.chr (97 + k)) else Printf.sprintf "t%d" k
 
@@ -91,14 +84,11 @@ let parse_typ_exn ~what (src : string) : S.typ =
   match Driver.parse_intf src with
   | Error e -> err "%s:%d:%d: %s" what e.line e.col e.message
   | Ok intf ->
-    Sugar.conv_typ_closed (Sugar.expand_aliases intf.i_aliases intf.i_typ)
+    Sugar.conv_intf intf
 
-(* ---------------- the sys interface ----------------
-
-   Effects enter the language the same way every other dependency does:
-   through a unit. `sys` is a host-implemented leaf provider (built further
-   down, next to the dispatcher); its interface lives here so `import Sys`
-   can fall back to it when no Sys.scei file shadows the builtin. *)
+(* Effects enter through a unit like any other dependency. `sys` is a
+   host-implemented leaf provider, built next to the dispatcher below; its
+   interface lives here so `import Sys` can fall back to it. *)
 
 let sys_typ : S.typ =
   S.TAnd
@@ -115,9 +105,8 @@ let str_typ : S.typ =
 
 (* ---------------- imports and the unit wrapper ---------------- *)
 
-(* Resolve one import header to a self-contained *named* type, so it can be
-   spliced into the unit file before scope resolution. File-based interfaces
-   live next to the importing source file. *)
+(* One import header as a self-contained named type, spliced into the unit
+   file before desugaring. File interfaces live next to the importing source. *)
 let import_typ ~dir (b : Ast.binder) (src : Ast.import_source) : Ast.typ =
   let from_file base =
     let path = Filename.concat dir (base ^ ".scei") in
@@ -145,11 +134,9 @@ let import_typ ~dir (b : Ast.binder) (src : Ast.import_source) : Ast.typ =
 
 let imports_binder = "%imports"
 
-(* The whole design in one function: a unit is its declarations wrapped as a
-   sandboxed struct, or — when it imports — a sandboxed functor whose
-   parameter is the record of imports, opened over the body. Everything
-   downstream (Sugar, Debruijn, Elab) is the unchanged whole-program
-   machinery. *)
+(* The whole design in one function: a unit is its declarations as a sandboxed
+   struct, or — when it imports — a sandboxed functor over the record of
+   imports, opened. Everything downstream is the whole-program machinery. *)
 let unit_wrapper (imports : (Ast.binder * Ast.typ) list) (p : Ast.program) :
     Ast.program =
   let loc = Ast.dummy_loc in
@@ -186,19 +173,15 @@ let unit_info (t : S.typ) : S.typ option * S.typ =
 
 (* ---------------- the linker ---------------- *)
 
-let rec import_fields = function
-  | S.TRcd (l, t) -> [ (l, t) ]
-  | S.TAnd (a, b) -> import_fields a @ import_fields b
-  | t -> err "malformed import interface: %s" (print_typ t)
+let import_fields t =
+  match E.record_fields t with
+  | [] -> err "malformed import interface: %s" (print_typ t)
+  | fs -> fs
 
-let rec export_labels = function
-  | S.TRcd (l, _) -> [ l ]
-  | S.TAnd (a, b) -> export_labels a @ export_labels b
-  | _ -> []
+let export_labels t = List.map fst (E.record_fields t)
 
-(* Would merging `next` into a provider typed `accT` make any label ambiguous?
-   `srlookup` refuses a label present on both sides, so a collision would make
-   both copies unreachable — reject it with the unit names attached. *)
+(* A label on both sides is unreachable through `srlookup`, so a collision
+   between units is an error, not a shadowing. *)
 let check_no_overlap accT acc_names next next_name =
   List.iter
     (fun l ->
@@ -222,11 +205,8 @@ let check_imports_satisfied ~unit_name accT d =
              unambiguously" unit_name l)
     (import_fields d)
 
-(* One link step: apply the unit functor to a record of projections wired out
-   of the provider, and merge the result in. This is `Elab.link_step` — the
-   very term `link`/`linkall` elaborate to — so the two linkers cannot drift:
-   both bind each operand exactly once, and the λE typechecker verifies the
-   result on every link. *)
+(* `Elab.link_step` — the term `link`/`linkall` elaborate to — so the toolchain
+   linker and the calculus's own cannot drift. *)
 let link_step (accT : S.typ) (d : S.typ) (b : S.typ) : C.exp =
   E.link_step (E.elab_typ accT)
     (E.elab_typ (S.TSig (S.TyArrM (d, S.TyIntf b))))
@@ -243,11 +223,9 @@ let slot_typ (u : artifact) : S.typ =
   | None -> u.a_exports
   | Some d -> S.TSig (S.TyArrM (d, S.TyIntf u.a_exports))
 
-(* The composition both linkers share: a left fold of step applications,
-   `App (App (step_k, acc), u_k)`, parameterized by how a unit occurrence is
-   spelled — the core linker splices the closed artifact terms in, the wasm
-   linker references the units through the environment its link module builds
-   from imports. Same term, two ways of installing the units. *)
+(* The composition both linkers share: a left fold of `App (App (step, acc), u)`,
+   parameterized by how a unit occurrence is spelled — spliced term for the core
+   linker, environment projection for the wasm one. *)
 let compose (arts : artifact list) (uref : int -> C.exp) :
     S.typ * C.exp * string list =
   match arts with
@@ -305,10 +283,7 @@ let wasm_link_parts (arts : artifact list) :
   in
   (names, List.map (fun a -> E.elab_typ (slot_typ a)) arts, body)
 
-(* ---------------- running a linked artifact ----------------
-
-   Convention: a `main` export is the program; otherwise the module itself is
-   the result. *)
+(* A `main` export is the program; otherwise the module itself is the result. *)
 
 let runnable (a : artifact) : S.typ * C.exp =
   (match a.a_imports with
@@ -323,11 +298,11 @@ let runnable (a : artifact) : S.typ * C.exp =
 
 (* ---------------- host capabilities ----------------
 
-   `sys` and `loader` are leaf provider units the *host* materializes rather
-   than loads from disk. Their exports are Hostfn values dispatching into
-   OCaml through Eval.host_dispatch, so authority flows only through linking:
-   a term that was never linked (or handed) a capability cannot perform its
-   effect, and `sandbox` cuts effects off with the rest of the context. *)
+   `sys` and `loader` are leaf provider units the host materializes instead of
+   loading. Their exports are Hostfn values dispatching through
+   Eval.host_dispatch, so authority flows only through linking: a term never
+   linked a capability cannot perform its effect, and `sandbox` cuts effects
+   off with the rest of the context. *)
 
 module Ev = Core_lambdae.Eval
 
@@ -340,15 +315,12 @@ let hostfn (name : string) (t : S.typ) : C.exp =
   | _ -> err "internal: host capability %s is not a function" name
 
 let host_artifact ~name ~label (t : S.typ) : artifact =
-  let rec fields = function
-    | S.TRcd (l, ft) -> [ (l, hostfn l ft) ]
-    | S.TAnd (a, b) -> fields a @ fields b
-    | _ -> err "internal: host interface %s is not a record intersection" name
-  in
   let core =
-    match List.map (fun (l, e) -> C.Lrec (l, e)) (fields t) with
+    match
+      List.map (fun (l, ft) -> C.Lrec (l, hostfn l ft)) (E.record_fields t)
+    with
     | first :: rest -> List.fold_left (fun acc r -> C.Mrg (acc, r)) first rest
-    | [] -> assert false
+    | [] -> err "internal: host interface %s is not a record intersection" name
   in
   { a_name = name; a_imports = None;
     a_exports = S.TRcd (label, t); a_core = C.Lrec (label, core) }
@@ -356,17 +328,15 @@ let host_artifact ~name ~label (t : S.typ) : artifact =
 let sys_artifact : artifact = host_artifact ~name:"sys" ~label:"Sys" sys_typ
 let str_artifact : artifact = host_artifact ~name:"str" ~label:"Str" str_typ
 
-(* The loader is a capability whose type *declares* the expected interface:
+(* The loader is a capability whose type *declares* what it expects:
 
      import Loader : { load : String -> (Sig | {err : String}) }
 
-   The host reads that declaration off the importing artifact and builds a
-   provider specialized to it. The runtime check is structural equality
-   between Sig and the loaded artifact's slot type — the same comparison the
-   static linker makes, at a later time. The expected type rides in the
-   Hostfn name as printed surface syntax, which parses back to an equal type
-   (print_typ inverts the grammar), so a saved linked program re-manufactures
-   its checker in a fresh process. *)
+   The host reads that off the importing artifact and specializes to it. The
+   runtime check is structural equality between Sig and the loaded artifact's
+   slot type — the static linker's comparison, made later. The expected type
+   rides in the Hostfn name as surface syntax, so a saved program
+   re-manufactures its checker in a fresh process. *)
 
 let loader_label = "Loader"
 

@@ -1,9 +1,5 @@
-(* The whole front-to-back pipeline:
-
-     parse -> desugar -> resolve -> elaborate -> check -> evaluate
-
-   Every stage reports failures the same way, so a caller only ever has to
-   render one kind of error. *)
+(* parse -> desugar -> resolve -> elaborate -> check -> evaluate, with every
+   stage's failure rendered the same way. *)
 
 module C = Core_lambdae.Ast
 module S = Sce_core.Ast
@@ -27,8 +23,7 @@ let at stage (loc : Ast.loc) message =
   let line, col = Driver.line_col loc.start_p in
   { stage; message; line; col }
 
-(* Stages after parsing have no position of their own to report; they inherit
-   the one carried by the surface node that raised. *)
+(* Stages past the surface AST have no position of their own. *)
 let whole stage message = { stage; message; line = 1; col = 0 }
 
 (* The interpreters raise Failure with their own "Error: " prefix. *)

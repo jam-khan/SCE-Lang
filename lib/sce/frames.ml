@@ -1,15 +1,9 @@
-(* The λSCE context discipline, in one place.
+(* The λSCE context discipline, in one place: Sugar fills the slots with types,
+   Debruijn counts them to turn a name into an index, and if they disagree the
+   indices silently point at the wrong slot.
 
-   λSCE has no variables: the context is a left-nested intersection and every
-   binder extends it. Two passes have to agree on exactly how — Sugar, which
-   fills the slots with the types it synthesizes, and Debruijn, which counts
-   them to turn a name into an index. If they ever disagree the indices
-   silently point at the wrong slot, so both instantiate this module rather
-   than open-coding the pushes.
-
-   A context is a list whose head is index 0, i.e. the innermost binding and the
-   *right-most* component of the intersection — the convention `Elab.slookup`
-   and `Eval.lookup` use. *)
+   Head of the list is index 0 — the innermost binding, and the right-most
+   component of the intersection, as `Elab.slookup` and `Eval.lookup` read it. *)
 
 module type SLOT = sig
   type t
@@ -22,38 +16,25 @@ module Make (S : SLOT) = struct
   let push (s : S.t) (env : env) : env = s :: env
   let nth (env : env) (i : int) : S.t option = List.nth_opt env i
 
-  (* One entry per λSCE form that extends the context. The comment on each
-     names the elaboration rule in lib/sce/elab.ml it mirrors. *)
+  (* One entry per λSCE form that extends the context, named for its Elab rule. *)
 
-  (* Lam (x, A, body): body under ctx & A *)
-  let lam a env = push a env
-
-  (* Letb (x, e1, A, e2): e2 under ctx & A *)
-  let letb a env = push a env
-
-  (* Flam (f, x, A, B, body): body under (ctx & (A -> B)) & A, so the argument
-     is index 0 and the function itself is index 1. *)
-  let flam ~self ~arg env = push arg (push self env)
-
-  (* Mrg (x, e1, e2): e2 under ctx & typeof e1 *)
-  let mrg a env = push a env
+  let lam a env = push a env    (* Lam (x, A, body): body under ctx & A *)
+  let letb a env = push a env   (* Letb (x, e1, A, e2): e2 under ctx & A *)
+  let mrg a env = push a env    (* Mrg (x, e1, e2): e2 under ctx & typeof e1 *)
+  let openm a env = push a env  (* Openm (x, {l : A}, e2): e2 under ctx & A *)
+  let case_branch a env = push a env  (* Case: each branch under ctx & A resp. B *)
 
   (* Nmrg (e1, e2): e2 under ctx, unchanged *)
   let nmrg (_ : S.t) (env : env) : env = env
 
-  (* Case (_, x, el, y, er): each branch under ctx & A resp. ctx & B *)
-  let case_branch a env = push a env
+  (* Flam: body under (ctx & (A -> B)) & A — argument 0, function itself 1. *)
+  let flam ~self ~arg env = push arg (push self env)
 
-  (* Openm (x, e1, e2): e1 : {l : A}, e2 under ctx & A *)
-  let openm a env = push a env
-
-  (* Mstruct (Sandboxed, body) and Mfunctor (Sandboxed, x, A, body): the outer
-     context is gone. A sandboxed functor then pushes its parameter with `lam`
-     as usual, giving Top & A. *)
+  (* Mstruct/Mfunctor (Sandboxed, ...): the outer context is gone. A sandboxed
+     functor then pushes its parameter with `lam`, giving Top & A. *)
   let sandbox (_ : env) : env = empty
 
-  (* Box (e1, e2): e2 under typeof e1, replacing the context wholesale. Its
-     component structure is not knowable from syntax, so named bindings do not
-     cross a box — inside one, reach the context with `?` and `?.n`. *)
+  (* Box (e1, e2): e2 under typeof e1, wholesale. Its component structure is not
+     knowable from syntax, so names do not cross a box — use `?` and `?.n`. *)
   let box (_ : env) : env = empty
 end

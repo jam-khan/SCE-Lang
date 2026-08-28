@@ -1,9 +1,6 @@
-(* Surface AST (full sugar and direct from parsing).
-
-   Names stay names here. Sugar resolves them against the types it synthesizes,
-   on the way down to λSCE, and it is the λSCE tree that then loses them
-   (lib/sce/debruijn.ml) — so there is only one surface tree, the one the parser
-   builds. *)
+(* Surface AST: full sugar, direct from parsing. Names stay names — Sugar
+   resolves them on the way down to λSCE, and it is the λSCE tree that loses
+   them (lib/sce/debruijn.ml). *)
 
 type loc = { start_p : Lexing.position; end_p : Lexing.position }
 
@@ -11,9 +8,8 @@ type 'a node = { it : 'a; loc : loc }
 
 let mk loc it = { it; loc }
 
-(* For synthesized nodes. Lexing.dummy_pos is line 0 / offset -1, deliberately
-   invalid, so it cannot be confused with the start of a real file; Driver.render
-   detects it and drops the location rather than pointing at line 1. *)
+(* Synthesized nodes: dummy_pos is line 0 / offset -1, so Driver.render can
+   tell it from the start of a real file and drop the location. *)
 let dummy_loc = { start_p = Lexing.dummy_pos; end_p = Lexing.dummy_pos }
 
 type binder = { bd_name : string; bd_loc : loc }
