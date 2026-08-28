@@ -82,7 +82,8 @@ let print_typ (t : S.typ) : string =
    An interface is aliases + a type, resolved before it meets the importing
    file's scope, so its aliases are substituted away at the named level: what
    `import` splices into the unit is a self-contained surface type. A mu of the
-   same name shadows an alias inside its body. *)
+   same name shadows an alias inside its body.
+*)
 
 let rec subst_tname (name : string) (body : Ast.typ) (t : Ast.typ) : Ast.typ =
   let nd it : Ast.typ = { it; loc = t.loc } in
