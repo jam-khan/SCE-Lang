@@ -142,12 +142,13 @@ let linked_core_n (ctx : C.typ) (d : typ) (ce1 : C.exp) (ce2 : C.exp) : C.exp =
 
 (* ---- elaboration based on the `elabExp` judgment ---- *)
 
-let rec elab (ctx : typ) (e : exp) : typ * C.exp =
+let rec elab (ctx : typ) (e : nameless) : typ * C.exp =
   match e with
+  | Var _ -> .
   | Query -> (ctx, C.Query)
   | Lit l -> (typ_of_lit l, C.Lit (elab_lit l))
   | Unit -> (TTop, C.Unit)
-  | Lam (a, body) ->
+  | Lam (_, a, body) ->
     let b, ce = elab (TAnd (ctx, a)) body in
     (TArr (a, b), C.Lam (elab_typ a, ce))
   | Clos (v, a, body) ->
@@ -166,7 +167,7 @@ let rec elab (ctx : typ) (e : exp) : typ * C.exp =
     let ctx', ce1 = elab ctx e1 in
     let a, ce2 = elab ctx' e2 in
     (a, C.Box (ce1, ce2))
-  | Mrg (e1, e2) ->
+  | Mrg (_, e1, e2) ->
     let a, ce1 = elab ctx e1 in
     let b, ce2 = elab (TAnd (ctx, a)) e2 in
     (TAnd (a, b), C.Mrg (ce1, ce2))
@@ -194,13 +195,13 @@ let rec elab (ctx : typ) (e : exp) : typ * C.exp =
     let b, ce3 = elab ctx e3 in
     if a = b then (a, C.If (ce1, ce2, ce3))
     else elab_error "if branches have different types"
-  | Letb (e1, ann, e2) ->
+  | Letb (_, e1, ann, e2) ->
     let a, ce1 = elab ctx e1 in
     if a <> ann then
       elab_error "let annotation does not match the bound expression";
     let b, ce2 = elab (TAnd (ctx, a)) e2 in
     (b, C.App (C.Lam (elab_typ a, ce2), ce1))
-  | Openm (e1, e2) ->
+  | Openm (_, e1, e2) ->
     (match elab ctx e1 with
      | TRcd (l, a), ce1 ->
        let b, ce2 = elab (TAnd (ctx, a)) e2 in
@@ -212,10 +213,10 @@ let rec elab (ctx : typ) (e : exp) : typ * C.exp =
   | Mstruct (Open, body) ->
     let b, ce = elab ctx body in
     (b, C.Box (C.Query, ce))
-  | Mfunctor (Sandboxed, a, body) ->
+  | Mfunctor (Sandboxed, _, a, body) ->
     let b, ce = elab (TAnd (TTop, a)) body in
     (TSig (TyArrM (a, TyIntf b)), C.Box (C.Unit, C.Lam (elab_typ a, ce)))
-  | Mfunctor (Open, a, body) ->
+  | Mfunctor (Open, _, a, body) ->
     let b, ce = elab (TAnd (ctx, a)) body in
     (TSig (TyArrM (a, TyIntf b)), C.Lam (elab_typ a, ce))
   | Mclos (v, a, body) ->
@@ -256,7 +257,7 @@ let rec elab (ctx : typ) (e : exp) : typ * C.exp =
   | Inr (a, e1) ->
     let b, ce = elab ctx e1 in
     (TOr (a, b), C.Inr (elab_typ a, ce))
-  | Case (e1, el, er) ->
+  | Case (e1, _, el, _, er) ->
     (match elab ctx e1 with
      | TOr (a, b), ce ->
        let c1, ce1 = elab (TAnd (ctx, a)) el in
@@ -264,7 +265,7 @@ let rec elab (ctx : typ) (e : exp) : typ * C.exp =
        if c1 = c2 then (c1, C.Case (ce, ce1, ce2))
        else elab_error "case branches have different types"
      | _ -> elab_error "case scrutinee is not a union")
-  | Flam (a, b, body) ->
+  | Flam (_, _, a, b, body) ->
     let b', ce = elab (TAnd (TAnd (ctx, TArr (a, b)), a)) body in
     if b' = b then (TArr (a, b), C.Flam (elab_typ a, elab_typ b, ce))
     else elab_error "recursive function body type mismatch"
@@ -285,6 +286,6 @@ let rec elab (ctx : typ) (e : exp) : typ * C.exp =
 
 (* ---- wrappers (whole programs elaborate under ⊤, per whole_program_correctness) ---- *)
 
-let check (e : exp) : typ = fst (elab TTop e)
+let check (e : nameless) : typ = fst (elab TTop e)
 
-let compile (e : exp) : C.exp = snd (elab TTop e)
+let compile (e : nameless) : C.exp = snd (elab TTop e)

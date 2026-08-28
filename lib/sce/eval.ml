@@ -2,33 +2,33 @@
 open Ast
 
 (* LookupV: index 0 is the *right-most* component of a merge. *)
-let rec lookup (v : exp) (i : int) : exp =
+let rec lookup (v : nameless) (i : int) : nameless =
   match v with
-  | Mrg (v1, v2) | Nmrg (v1, v2) ->
+  | Mrg (_, v1, v2) | Nmrg (v1, v2) ->
     if i = 0 then v2 else lookup v1 (i - 1)
   | _ -> failwith ("Error: no component at index " ^ string_of_int i)
 
 (* Sel with option response *)
-let rec sel_opt (v : exp) (l : string) : exp option =
+let rec sel_opt (v : nameless) (l : string) : nameless option =
   match v with
   | Lrec (l', v') when String.equal l l' -> Some v'
-  | Mrg (v1, v2) | Nmrg (v1, v2) ->
+  | Mrg (_, v1, v2) | Nmrg (v1, v2) ->
     (match sel_opt v2 l with
      | Some _ as r -> r
      | None -> sel_opt v1 l)
   | _ -> None
 
 (* Sel: label `l` selection in `v` *)
-let sel (v : exp) (l : string) : exp =
+let sel (v : nameless) (l : string) : nameless =
   match sel_opt v l with
   | Some v' -> v'
   | None -> failwith ("Error: no field labelled " ^ l)
 
 (* SelPkg: build the record package for the import interface `d` out of `v`. *)
-let rec selpkg (v : exp) (d : typ) : exp =
+let rec selpkg (v : nameless) (d : typ) : nameless =
   match d with
   | TRcd (l, _) -> Lrec (l, sel v l)
-  | TAnd (d', TRcd (l, _)) -> Mrg (selpkg v d', Lrec (l, sel v l))
+  | TAnd (d', TRcd (l, _)) -> Mrg (anon, selpkg v d', Lrec (l, sel v l))
   | _ -> failwith "Error: import interface must be a record or intersection of records."
 
 (* Prim: apply a primitive operator to two literal operands. *)
@@ -52,47 +52,48 @@ let prim (op : binop) (l1 : lit) (l2 : lit) : lit =
   | _ -> failwith "Error: primitive operator applied to ill-typed operands."
 
 (* Both operands of a primitive reduce to literals; anything else is ill-typed. *)
-let prim_exp (op : binop) (v1 : exp) (v2 : exp) : exp =
+let prim_exp (op : binop) (v1 : nameless) (v2 : nameless) : nameless =
   match v1, v2 with
   | Lit l1, Lit l2 -> Lit (prim op l1 l2)
   | _ -> failwith "Error: primitive operator applied to non-literals."
 
-let branch (v : exp) (e2 : exp) (e3 : exp) : exp =
+let branch (v : nameless) (e2 : nameless) (e3 : nameless) : nameless =
   match v with
   | Lit (Bool true)  -> e2
   | Lit (Bool false) -> e3
   | _ -> failwith "Error: if condition must evaluate to a boolean."
 
 (* Interpreter based on big-step semantics. *)
-let rec eval (env : exp) (e : exp) : exp =
+let rec eval (env : nameless) (e : nameless) : nameless =
   match e with
+  | Var _ -> .
   | Lit _ | Unit | Clos _ | Mclos _ | Fclos _ -> e
   | Query -> env
-  | Lam (ty, body) -> Clos (env, ty, body)
-  | Flam (tyA, tyB, body) -> Fclos (env, tyA, tyB, body)
+  | Lam (_, ty, body) -> Clos (env, ty, body)
+  | Flam (_, _, tyA, tyB, body) -> Fclos (env, tyA, tyB, body)
   | Box (e1, e2) ->
     let env' = eval env e1 in
     eval env' e2
-  | Mrg (e1, e2) ->
+  | Mrg (x, e1, e2) ->
     let v1 = eval env e1 in
-    Mrg (v1, eval (Mrg (env, v1)) e2)
+    Mrg (x, v1, eval (Mrg (x, env, v1)) e2)
   | Nmrg (e1, e2) ->
     let v1 = eval env e1 in
-    Mrg (v1, eval env e2)
+    Mrg (anon, v1, eval env e2)
   | App (e1, e2) ->
     let v1 = eval env e1 in
     let v2 = eval env e2 in
     begin match v1 with
-      | Clos (cenv, _ty, body) -> eval (Mrg (cenv, v2)) body
+      | Clos (cenv, _ty, body) -> eval (Mrg (anon, cenv, v2)) body
       | Fclos (cenv, _tyA, _tyB, body) ->
-        eval (Mrg (Mrg (cenv, v1), v2)) body
+        eval (Mrg (anon, Mrg (anon, cenv, v1), v2)) body
       | _ -> failwith "Error: Application (e1 e2) must have e1 as closure."
     end
   | Mapp (e1, e2) ->
     let v1 = eval env e1 in
     let v2 = eval env e2 in
     begin match v1 with
-      | Mclos (cenv, _ty, body) -> eval (Mrg (cenv, v2)) body
+      | Mclos (cenv, _ty, body) -> eval (Mrg (anon, cenv, v2)) body
       | _ -> failwith "Error: Module application (e1 e2) must have e1 as module closure."
     end
   | Proj (e1, i) -> lookup (eval env e1) i
@@ -104,24 +105,24 @@ let rec eval (env : exp) (e : exp) : exp =
     let v2 = eval env e2 in
     prim_exp op v1 v2
   | If (e1, e2, e3) -> eval env (branch (eval env e1) e2 e3)
-  | Letb (e1, _ty, e2) ->
+  | Letb (x, e1, _ty, e2) ->
     let v1 = eval env e1 in
-    eval (Mrg (env, v1)) e2
-  | Openm (e1, e2) ->
+    eval (Mrg (x, env, v1)) e2
+  | Openm (x, e1, e2) ->
     begin match eval env e1 with
-      | Lrec (_l, v') -> eval (Mrg (env, v')) e2
+      | Lrec (_l, v') -> eval (Mrg (x, env, v')) e2
       | _ -> failwith "Error: Open must have a labelled record as its subject."
     end
   | Mstruct (Sandboxed, body) -> eval Unit body
   | Mstruct (Open, body) -> eval env body
-  | Mfunctor (Sandboxed, ty, body) -> Mclos (Unit, ty, body)
-  | Mfunctor (Open, ty, body) -> Mclos (env, ty, body)
+  | Mfunctor (Sandboxed, _, ty, body) -> Mclos (Unit, ty, body)
+  | Mfunctor (Open, _, ty, body) -> Mclos (env, ty, body)
   | Mlink (e1, e2) ->
     let v1 = eval env e1 in
     begin match eval env e2 with
       | Mclos (cenv, TRcd (l, _), body) ->
         let vl = sel v1 l in
-        Mrg (v1, eval (Mrg (cenv, Lrec (l, vl))) body)
+        Mrg (anon, v1, eval (Mrg (anon, cenv, Lrec (l, vl))) body)
       | _ -> failwith "Error: Link must have a module closure with a record import."
     end
   | Mlinkn (e1, e2) ->
@@ -129,15 +130,15 @@ let rec eval (env : exp) (e : exp) : exp =
     begin match eval env e2 with
       | Mclos (cenv, d, body) ->
         let pkg = selpkg v1 d in
-        Mrg (v1, eval (Mrg (cenv, pkg)) body)
+        Mrg (anon, v1, eval (Mrg (anon, cenv, pkg)) body)
       | _ -> failwith "Error: N-ary link must have a module closure."
     end
   | Inl (ty, e1) -> Inl (ty, eval env e1)
   | Inr (ty, e1) -> Inr (ty, eval env e1)
-  | Case (e1, el, er) ->
+  | Case (e1, x, el, y, er) ->
     begin match eval env e1 with
-      | Inl (_, v) -> eval (Mrg (env, v)) el
-      | Inr (_, v) -> eval (Mrg (env, v)) er
+      | Inl (_, v) -> eval (Mrg (x, env, v)) el
+      | Inr (_, v) -> eval (Mrg (y, env, v)) er
       | _ -> failwith "Error: Case analysis must evaluate to an injection."
     end
   | Fold (ty, e1) -> Fold (ty, eval env e1)
@@ -148,38 +149,40 @@ let rec eval (env : exp) (e : exp) : exp =
     end
 
 (* Interpreter based on small-step semantics. *)
-let rec step (env : exp) (e : exp) : exp =
+let rec step (env : nameless) (e : nameless) : nameless =
   match e with
+  | Var _ -> .
   | _ when is_value e -> e
   | Query -> env
-  | Lam (ty, body) -> Clos (env, ty, body)
-  | Flam (tyA, tyB, body) -> Fclos (env, tyA, tyB, body)
-  | Mfunctor (Sandboxed, ty, body) -> Mclos (Unit, ty, body)
-  | Mfunctor (Open, ty, body) -> Mclos (env, ty, body)
+  | Lam (_, ty, body) -> Clos (env, ty, body)
+  | Flam (_, _, tyA, tyB, body) -> Fclos (env, tyA, tyB, body)
+  | Mfunctor (Sandboxed, _, ty, body) -> Mclos (Unit, ty, body)
+  | Mfunctor (Open, _, ty, body) -> Mclos (env, ty, body)
   | Box (e1, e2) ->
     if not (is_value e1) then Box (step env e1, e2)
     else if not (is_value e2) then Box (e1, step e1 e2)
     else e2
-  | Mrg (e1, e2) ->
-    if is_value e1 then Mrg (e1, step (Mrg (env, e1)) e2)
-    else Mrg (step env e1, e2)
+  | Mrg (x, e1, e2) ->
+    if is_value e1 then Mrg (x, e1, step (Mrg (x, env, e1)) e2)
+    else Mrg (x, step env e1, e2)
   | Nmrg (e1, e2) ->
     if not (is_value e1) then Nmrg (step env e1, e2)
     else if not (is_value e2) then Nmrg (e1, step env e2)
-    else Mrg (e1, e2)
+    else Mrg (anon, e1, e2)
   | App (e1, e2) ->
     if not (is_value e1) then App (step env e1, e2)
     else if not (is_value e2) then App (e1, step env e2)
     else begin match e1 with
-      | Clos (cenv, _ty, body) -> Box (Mrg (cenv, e2), body)
-      | Fclos (cenv, _tyA, _tyB, body) -> Box (Mrg (Mrg (cenv, e1), e2), body)
+      | Clos (cenv, _ty, body) -> Box (Mrg (anon, cenv, e2), body)
+      | Fclos (cenv, _tyA, _tyB, body) ->
+        Box (Mrg (anon, Mrg (anon, cenv, e1), e2), body)
       | _ -> failwith "Error: Application (e1 e2) must have e1 as closure."
     end
   | Mapp (e1, e2) ->
     if not (is_value e1) then Mapp (step env e1, e2)
     else if not (is_value e2) then Mapp (e1, step env e2)
     else begin match e1 with
-      | Mclos (cenv, _ty, body) -> Box (Mrg (cenv, e2), body)
+      | Mclos (cenv, _ty, body) -> Box (Mrg (anon, cenv, e2), body)
       | _ -> failwith "Error: Module application (e1 e2) must have e1 as module closure."
     end
   | Proj (e1, i) ->
@@ -193,13 +196,13 @@ let rec step (env : exp) (e : exp) : exp =
     else prim_exp op e1 e2
   | If (e1, e2, e3) ->
     if is_value e1 then branch e1 e2 e3 else If (step env e1, e2, e3)
-  | Letb (e1, ty, e2) ->
-    if is_value e1 then Box (Mrg (env, e1), e2)
-    else Letb (step env e1, ty, e2)
-  | Openm (e1, e2) ->
-    if not (is_value e1) then Openm (step env e1, e2)
+  | Letb (x, e1, ty, e2) ->
+    if is_value e1 then Box (Mrg (x, env, e1), e2)
+    else Letb (x, step env e1, ty, e2)
+  | Openm (x, e1, e2) ->
+    if not (is_value e1) then Openm (x, step env e1, e2)
     else begin match e1 with
-      | Lrec (_l, v') -> Box (Mrg (env, v'), e2)
+      | Lrec (_l, v') -> Box (Mrg (x, env, v'), e2)
       | _ -> failwith "Error: Open must have a labelled record as its subject."
     end
   | Mstruct (Sandboxed, e1) ->
@@ -212,7 +215,7 @@ let rec step (env : exp) (e : exp) : exp =
     else begin match e2 with
       | Mclos (cenv, TRcd (l, _), body) ->
         let vl = sel e1 l in
-        Mrg (e1, Box (Mrg (cenv, Lrec (l, vl)), body))
+        Mrg (anon, e1, Box (Mrg (anon, cenv, Lrec (l, vl)), body))
       | _ -> failwith "Error: Link must have a module closure with a record import."
     end
   | Mlinkn (e1, e2) ->
@@ -221,16 +224,16 @@ let rec step (env : exp) (e : exp) : exp =
     else begin match e2 with
       | Mclos (cenv, d, body) ->
         let pkg = selpkg e1 d in
-        Mrg (e1, Box (Mrg (cenv, pkg), body))
+        Mrg (anon, e1, Box (Mrg (anon, cenv, pkg), body))
       | _ -> failwith "Error: N-ary link must have a module closure."
     end
   | Inl (ty, e1) -> Inl (ty, step env e1)
   | Inr (ty, e1) -> Inr (ty, step env e1)
-  | Case (e1, el, er) ->
-    if not (is_value e1) then Case (step env e1, el, er)
+  | Case (e1, x, el, y, er) ->
+    if not (is_value e1) then Case (step env e1, x, el, y, er)
     else begin match e1 with
-      | Inl (_, v) -> Box (Mrg (env, v), el)
-      | Inr (_, v) -> Box (Mrg (env, v), er)
+      | Inl (_, v) -> Box (Mrg (x, env, v), el)
+      | Inr (_, v) -> Box (Mrg (y, env, v), er)
       | _ -> failwith "Error: Case analysis must evaluate to an injection."
     end
   | Fold (ty, e1) -> Fold (ty, step env e1)
@@ -243,5 +246,5 @@ let rec step (env : exp) (e : exp) : exp =
   | Lit _ | Unit | Clos _ | Mclos _ | Fclos _ -> e
 
 (* Driver for small-step based interpreter. *)
-let rec eval' (env : exp) (e : exp) : exp =
+let rec eval' (env : nameless) (e : nameless) : nameless =
   if is_value e then e else eval' env (step env e)
