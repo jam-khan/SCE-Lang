@@ -2,7 +2,7 @@
 open Ast
 
 (* Host capabilities: `Hostfn` values apply through this dispatcher, which the
-   embedding layer installs (lib/units/host.ml). The core stays closed — with no
+   embedding layer installs (lib/sepcomp.ml). The core stays closed — with no
    dispatcher installed, every capability application fails. *)
 let host_dispatch : (string -> (exp -> exp) option) ref = ref (fun _ -> None)
 
@@ -11,7 +11,17 @@ let host_apply (name : string) (v : exp) : exp =
   | Some f -> f v
   | None -> failwith ("Error: no host capability named " ^ name)
 
-(* lookupV: index is the *right-most* component of `v`. *)
+(* lookupV: index is the *right-most* component of `v`.
+
+   The recursion descends through `Mrg` only, so a chain reaches one component
+   per constructor and its left-most *leaf* is the base, not a component. That
+   is what a context is — `Unit ,, v0 ,, v1` holds two bindings at 0 and 1, and
+   index 2 correctly falls off the end into the empty environment. A merge built
+   by hand has no such base, so `e0 ; e1 ; e2` types as `A & B & C` but offers
+   only indices 0 and 1: `e0` sits where the base would be and cannot be
+   projected positionally. Elab.slookup mirrors this exactly, so the mismatch is
+   a static rejection, never a stuck term. Reach that component by giving it a
+   label and using `rlookup`. *)
 let rec lookup (v : exp) (i : int) : exp =
   match v with
   | Mrg (v1, v2) -> if i = 0 then v2 else lookup v1 (i - 1)
@@ -79,7 +89,7 @@ let rec eval (env : exp) (e : exp) : exp =
     let v1 = eval env e1 in
     let v2 = eval env e2 in
     begin match v1 with
-      | Clos (cenv, _ty, body)          -> 
+      | Clos (cenv, _ty, body)          ->
         eval (Mrg (cenv, v2)) body
       | Fclos (cenv, _tyA, _tyB, body)  ->
         eval (Mrg (Mrg (cenv, v1), v2)) body

@@ -40,17 +40,6 @@ let check_imports_satisfied ~unit_name accT d =
              unambiguously" unit_name l)
     (import_fields d)
 
-(* `Elab.link_step` — the term `link`/`linkall` elaborate to — so the toolchain
-   linker and the calculus's own cannot drift. *)
-let link_step (accT : S.typ) (d : S.typ) (b : S.typ) : C.exp =
-  E.link_step (E.elab_typ accT)
-    (E.elab_typ (S.TSig (S.TyArrM (d, S.TyIntf b))))
-    d
-
-(* A leaf step is a non-dependent merge of the unit into the provider. *)
-let link_step_leaf (accT : S.typ) (uT : S.typ) : C.exp =
-  E.nmrg_step (E.elab_typ accT) (E.elab_typ uT)
-
 (* The composition both linkers share: a left fold of `App (App (step, acc), u)`,
    parameterized by how a unit occurrence is spelled — spliced term for the core
    linker, environment projection for the wasm one. *)
@@ -68,15 +57,17 @@ let compose (arts : t list) (uref : int -> C.exp) :
       List.fold_left
         (fun (accT, acc, names, k) u ->
           check_no_overlap accT names u.a_exports u.a_name;
-          let step =
+          (* Elab's own combinators, so the toolchain linker and the
+             calculus's `linkall` cannot drift. *)
+          let core =
             match u.a_imports with
-            | None -> link_step_leaf accT u.a_exports
+            | None -> E.nmrg_core (E.elab_typ accT) acc (uref k)
             | Some d ->
               check_imports_satisfied ~unit_name:u.a_name accT d;
-              link_step accT d u.a_exports
+              E.linked_core_n (E.elab_typ accT) d acc (uref k)
           in
           ( S.TAnd (accT, u.a_exports),
-            C.App (C.App (step, acc), uref k),
+            core,
             names @ [ u.a_name ],
             k + 1 ))
         (first.a_exports, uref 0, [ first.a_name ], 1)

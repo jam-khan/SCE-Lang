@@ -18,8 +18,6 @@ type lit =
   | Bool    of bool
   | String  of string
 
-(* Primitive Operators *)
-
 (* primitive operators; surface `&&`, `||`, `not` and unary `-` desugar away *)
 type binop =
   | Add | Sub | Mul | Div | Mod   (* Int -> Int -> Int *)
@@ -41,7 +39,7 @@ type exp =
   | Rproj of exp * string
   (* primitives *)
   | Binop of binop * exp * exp
-  | If    of exp   * exp * exp
+  | If    of exp * exp * exp
   (* unions: Inl (B, e) injects into _ ∨ B, Inr (A, e) into A ∨ _ *)
   | Inl   of typ * exp
   | Inr   of typ * exp

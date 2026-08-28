@@ -1,5 +1,9 @@
-(* Whole programs: main.exe FILE.sce runs one; with no argument, a REPL where
-   each entry is a program submitted with a blank line. *)
+(* Whole programs:  main.exe FILE.sce                        run
+   Units:           main.exe -c FILE.sce -o FILE.sceo       compile (+ .scei per module)
+                    main.exe --link A.sceo B.sceo -o OUT    link, left to right
+                    main.exe --run ART.sceo                 evaluate a linked artifact
+   With no argument, a REPL where each entry is a whole program submitted with
+   a blank line. *)
 
 let read_file path =
   let ic = open_in_bin path in
@@ -7,12 +11,19 @@ let read_file path =
   close_in ic;
   src
 
+let write_file path contents =
+  let oc = open_out_bin path in
+  output_string oc contents;
+  close_out oc
+
 let report src =
   match Sce.Pipeline.run src with
   | Ok o ->
     Printf.printf "- : %s = %s\n" (Sce.Pipeline.type_string o)
       (Sce.Pipeline.value_string o)
   | Error e -> print_endline (Sce.Pipeline.render ~src e)
+
+let run_file path = report (read_file path)
 
 let repl () =
   print_endline
@@ -27,15 +38,106 @@ let repl () =
     print_string (if Buffer.length buf = 0 then "> " else "  ");
     flush stdout;
     match In_channel.input_line In_channel.stdin with
-    | None -> print_newline (); submit ()
+    | None ->
+      print_newline ();
+      submit ()
     | Some line ->
       if String.trim line = "" then submit ()
-      else (Buffer.add_string buf line; Buffer.add_char buf '\n');
+      else (
+        Buffer.add_string buf line;
+        Buffer.add_char buf '\n');
       loop ()
   in
   loop ()
 
+let or_die = function
+  | Ok v -> v
+  | Error (e : Sce.Pipeline.error) ->
+    Printf.eprintf "%s error: %s\n" e.stage e.message;
+    exit 1
+
+let compile_unit ~out src_path =
+  let src = read_file src_path in
+  match Sce.Pipeline.compile_unit ~path:src_path src with
+  | Error e ->
+    print_endline (Sce.Pipeline.render ~src e);
+    exit 1
+  | Ok (art, sceis) ->
+    Units.Artifact.save out art;
+    let dir = Filename.dirname out in
+    List.iter
+      (fun (name, contents) -> write_file (Filename.concat dir name) contents)
+      sceis;
+    Printf.printf "wrote %s%s\n" out
+      (match sceis with
+       | [] -> ""
+       | _ -> " (+ " ^ String.concat ", " (List.map fst sceis) ^ ")")
+
+(* `sys` and `loader` in a link line name host-built provider units; the
+   loader's export type is read off the importing artifact's declaration. *)
+let resolve_units paths =
+  let real =
+    List.filter_map
+      (fun p ->
+        if Units.Host.is_host_unit p then None
+        else Some (p, Units.Artifact.load p))
+      paths
+  in
+  List.map
+    (fun p ->
+      match p with
+      | "sys" -> Units.Host.sys
+      | "str" -> Units.Host.str
+      | "loader" -> Units.Host.loader (List.map snd real)
+      | p -> List.assoc p real)
+    paths
+
+let link_artifacts paths ~out =
+  let arts = resolve_units paths in
+  let linked = or_die (Sce.Pipeline.link_artifacts arts) in
+  Units.Artifact.save out linked;
+  Printf.printf "wrote %s (%s)\n" out linked.Units.Artifact.a_name
+
+let run_artifact path =
+  let art = Units.Artifact.load path in
+  let t, v = or_die (Sce.Pipeline.run_artifact art) in
+  Printf.printf "- : %s = %s\n" t v
+
+let rec split_link args =
+  match args with
+  | [] -> failwith "--link needs -o OUT"
+  | [ "-o"; out ] -> ([], out)
+  | "-o" :: _ -> failwith "--link needs -o OUT last"
+  | a :: rest ->
+    let more, out = split_link rest in
+    (a :: more, out)
+
 let () =
-  match Array.to_list Sys.argv with
-  | _ :: path :: _ -> report (read_file path)
-  | _ -> repl ()
+  try
+    match Array.to_list Sys.argv with
+    | _ :: "-c" :: src :: "-o" :: out :: [] -> compile_unit ~out src
+    | _ :: "--link" :: rest ->
+      let paths, out = split_link rest in
+      link_artifacts paths ~out
+    | _ :: "--run" :: path :: [] -> run_artifact path
+    | _ :: path :: _ -> run_file path
+    | _ -> repl ()
+  with
+  | Units.Artifact.Error m | Failure m ->
+    Printf.eprintf "error: %s\n" m;
+    exit 1
+
+let () =
+  try
+    match Array.to_list Sys.argv with
+    | _ :: "-c" :: src :: "-o" :: out :: [] -> compile_unit ~out src
+    | _ :: "--link" :: rest ->
+      let paths, out = split_link rest in
+      link_artifacts paths ~out
+    | _ :: "--run" :: path :: [] -> run_artifact path
+    | _ :: path :: _ -> run_file path
+    | _ -> repl ()
+  with
+  | Units.Artifact.Error m | Failure m ->
+    Printf.eprintf "error: %s\n" m;
+    exit 1

@@ -141,7 +141,7 @@ type program = {
 }
 
 (* A parsed .scei interface file: type aliases, then the interface type *)
-type intf = { i_aliases : (binder * typ) list; i_typ : typ }
+type intf ={ i_aliases : (binder * typ) list; i_typ : typ }
 
 let name_of_decl (d : decl) : string option =
   match d.it with
