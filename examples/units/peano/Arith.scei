@@ -1,0 +1,1 @@
+{two : mu a. Top | a} & {three : mu a. Top | a} & {six : mu a. Top | a}

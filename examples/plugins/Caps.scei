@@ -1,0 +1,1 @@
+{for_plugin : String -> {log : String -> Top}}

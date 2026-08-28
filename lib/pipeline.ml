@@ -100,6 +100,9 @@ let compile_unit ~(path : string) (src : string) :
     let t, _, _, core = core_stages (Units.Unit.wrapper imports p) in
     let a_imports, a_exports = Units.Unit.info t in
     let name = Filename.remove_extension (Filename.basename path) in
+    (* A `.scei` that already exists is the *contract*: the unit is checked
+       against it and it is left alone, so a consumer can be compiled before
+       its provider. Only a missing one is generated from the implementation. *)
     let sceis =
       List.filter_map
         (fun d ->
@@ -107,7 +110,27 @@ let compile_unit ~(path : string) (src : string) :
           | Ast.DModule (b, _) -> (
             match Sce_core.Elab.srlookup_opt a_exports b.Ast.bd_name with
             | Some ft ->
-              Some (b.Ast.bd_name ^ ".scei", Artifact.print_typ ft ^ "\n")
+              let name = b.Ast.bd_name ^ ".scei" in
+              let path = Filename.concat dir name in
+              if not (Sys.file_exists path) then
+                Some (name, Artifact.print_typ ft ^ "\n")
+              else begin
+                let ic = open_in_bin path in
+                let src = really_input_string ic (in_channel_length ic) in
+                close_in ic;
+                let declared = Artifact.parse_typ ~what:path src in
+                if declared <> ft then
+                  raise
+                    (Sugar.Error
+                       ( Printf.sprintf
+                           "%s does not match this module: it declares %s but \
+                            the module exports %s"
+                           name
+                           (Artifact.print_typ declared)
+                           (Artifact.print_typ ft),
+                         b.Ast.bd_loc ));
+                None
+              end
             | None -> None)
           | _ -> None)
         p.decls
