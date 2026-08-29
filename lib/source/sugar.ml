@@ -364,10 +364,12 @@ and structure env (ds : decl list) : S.typ * S.named =
   check_unique "structure" (decl_labels ds);
   go env None ds
 
-(* Top-level declarations chain with Letb, not with a struct's dependent merge,
-   so each binds a plain name at index 0. With no `main`, the program is the
-   record of everything it binds — matching how a linked unit is run. *)
+(* ADTs are expanded first, source to source. Top-level declarations chain with
+   Letb, not with a struct's dependent merge, so each binds a plain name at
+   index 0. With no `main`, the program is the record of everything it binds —
+   matching how a linked unit is run. *)
 let desugar_program (p : Ast.program) : S.typ * S.named =
+  let p = Adt.expand p in
   (match p.imports with
    | [] -> ()
    | (b, _) :: _ ->

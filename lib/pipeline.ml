@@ -51,7 +51,7 @@ let staged (src : string) (k : Ast.program -> 'a) : ('a, error) result =
 
 (* desugar -> resolve -> elaborate -> check, shared by every entry point. *)
 let core_stages (p : Ast.program) : S.typ * S.nameless * C.typ * C.exp =
-  let sce_typ, named = Sugar.desugar_program (Adt.expand p) in
+  let sce_typ, named = Sugar.desugar_program p in
   let sce_exp = Sce_core.Debruijn.resolve named in
   let _, core_exp = Sce_core.Elab.elab S.TTop sce_exp in
   let core_typ = Core_lambdae.Check.typecheck core_exp in
