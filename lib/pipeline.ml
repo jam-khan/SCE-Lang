@@ -41,8 +41,7 @@ let staged (src : string) (k : Ast.program -> 'a) : ('a, error) result =
   | Error e -> Error { stage = "parse"; message = e.message; line = e.line; col = e.col }
   | Ok named -> (
     try Ok (k named) with
-    | Adt.Error (m, loc) -> Error (at "adt" loc m)
-    | Sugar.Error (m, loc) -> Error (at "desugar" loc m)
+    | Err.Error (m, loc) -> Error (at "desugar" loc m)
     (* Sugar resolved every name, so this only fires on a front-end bug. *)
     | Sce_core.Debruijn.Error m -> Error (whole "internal" m)
     | Sce_core.Elab.Elab_error m -> Error (whole "elaborate" m)
@@ -94,7 +93,7 @@ let compile_unit ~(path : string) (src : string) :
       List.map
         (fun (b, isrc) ->
           try (b, Units.Unit.import_typ ~dir b isrc)
-          with Artifact.Error m -> raise (Sugar.Error (m, b.Ast.bd_loc)))
+          with Artifact.Error m -> raise (Err.Error (m, b.Ast.bd_loc)))
         p.imports
     in
     let t, _, _, core = core_stages (Units.Unit.wrapper imports p) in
@@ -121,7 +120,7 @@ let compile_unit ~(path : string) (src : string) :
                 let declared = Artifact.parse_typ ~what:path src in
                 if declared <> ft then
                   raise
-                    (Sugar.Error
+                    (Err.Error
                        ( Printf.sprintf
                            "%s does not match this module: it declares %s but \
                             the module exports %s"

@@ -145,9 +145,13 @@ type intf ={ i_aliases : (binder * typ) list; i_typ : typ }
 
 let name_of_decl (d : decl) : string option =
   match d.it with
-  | DLet b -> Some b.b_bind.bd_name
-  | DModule (b, _) -> Some b.bd_name
+  | DLet b              -> Some b.b_bind.bd_name
+  | DModule (b, _)      -> Some b.bd_name
   | DType _ | DOpen _ | DAdt _ -> None
+
+(* (name, loc) of every declaration that binds one. *)
+let decl_labels ds =
+  List.filter_map (fun d -> Option.map (fun l -> (l, d.loc)) (name_of_decl d)) ds
 
 let string_of_binop = function
   | Add -> "+"  | Sub -> "-"  | Mul -> "*" | Div -> "/" | Mod -> "mod"

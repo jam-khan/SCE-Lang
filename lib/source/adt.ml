@@ -5,10 +5,7 @@
    Constructors scope like type aliases; value binders shadow them. *)
 
 open Ast
-
-exception Error of string * loc
-
-let err loc fmt = Printf.ksprintf (fun s -> raise (Error (s, loc))) fmt
+open Err
 
 type info = {
   a_name : string;

@@ -1,64 +1,49 @@
-(* Desugaring: named surface AST -> named λSCE.
-
-   Resolves names and synthesizes types in one pass, because each needs the
-   other: a name is a slot of the context or an unambiguous field of one, and
-   `Elab.srlookup_opt` on the type just synthesized settles which. Types are
-   synthesized, never *checked* — Elab checks the term this builds. What is
-   rejected here is what would otherwise make the translation itself
-   meaningless: an unbound name, or a form whose type has the wrong shape to
-   continue from. lib/sce/debruijn.ml turns each name into its index. *)
+(* Desugaring: named surface AST -> named λSCE. *)
 
 open Ast
+open Err
 module S = Sce_core.Ast
 module E = Sce_core.Elab
 module P = Sce_core.Pretty
 
-exception Error of string * loc
-
-let err loc fmt = Printf.ksprintf (fun s -> raise (Error (s, loc))) fmt
-
-(* Elab's judgement helpers raise their own exception. *)
-let lift loc f = try f () with E.Elab_error m -> raise (Error (m, loc))
-
 (* Left-nested chain of a non-empty list. *)
-let fold1 f = function [] -> None | x :: xs -> Some (List.fold_left f x xs)
+let fold1 f = function
+  | []  -> None
+  | x :: xs -> Some(List.fold_left f x xs)
 
-(* A duplicate label makes *both* copies unreachable: srlookup refuses it. *)
-let check_unique what items =
-  ignore
-    (List.fold_left
-       (fun seen (l, loc) ->
-         if List.mem l seen then
-           err loc "duplicate field '%s' in this %s; it would be unreachable" l
-             what
-         else l :: seen)
-       [] items)
+(* Slot indicates the variable type in the context:
+  It can either be a
+  1) Name to be converted to a de-Bruijn index
+  2) Label based name using record projection
+*)
+type slot =
+  | Binder of string * S.typ
+  | Fields of string * S.typ
 
-let decl_labels ds =
-  List.filter_map (fun d -> Option.map (fun l -> (l, d.loc)) (name_of_decl d)) ds
+let slot_typ = function 
+  | Binder (_, t) 
+  | Fields (_, t) -> t
 
-(* ---------------- the context ---------------- *)
-
-(* A binder, reached by its name; or an anonymous merge/open/struct slot with a
-   generated `%`-name, reached by the labels of its type. Both take an index. *)
-type slot = { name : string; typ : S.typ; fields : bool }
-
-module F = Sce_core.Frames.Make (struct
-  type t = slot
-end)
+(* This enables concistency between de-sugaring pass and de-bruijn
+transformation from named SCE to nameless SCE 
+*)
+module F =
+  Sce_core.Frames.Make (struct type t = slot end)
 
 type env = {
-  slots : F.env;
-  base : S.typ;                    (* what a box or sandbox installed underneath *)
-  mus : string list;               (* mu binders in scope, innermost first *)
-  aliases : (string * S.typ) list; (* alias bodies, resolved and closed *)
+  slots   : F.env;
+  base    : S.typ;
+  (* mu binders in scope, innermost first *)
+  mus     : string list;
+  (* type aliases, which are inlined during de-sugaring *)
+  aliases : (string * S.typ) list;
 }
 
 let empty_env = { slots = F.empty; base = S.TTop; mus = []; aliases = [] }
 
 (* `base` keeps ctx exact rather than a left-nested approximation. *)
 let ctx env =
-  List.fold_left (fun acc s -> S.TAnd (acc, s.typ)) env.base (List.rev env.slots)
+  List.fold_left (fun acc s -> S.TAnd (acc, slot_typ s)) env.base (List.rev env.slots)
 
 let reset env = { env with slots = F.sandbox env.slots; base = S.TTop }
 
@@ -66,25 +51,22 @@ let reset env = { env with slots = F.sandbox env.slots; base = S.TTop }
    will count it. `%` cannot start a surface identifier, and there is one slot
    per depth, so a generated name is unique wherever it is in scope. *)
 let bind push x t env =
-  { env with slots = push { name = x; typ = t; fields = false } env.slots }
+  { env with slots = push (Binder (x, t)) env.slots }
 
 let bind_fields push t env =
   let x = "%" ^ string_of_int (List.length env.slots) in
-  (x, { env with slots = push { name = x; typ = t; fields = true } env.slots })
+  (x, { env with slots = push (Fields (x, t)) env.slots })
 
 (* The innermost slot providing x. Ambiguity is not a match. *)
 let find env x =
-  let hit s =
-    if String.equal s.name x then Some (S.Var x, s.typ)
-    else if s.fields then
-      Option.map
-        (fun t -> (S.Rproj (S.Var s.name, x), t))
-        (E.srlookup_opt s.typ x)
-    else None
+  let hit = function
+    | Binder (n, t) -> if String.equal n x then Some (S.Var x, t) else None
+    | Fields (n, t) ->
+      Option.map (fun ft -> (S.Rproj (S.Var n, x), ft)) (E.srlookup_opt t x)
   in
   List.find_map hit env.slots
 
-(* ---------------- types ---------------- *)
+(* types desugaring *)
 
 let rec conv_typ env (t : typ) : S.typ =
   let conv = conv_typ env in
@@ -337,9 +319,9 @@ and recursive_binding env (b : binding) : S.typ * S.named =
       List.fold_right (fun q acc -> S.TArr (conv_typ env q.p_typ, acc)) rest ret
     in
     let self = S.TArr (a, cod) in
-    let slot n t = { name = n; typ = t; fields = false } in
     let inner =
-      { env with slots = F.flam ~self:(slot f self) ~arg:(slot x a) env.slots }
+      { env with
+        slots = F.flam ~self:(Binder (f, self)) ~arg:(Binder (x, a)) env.slots }
     in
     let _, body = params inner rest (fun env -> (ret, snd (desugar env b.b_exp))) in
     (self, S.Flam (f, x, a, cod, body))
