@@ -105,46 +105,42 @@ let typ_of_binop (op : binop) (a : typ) (b : typ) : typ =
     if a = b && (a = TInt || a = TBool || a = TString) then TBool
     else elab_error "equality expects two operands of the same primitive type"
 
-(* elaboration utilities *)
+(* ---- elaboration combinators (Elaboration.lean) ----
 
-(* non-dependent merge core λE level *)
-let nmrg_core (ctx: C.typ) (ce1 : C.exp) (ce2 : C.exp) : C.exp =
-  C.App
-    (C.Lam
-       (ctx,
-        C.Mrg
-          (C.Box (C.Proj (C.Query, 0), ce1),
-           C.Box (C.Proj (C.Query, 1), ce2))),
-     C.Query)
+   Every operand is bound exactly once, so a merge or a link evaluates each
+   subterm once, in source order — observable once host capabilities carry
+   effects. The steps are closed terms over relative indices, so the toolchain
+   linker (lib/units/linker.ml) applies the very same terms to separately
+   compiled units. *)
 
-(* linked core: term produced at the core linking level *)
-let linked_core (ctx : C.typ) (l : string) (ce1 : C.exp) (ce2 : C.exp) : C.exp =
-  C.App
-    (C.Lam
-       (ctx,
-        C.Mrg
-          (C.Box (C.Proj (C.Query, 0), ce1),
-           C.Box
-             (C.Proj (C.Query, 1),
-              C.App (ce2, C.Lrec (l, C.Rproj (ce1, l)))))),
-     C.Query)
+(* nmrgStep: λ(x : A). λ(y : B). Mrg (?.1, ?.1) — on the left ?.1 is x; on the
+   right, one slot deeper under the merged left value, ?.1 is y. *)
+let nmrg_step (a : C.typ) (b : C.typ) : C.exp =
+  C.Lam (a, C.Lam (b, C.Mrg (C.Proj (C.Query, 1), C.Proj (C.Query, 1))))
 
-(* wireArg: build the import package for interface d by projecting each
-   labelled import out of ce1 *)
-let rec wire_arg (ctx : C.typ) (ce1 : C.exp) : typ -> C.exp = function
-  | TRcd (l, _) -> C.Lrec (l, C.Rproj (ce1, l))
-  | TAnd (d, TRcd (l, _)) ->
-    nmrg_core ctx (wire_arg ctx ce1 d) (C.Lrec (l, C.Rproj (ce1, l)))
+let nmrg_core (a : C.typ) (b : C.typ) (ce1 : C.exp) (ce2 : C.exp) : C.exp =
+  C.App (C.App (nmrg_step a b, ce1), ce2)
+
+(* wire: the import package for D, every label projected from the provider at
+   ?.shift; each nested merge pushes it one slot further. *)
+let rec wire (shift : int) : C.typ -> C.exp = function
+  | C.TRcd (l, _) -> C.Lrec (l, C.Rproj (C.Proj (C.Query, shift), l))
+  | C.TAnd (d, C.TRcd (l, _)) ->
+    C.Mrg (wire shift d, C.Lrec (l, C.Rproj (C.Proj (C.Query, shift + 1), l)))
   | _ -> C.Unit
 
-let linked_core_n (ctx : C.typ) (d : typ) (ce1 : C.exp) (ce2 : C.exp) : C.exp =
-  C.App
-    (C.Lam
-       (ctx,
-        C.Mrg
-          (C.Box (C.Proj (C.Query, 0), ce1),
-           C.Box (C.Proj (C.Query, 1), C.App (ce2, wire_arg ctx ce1 d)))),
-     C.Query)
+(* linkStep: λ(p : G1). λ(f : D -> B). Mrg (?.1, f (wire D)) — the provider is
+   bound once as ?.1 and every import projects from that binding. *)
+let link_step (g1 : C.typ) (d : C.typ) (b : C.typ) : C.exp =
+  C.Lam
+    ( g1,
+      C.Lam
+        ( C.TArr (d, b),
+          C.Mrg (C.Proj (C.Query, 1), C.App (C.Proj (C.Query, 1), wire 0 d)) ) )
+
+let linked_core (g1 : C.typ) (d : C.typ) (b : C.typ) (ce1 : C.exp) (ce2 : C.exp)
+    : C.exp =
+  C.App (C.App (link_step g1 d b, ce1), ce2)
 
 (* ---- elaboration based on the `elabExp` judgment ---- *)
 
@@ -180,7 +176,7 @@ let rec elab (ctx : typ) (e : nameless) : typ * C.exp =
   | Nmrg (e1, e2) ->
     let a, ce1 = elab ctx e1 in
     let b, ce2 = elab ctx e2 in
-    (TAnd (a, b), nmrg_core (elab_typ ctx) ce1 ce2)
+    (TAnd (a, b), nmrg_core (elab_typ a) (elab_typ b) ce1 ce2)
   | Proj (e1, i) ->
     let a, ce = elab ctx e1 in
     (slookup a i, C.Proj (ce, i))
@@ -244,7 +240,8 @@ let rec elab (ctx : typ) (e : nameless) : typ * C.exp =
      | TSig (TyArrM (TRcd (l, a), TyIntf b)), ce2 ->
        (match srlookup_opt g1 l with
         | Some a' when a' = a ->
-          (TAnd (g1, b), linked_core (elab_typ ctx) l ce1 ce2)
+          ( TAnd (g1, b),
+            linked_core (elab_typ g1) (elab_typ (TRcd (l, a))) (elab_typ b) ce1 ce2 )
         | Some _ -> elab_error ("import " ^ l ^ " has a mismatched type")
         | None ->
           elab_error ("no unambiguous field labelled " ^ l ^ " to link against"))
@@ -254,7 +251,7 @@ let rec elab (ctx : typ) (e : nameless) : typ * C.exp =
     (match elab ctx e2 with
      | TSig (TyArrM (d, TyIntf b)), ce2 ->
        if link_ok g1 d
-       then (TAnd (g1, b), linked_core_n (elab_typ ctx) d ce1 ce2)
+       then (TAnd (g1, b), linked_core (elab_typ g1) (elab_typ d) (elab_typ b) ce1 ce2)
        else elab_error "module does not satisfy every labelled import"
      | _ -> elab_error "n-ary link target must be a functor")
   | Inl (b, e1) ->

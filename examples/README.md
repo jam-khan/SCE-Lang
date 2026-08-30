@@ -10,7 +10,7 @@ session in their own README (linked below):
 
 ```console
 $ dune exec bin/main.exe examples/modules.sce      # whole file, interpreted
-$ dune exec bin/main.exe -- --wasm out.wasm examples/modules.sce && node wasm/run.js out.wasm
+$ dune exec bin/main.exe -- --wasm out.wasm examples/modules.sce && node lib/wasm/run.js out.wasm
 ```
 
 ## The tour (single file)
@@ -80,6 +80,14 @@ wasm module.
   if it has one; otherwise the module value itself is the result. (Whole
   files without a `main` binding evaluate to the record of their
   top-level bindings.)
+- **Through wasm:** every session below also runs compiled. Replace
+  `--run prog.sceo` with `--wasm prog.wasm prog.sceo` and
+  `node lib/wasm/run.js prog.wasm`; an artifact a program loads *at run time*
+  needs its `.wasm` sibling first (`--unit-wasm shout.wasm shout.sceo`), since
+  the host loads `X.wasm` where the interpreter loads `X.sceo`. The suite
+  (`test/test_runtime.ml`, `test/test_commute.ml`, `test/test_wasm.ml`)
+  checks that both routes print the same trace and the same value. See
+  [lib/wasm/README.md](../lib/wasm/README.md) for the backend itself.
 - **Notation vs the paper:** the surface `Top` is the paper's unit/empty
   type ε; surface `;` is the paper's parallel merge and `;;` its dependent
   merge; `?` is the paper's environment query.

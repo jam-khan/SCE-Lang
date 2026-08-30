@@ -1,7 +1,13 @@
 (* Whole programs:  main.exe FILE.sce                        run
-   Units:           main.exe -c FILE.sce -o FILE.sceo       compile (+ .scei per module)
-                    main.exe --link A.sceo B.sceo -o OUT    link, left to right
-                    main.exe --run ART.sceo                 evaluate a linked artifact
+                    main.exe --wasm OUT FILE.sce              compile to wasm
+   Units:           main.exe -c FILE.sce -o FILE.sceo         compile (+ .scei per module)
+                    main.exe --link A.sceo B.sceo -o OUT      link, left to right
+                    main.exe --run ART.sceo                   evaluate a linked artifact
+                    main.exe --wasm OUT ART.sceo              emit wasm for a linked artifact
+                    main.exe --unit-wasm OUT ART.sceo         emit one unit's own wasm module
+                    main.exe --link-wasm OUT A.sceo B...      emit a wasm link module (imports u0..)
+   `--wat FILE` after a --wasm/--link-wasm target also writes the text form.
+   Run the output with `node lib/wasm/run.js OUT [unit.wasm ...]`.
    With no argument, a REPL where each entry is a whole program submitted with
    a blank line. *)
 
@@ -50,6 +56,19 @@ let repl () =
   in
   loop ()
 
+(* Compile to wasm rather than interpreting. `--wat` writes the text form
+   alongside, which is the quickest way to see what the backend emitted. *)
+let compile_file ~out ?wat path =
+  let src = read_file path in
+  match Sce.Pipeline.run_to_core src with
+  | Error e -> print_endline (Sce.Pipeline.render ~src e); exit 1
+  | Ok core ->
+    write_file out (Wasm_backend.Compile.to_binary core);
+    (match wat with
+     | Some f -> write_file f (Wasm_backend.Compile.to_wat core)
+     | None -> ());
+    Printf.printf "wrote %s\n" out
+
 let or_die = function
   | Ok v -> v
   | Error (e : Sce.Pipeline.error) ->
@@ -73,7 +92,7 @@ let compile_unit ~out src_path =
        | [] -> ""
        | _ -> " (+ " ^ String.concat ", " (List.map fst sceis) ^ ")")
 
-(* `sys` and `loader` in a link line name host-built provider units; the
+(* `sys`, `str` and `loader` in a link line name host-built provider units; the
    loader's export type is read off the importing artifact's declaration. *)
 let resolve_units paths =
   let real =
@@ -103,6 +122,41 @@ let run_artifact path =
   let t, v = or_die (Sce.Pipeline.run_artifact art) in
   Printf.printf "- : %s = %s\n" t v
 
+let wasm_of_artifact ~out ?wat path =
+  let art = Units.Artifact.load path in
+  let _, term = Units.Linker.runnable art in
+  write_file out (Wasm_backend.Compile.to_binary term);
+  (match wat with
+   | Some f -> write_file f (Wasm_backend.Compile.to_wat term)
+   | None -> ());
+  Printf.printf "wrote %s\n" out
+
+(* One unit as its own wasm module: main returns the unit value — a closure
+   for a functor unit. The printed slot type rides in an `sce.slot` custom
+   section so the host's runtime loader can interface-check the module.
+   `sys`/`loader` work here too; the loader needs the importing artifact as a
+   trailing helper argument to read its declared interface. *)
+let unit_wasm ~out paths =
+  let art = List.hd (resolve_units paths) in
+  let customs =
+    [ ("sce.slot", Units.Artifact.print_typ (Units.Artifact.slot_typ art)) ]
+  in
+  write_file out (Wasm_backend.Compile.to_binary ~customs art.Units.Artifact.a_core);
+  Printf.printf "wrote %s (%s)\n" out art.Units.Artifact.a_name
+
+(* The wasm-level link: the linkers' shared composition, compiled with units
+   installed through imports. *)
+let link_wasm ~out ?wat paths =
+  let arts = resolve_units paths in
+  let names, unit_types, body = Units.Linker.wasm_parts arts in
+  write_file out (Wasm_backend.Compile.link_binary ~names ~unit_types body);
+  (match wat with
+   | Some f -> write_file f (Wasm_backend.Compile.link_wat ~names ~unit_types body)
+   | None -> ());
+  Printf.printf "wrote %s (links %s)\n" out (String.concat ", " names)
+
+let is_artifact path = Filename.check_suffix path ".sceo"
+
 let rec split_link args =
   match args with
   | [] -> failwith "--link needs -o OUT"
@@ -120,24 +174,19 @@ let () =
       let paths, out = split_link rest in
       link_artifacts paths ~out
     | _ :: "--run" :: path :: [] -> run_artifact path
+    | _ :: "--unit-wasm" :: out :: (_ :: _ as paths) -> unit_wasm ~out paths
+    | _ :: "--link-wasm" :: out :: rest ->
+      let wat, paths =
+        match rest with "--wat" :: f :: ps -> (Some f, ps) | ps -> (None, ps)
+      in
+      link_wasm ~out ?wat paths
+    | _ :: "--wasm" :: out :: path :: rest ->
+      let wat = match rest with "--wat" :: f :: _ -> Some f | _ -> None in
+      if is_artifact path then wasm_of_artifact ~out ?wat path
+      else compile_file ~out ?wat path
     | _ :: path :: _ -> run_file path
     | _ -> repl ()
   with
-  | Units.Artifact.Error m | Failure m ->
-    Printf.eprintf "error: %s\n" m;
-    exit 1
-
-let () =
-  try
-    match Array.to_list Sys.argv with
-    | _ :: "-c" :: src :: "-o" :: out :: [] -> compile_unit ~out src
-    | _ :: "--link" :: rest ->
-      let paths, out = split_link rest in
-      link_artifacts paths ~out
-    | _ :: "--run" :: path :: [] -> run_artifact path
-    | _ :: path :: _ -> run_file path
-    | _ -> repl ()
-  with
-  | Units.Artifact.Error m | Failure m ->
+  | Units.Artifact.Error m | Wasm_backend.Compile.Error m | Failure m ->
     Printf.eprintf "error: %s\n" m;
     exit 1

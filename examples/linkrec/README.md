@@ -14,7 +14,7 @@ call; tie the knot with effect-free construction.
 
 ```console
 $ main parity.sce
-- : {even10 : Bool} & {odd10 : Bool} & {even7 : Bool} = { even10 = true; odd10 = false; even7 = false }
+- : {even10 : Bool} & {odd10 : Bool} & {even7 : Bool} = { even10 = true, odd10 = false, even7 = false }
 ```
 
 The toolchain's linker deliberately stays acyclic — every unit's imports must
