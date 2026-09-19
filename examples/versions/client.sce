@@ -4,10 +4,10 @@
 
 import Lib
 import Loader : { load : String ->
-  (({Lib : {version : String, greet : String -> String}}) | {err : String}) }
+  ((sig {Lib : sig {version : String, greet : String -> String} end} end) | {err : String}) }
 
 type fetched =
-  | V2 of {Lib : {version : String, greet : String -> String}}
+  | V2 of sig {Lib : sig {version : String, greet : String -> String} end} end
   | NoV2 of {err : String}
 
 let main : String =

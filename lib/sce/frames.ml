@@ -16,7 +16,7 @@ module Make (S : SLOT) = struct
   (* One entry per λSCE form that extends the context, named for its Elab rule. *)
 
   let lam a env = push a env    (* Lam (x, A, body): body under ctx & A *)
-  let letb a env = push a env   (* Letb (x, e1, A, e2): e2 under ctx & A *)
+  let letb a env = push a env   (* Letb (x, e1, e2): e2 under ctx & A *)
   let mrg a env = push a env    (* Mrg (x, e1, e2): e2 under ctx & typeof e1 *)
   let openm a env = push a env  (* Openm (x, {l : A}, e2): e2 under ctx & A *)
   let case_branch a env = push a env  (* Case: each branch under ctx & A resp. B *)
@@ -27,8 +27,8 @@ module Make (S : SLOT) = struct
   (* Flam: body under (ctx & (A -> B)) & A — argument 0, function itself 1. *)
   let flam ~self ~arg env = push arg (push self env)
 
-  (* Mstruct/Mfunctor (Sandboxed, ...): the outer context is gone. A sandboxed
-     functor then pushes its parameter with `lam`, giving Top & A. *)
+  (* Mfunctor (Sandboxed, ...): the outer context is gone. A sandboxed functor
+     then pushes its parameter with `lam`, giving Top & A. *)
   let sandbox (_ : env) : env = empty
 
   (* Box (e1, e2): e2 under typeof e1, wholesale. Its component structure is not

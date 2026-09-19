@@ -17,6 +17,27 @@ let ok name src typ value =
     check name false;
     print_endline (Sce.Pipeline.render ~src e)
 
+let rejected name src needle =
+  match Sce.Pipeline.run src with
+  | Ok _ -> check name false
+  | Error e ->
+    let n = String.length needle and m = e.message in
+    let rec go i = i + n <= String.length m && (String.sub m i n = needle || go (i + 1)) in
+    check name (go 0)
+
+(* the elaborated term, as the paper's figures give it *)
+let core name src expected =
+  match Sce.Pipeline.run src with
+  | Ok o ->
+    let c = Sce.Pipeline.core_string o in
+    if c = expected then check name true
+    else (
+      check name false;
+      Printf.printf "        expected  %s\n        got       %s\n" expected c)
+  | Error e ->
+    check name false;
+    print_endline (Sce.Pipeline.render ~src e)
+
 let () =
   ok "arithmetic" "let main = 1 + 2 * 3 - 4" "Int" "3";
   ok "let" "let main = let x = 1 in x + 1" "Int" "2";
@@ -36,5 +57,23 @@ let () =
      let area (s : shape) : Int =\n\
      \  match s with | Circle r -> r * r * 3 | Rect (w, h) -> w * h end\n\
      let main = area (Rect (4, 5))" "Int" "20";
+  (* the module layer, rule by rule *)
+  ok "Elab-Str: a structure has a signature type"
+    "let main = struct let a : Int = 1 end" "sig {a : Int} end" "{ a = 1 }";
+  ok "Ctm-Sig: selection looks through a signature"
+    "let main = (struct let a : Int = 1 end ; { b = 2 }).a" "Int" "1";
+  rejected "a structure is not its body: direct application is ill typed"
+    "module F (X : { a : Int }) = struct let b : Int = X.a end\n\
+     let main = F(struct let a : Int = 1 end)" "functor argument type mismatch";
+  ok "Elab-Link: linking selects the import from a structure"
+    "let main = (link struct let a : Int = 1 let c : Int = 5 end\n\
+     with sandbox functor (X : { a : Int }) -> struct let b : Int = X.a + 1 end).b"
+    "Int" "2";
+  rejected "Elab-NMrg: the right operand cannot see the left"
+    "let main = { a = 1 } ; { b = a }" "unbound variable";
+  (* the outer `(_ ; ?.[0]).[0]` is the top-level `let main` itself *)
+  core "Elab-Let" "let main = let x = 1 in x" "((1 ; ?.[0]).[0] ; ?.[0]).[0]";
+  core "Elab-NMrg" "let main = { a = 1 } ; { b = 2 }"
+    "((? ; ((box ?.[0] in { a = 1 }) ; (box ?.[1] in { b = 2 }))).[0] ; ?.[0]).[0]";
   if !failures = 0 then print_endline "all tests passed"
   else (Printf.printf "%d test(s) failed\n" !failures; exit 1)

@@ -15,12 +15,12 @@ let rec slookup (a : typ) (n : int) : typ =
   | TAnd (a1, a2) -> if n = 0 then a2 else slookup a1 (n - 1)
   | _ -> elab_error ("no component at index " ^ string_of_int n)
 
-(* LabelIn: label occurs in the type (descends into signature interfaces). *)
-  let rec label_in (l : string) (a : typ) : bool =
+(* LabelIn: label occurs in the type (looks through signatures). *)
+let rec label_in (l : string) (a : typ) : bool =
   match a with
   | TRcd (l', _)    -> String.equal l l'
   | TAnd (a1, a2)   -> label_in l a1 || label_in l a2
-  | TSig (TyIntf t) -> label_in l t
+  | TSig t          -> label_in l t
   | _               -> false
 
 (* SRLookup: unambiguous record lookup (label present on exactly one side). *)
@@ -32,12 +32,14 @@ let rec srlookup_opt (a : typ) (l : string) : typ option =
     | true, false -> srlookup_opt a1 l
     | false, true -> srlookup_opt a2 l
     | _ -> None)
+  | TSig t -> srlookup_opt t l
   | _ -> None
 
-(* The fields of a left-nested intersection of records. *)
+(* The fields of a left-nested intersection of records (through signatures). *)
 let rec record_fields = function
   | TRcd (l, t)   -> [ (l, t) ]
   | TAnd (a, b)   -> record_fields a @ record_fields b
+  | TSig t        -> record_fields t
   | _             -> []
 
 let srlookup (a : typ) (l : string) : typ =
@@ -67,13 +69,10 @@ let rec elab_typ : typ -> C.typ = function
   | TAnd (a, b) -> C.TAnd (elab_typ a, elab_typ b)
   | TOr  (a, b) -> C.TOr  (elab_typ a, elab_typ b)
   | TRcd (l, a) -> C.TRcd (l, elab_typ a)
-  | TSig mt     -> elab_modtyp mt
+  | TSig a      -> elab_typ a
+  | TMarr (a, b) -> C.TArr (elab_typ a, elab_typ b)
   | TVar n      -> C.TVar n
   | TMu t       -> C.TMu (elab_typ t)
-
-and elab_modtyp : modtyp -> C.typ = function
-  | TyIntf t        -> elab_typ t
-  | TyArrM (t, mt)  -> C.TArr (elab_typ t, elab_modtyp mt)
 
 let elab_lit : lit -> C.lit = function
   | Int n     -> C.Int n
@@ -107,19 +106,20 @@ let typ_of_binop (op : binop) (a : typ) (b : typ) : typ =
 
 (* ---- elaboration combinators (Elaboration.lean) ----
 
-   Every operand is bound exactly once, so a merge or a link evaluates each
+   Every operand occurs exactly once, so a merge or a link evaluates each
    subterm once, in source order — observable once host capabilities carry
-   effects. The steps are closed terms over relative indices, so the toolchain
-   linker (lib/units/linker.ml) applies the very same terms to separately
-   compiled units. *)
+   effects. The terms mention their operands only through relative indices, so
+   the toolchain linker (lib/units/linker.ml) applies the very same terms to
+   separately compiled units. *)
 
-(* nmrgStep: λ(x : A). λ(y : B). Mrg (?.1, ?.1) — on the left ?.1 is x; on the
-   right, one slot deeper under the merged left value, ?.1 is y. *)
-let nmrg_step (a : C.typ) (b : C.typ) : C.exp =
-  C.Lam (a, C.Lam (b, C.Mrg (C.Proj (C.Query, 1), C.Proj (C.Query, 1))))
-
-let nmrg_core (a : C.typ) (b : C.typ) (ce1 : C.exp) (ce2 : C.exp) : C.exp =
-  C.App (C.App (nmrg_step a b, ce1), ce2)
+(* nmrgCore: (?, ((?.0 |> ce1), (?.1 |> ce2))).0 — save the ambient environment
+   and restore it for each operand. *)
+let nmrg_core (ce1 : C.exp) (ce2 : C.exp) : C.exp =
+  C.Proj
+    ( C.Mrg
+        ( C.Query,
+          C.Mrg (C.Box (C.Proj (C.Query, 0), ce1), C.Box (C.Proj (C.Query, 1), ce2)) ),
+      0 )
 
 (* wire: the import package for D, every label projected from the provider at
    ?.shift; each nested merge pushes it one slot further. *)
@@ -176,7 +176,7 @@ let rec elab (ctx : typ) (e : nameless) : typ * C.exp =
   | Nmrg (e1, e2) ->
     let a, ce1 = elab ctx e1 in
     let b, ce2 = elab ctx e2 in
-    (TAnd (a, b), nmrg_core (elab_typ a) (elab_typ b) ce1 ce2)
+    (TAnd (a, b), nmrg_core ce1 ce2)
   | Proj (e1, i) ->
     let a, ce = elab ctx e1 in
     (slookup a i, C.Proj (ce, i))
@@ -197,39 +197,34 @@ let rec elab (ctx : typ) (e : nameless) : typ * C.exp =
     let b, ce3 = elab ctx e3 in
     if a = b then (a, C.If (ce1, ce2, ce3))
     else elab_error "if branches have different types"
-  | Letb (_, e1, ann, e2) ->
+  | Letb (_, e1, e2) ->
     let a, ce1 = elab ctx e1 in
-    if a <> ann then
-      elab_error "let annotation does not match the bound expression";
     let b, ce2 = elab (TAnd (ctx, a)) e2 in
-    (b, C.App (C.Lam (elab_typ a, ce2), ce1))
+    (b, C.Proj (C.Mrg (ce1, ce2), 0))
   | Openm (_, e1, e2) ->
     (match elab ctx e1 with
      | TRcd (l, a), ce1 ->
        let b, ce2 = elab (TAnd (ctx, a)) e2 in
        (b, C.App (C.Lam (elab_typ a, ce2), C.Rproj (ce1, l)))
      | _ -> elab_error "open subject must be a labelled record")
-  | Mstruct (Sandboxed, body) ->
-    let b, ce = elab TTop body in
-    (b, C.Box (C.Unit, ce))
-  | Mstruct (Open, body) ->
+  | Mstruct body ->
     let b, ce = elab ctx body in
-    (b, C.Box (C.Query, ce))
+    (TSig b, ce)
   | Mfunctor (Sandboxed, _, a, body) ->
     let b, ce = elab (TAnd (TTop, a)) body in
-    (TSig (TyArrM (a, TyIntf b)), C.Box (C.Unit, C.Lam (elab_typ a, ce)))
+    (TMarr (a, b), C.Box (C.Unit, C.Lam (elab_typ a, ce)))
   | Mfunctor (Open, _, a, body) ->
     let b, ce = elab (TAnd (ctx, a)) body in
-    (TSig (TyArrM (a, TyIntf b)), C.Lam (elab_typ a, ce))
+    (TMarr (a, b), C.Lam (elab_typ a, ce))
   | Mclos (v, a, body) ->
     if not (is_value v) then
       elab_error "module closure environment must be a value";
     let ctx', ce1 = elab TTop v in
     let b, ce2 = elab (TAnd (ctx', a)) body in
-    (TSig (TyArrM (a, TyIntf b)), C.Clos (ce1, elab_typ a, ce2))
+    (TMarr (a, b), C.Clos (ce1, elab_typ a, ce2))
   | Mapp (e1, e2) ->
     (match elab ctx e1 with
-     | TSig (TyArrM (a, TyIntf b)), ce1 ->
+     | TMarr (a, b), ce1 ->
        let a', ce2 = elab ctx e2 in
        if a' = a then (b, C.App (ce1, ce2))
        else elab_error "functor argument type mismatch"
@@ -237,7 +232,7 @@ let rec elab (ctx : typ) (e : nameless) : typ * C.exp =
   | Mlink (e1, e2) ->
     let g1, ce1 = elab ctx e1 in
     (match elab ctx e2 with
-     | TSig (TyArrM (TRcd (l, a), TyIntf b)), ce2 ->
+     | TMarr (TRcd (l, a), b), ce2 ->
        (match srlookup_opt g1 l with
         | Some a' when a' = a ->
           ( TAnd (g1, b),
@@ -249,7 +244,7 @@ let rec elab (ctx : typ) (e : nameless) : typ * C.exp =
   | Mlinkn (e1, e2) ->
     let g1, ce1 = elab ctx e1 in
     (match elab ctx e2 with
-     | TSig (TyArrM (d, TyIntf b)), ce2 ->
+     | TMarr (d, b), ce2 ->
        if link_ok g1 d
        then (TAnd (g1, b), linked_core (elab_typ g1) (elab_typ d) (elab_typ b) ce1 ce2)
        else elab_error "module does not satisfy every labelled import"

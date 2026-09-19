@@ -1,1 +1,1 @@
-{stop : String -> Bool} & {ident : String -> String -> {name : String} & {rest : String}} & {go : String -> (mu a. Top | {_1 : Top | Top | Top | Top | String} & {_2 : a})} & {lex : String -> (mu a. Top | {_1 : Top | Top | Top | Top | String} & {_2 : a})}
+sig {stop : String -> Bool} & {ident : String -> String -> {name : String} & {rest : String}} & {go : String -> (mu a. Top | {_1 : Top | Top | Top | Top | String} & {_2 : a})} & {lex : String -> (mu a. Top | {_1 : Top | Top | Top | Top | String} & {_2 : a})} end

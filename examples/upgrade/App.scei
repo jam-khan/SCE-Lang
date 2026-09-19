@@ -1,1 +1,1 @@
-{motto : String} & {owner : String}
+sig {motto : String} & {owner : String} end

@@ -26,7 +26,7 @@ let rec go (fr : F.env) (e : named) : nameless =
   | Unit -> Unit
   (* ---- binding forms: one entry per Frames rule ---- *)
   | Lam (x, a, body) -> Lam (x, a, go (F.lam x fr) body)
-  | Letb (x, e1, a, e2) -> Letb (x, here e1, a, go (F.letb x fr) e2)
+  | Letb (x, e1, e2) -> Letb (x, here e1, go (F.letb x fr) e2)
   | Mrg (x, e1, e2) -> Mrg (x, here e1, go (F.mrg x fr) e2)
   | Nmrg (e1, e2) -> Nmrg (here e1, go (F.nmrg anon fr) e2)
   | Openm (x, e1, e2) -> Openm (x, here e1, go (F.openm x fr) e2)
@@ -37,8 +37,7 @@ let rec go (fr : F.env) (e : named) : nameless =
   | Mfunctor (sb, x, a, body) ->
     let outer = match sb with Sandboxed -> F.sandbox fr | Open -> fr in
     Mfunctor (sb, x, a, go (F.lam x outer) body)
-  | Mstruct (Sandboxed, body) -> Mstruct (Sandboxed, go (F.sandbox fr) body)
-  | Mstruct (Open, body) -> Mstruct (Open, here body)
+  | Mstruct body -> Mstruct (here body)
   | Box (e1, e2) -> Box (here e1, go (F.box fr) e2)
   (* ---- congruence ---- *)
   | Proj (e1, i) -> Proj (here e1, i)

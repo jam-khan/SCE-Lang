@@ -34,8 +34,9 @@ let rec mentions name (t : typ) =
   match t.it with
   | TVar a -> String.equal a name
   | TInt | TBool | TString | TTop -> false
-  | TArr (a, b) | TAnd (a, b) | TOr (a, b) | TSig (a, b) ->
+  | TArr (a, b) | TAnd (a, b) | TOr (a, b) | TMarr (a, b) ->
     mentions name a || mentions name b
+  | TSig a -> mentions name a
   | TRcd fs -> List.exists (fun (_, ft) -> mentions name ft) fs
   | TMu (b, body) -> (not (String.equal b.bd_name name)) && mentions name body
 

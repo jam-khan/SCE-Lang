@@ -1,8 +1,9 @@
 (* Structures, functors, sandboxing and linking.
 
    A `struct` is a dependent merge chain, so a declaration can use the ones
-   before it. A `sandbox struct` elaborates under Top instead of the enclosing
-   context, so nothing from outside is reachable inside it. *)
+   before it; its type is a signature, `sig ... end`. A `sandbox struct` is a
+   struct boxed under the empty environment, so nothing from outside is
+   reachable inside it. *)
 
 module Counter = struct
   let start : Int = 10
@@ -21,8 +22,8 @@ module Doubler (X : { start : Int }) = struct
 end
 
 (* There is no subtyping: `Doubler(Counter)` would be rejected, because
-   Counter's type is wider than `{ start : Int }`. Direct application needs an
-   argument of exactly the import type. *)
+   Counter's type is a signature, and wider than `{ start : Int }` besides.
+   Direct application needs an argument of exactly the import type. *)
 module Applied = Doubler({ start = Counter.start })
 
 (* Linking is the mechanism that does cope with a wider module: it looks the

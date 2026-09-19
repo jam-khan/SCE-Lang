@@ -61,7 +61,9 @@ let validates path =
   = 0
 
 (* (directory, units in link order, alternative order if one is legal) *)
-let sets = [ ("peano", [ "nat"; "arith"; "demo" ], None) ]
+let sets =
+  [ ("peano", [ "nat"; "arith"; "demo" ], None);
+    ("shop", [ "region"; "checkout"; "invoice" ], None) ]
 
 let compile_units dir units =
   List.map

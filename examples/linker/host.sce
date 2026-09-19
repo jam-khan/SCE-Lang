@@ -7,10 +7,10 @@
    value (`=` is primitive-only). *)
 
 import Loader : { load : String ->
-  (({Seed : {start : Int}} => {bump : Int}) | {err : String}) }
+  (({Seed : sig {start : Int} end} => sig {bump : Int} end) | {err : String}) }
 
 type loaded =
-  | Step of (({Seed : {start : Int}}) => {bump : Int})
+  | Step of (({Seed : sig {start : Int} end}) => sig {bump : Int} end)
   | Failed of {err : String}
 
 module P = struct

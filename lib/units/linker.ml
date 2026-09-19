@@ -40,20 +40,21 @@ let check_imports_satisfied ~unit_name accT d =
              unambiguously" unit_name l)
     (import_fields d)
 
-(* One link step is Elab's own `link_step` — the term `link`/`linkall`
+(* One link step is Elab's own `linked_core` — the term `link`/`linkall`
    elaborate to — so the toolchain linker and the calculus's cannot drift; a
-   leaf unit joins by `nmrg_step`. Both are closed terms, which is what lets the
-   wasm linker apply them to units it only reaches through its environment. *)
-let step (accT : S.typ) (u : t) : C.exp =
+   leaf unit joins by `nmrg_core`. Neither captures anything from its operands'
+   scope, which is what lets the wasm linker apply them to units it only reaches
+   through its environment. *)
+let step (accT : S.typ) (u : t) (acc : C.exp) (ue : C.exp) : C.exp =
   match u.a_imports with
-  | None -> E.nmrg_step (E.elab_typ accT) (E.elab_typ u.a_exports)
+  | None -> E.nmrg_core acc ue
   | Some d ->
     check_imports_satisfied ~unit_name:u.a_name accT d;
-    E.link_step (E.elab_typ accT) (E.elab_typ d) (E.elab_typ u.a_exports)
+    E.linked_core (E.elab_typ accT) (E.elab_typ d) (E.elab_typ u.a_exports) acc ue
 
-(* The composition both linkers share: a left fold of `App (App (step, acc), u)`,
-   parameterized by how a unit occurrence is spelled — spliced term for the core
-   linker, environment projection for the wasm one. *)
+(* The composition both linkers share: a left fold of `step`, parameterized by
+   how a unit occurrence is spelled — spliced term for the core linker,
+   environment projection for the wasm one. *)
 let compose (arts : t list) (uref : int -> C.exp) :
     S.typ * C.exp * string list =
   match arts with
@@ -69,7 +70,7 @@ let compose (arts : t list) (uref : int -> C.exp) :
         (fun (accT, acc, names, k) u ->
           check_no_overlap accT names u.a_exports u.a_name;
           ( S.TAnd (accT, u.a_exports),
-            C.App (C.App (step accT u, acc), uref k),
+            step accT u acc (uref k),
             names @ [ u.a_name ],
             k + 1 ))
         (first.a_exports, uref 0, [ first.a_name ], 1)

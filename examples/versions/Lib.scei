@@ -1,1 +1,1 @@
-{version : String} & {greet : String -> String}
+sig {version : String} & {greet : String -> String} end

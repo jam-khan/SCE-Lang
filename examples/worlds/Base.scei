@@ -1,1 +1,1 @@
-{decorate : String -> String}
+sig {decorate : String -> String} end

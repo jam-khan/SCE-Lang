@@ -14,11 +14,7 @@ toolchain offers and requires one answer from all of them:
 
 | set | what it exercises |
 |---|---|
-| [hello/](hello/) | two independent providers and a consumer; link-order permutation |
-| [geometry/](geometry/) | a functor exported by one unit and applied in another — under wasm linking, a closure built by one instance is `call_ref`'d from another |
+| [shop/](shop/) | the paper's running example: a provider, a client compiled against its `.scei` alone, and a second client that needs both — `whole.sce` is the same program with the links written as expressions |
 | [peano/](peano/) | a recursive ADT crossing units; the consumer redeclares the type with its own constructor names and structural equality makes it compatible |
-| [textlib/](textlib/) | strings and recursion; a unit whose body uses first-class `linkall` while the toolchain links the unit itself — both linking levels in one program |
-| [diamond/](diamond/) | a diamond dependency: two units import the same provider and one copy serves both; the sides link in either order |
-| [interp/](interp/) | a modular interpreter: passes are independent units over a structurally shared iso-recursive AST type |
 
 Each README shows the exact CLI session for its set.

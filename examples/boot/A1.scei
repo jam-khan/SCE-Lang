@@ -1,1 +1,1 @@
-{v : Int}
+sig {v : Int} end

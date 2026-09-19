@@ -43,7 +43,8 @@ and typ_desc =
   | TOr  of typ * typ
   | TRcd of (string * typ) list    (* { l : A, ... } *)
   | TMu  of binder  * typ
-  | TSig of typ * typ
+  | TSig  of typ                   (* sig A end *)
+  | TMarr of typ * typ             (* A => B *)
 
 type param = { p_bind : binder; p_typ : typ }
 

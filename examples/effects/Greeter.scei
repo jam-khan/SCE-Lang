@@ -1,1 +1,1 @@
-{hello : String -> String}
+sig {hello : String -> String} end

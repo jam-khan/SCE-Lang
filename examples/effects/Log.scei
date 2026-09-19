@@ -1,1 +1,1 @@
-{info : String -> Top}
+sig {info : String -> Top} end

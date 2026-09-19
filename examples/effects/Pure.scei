@@ -1,1 +1,1 @@
-{double : Int -> Int}
+sig {double : Int -> Int} end
