@@ -1,9 +1,7 @@
 # Examples
 
 Every example here is a live test fixture: the suite runs each one on every
-commit, so nothing on this page can rot. [Design.md](../Design.md#13-map-claim--example--test)
-maps each design claim to its example and its test; this page walks the same
-ground example by example.
+commit, so nothing on this page can rot.
 
 Single files run directly; unit sets and capability examples have a CLI
 session in their own README (linked below):
@@ -90,7 +88,8 @@ wasm module.
   [lib/wasm/README.md](../lib/wasm/README.md) for the backend itself.
 - **Notation vs the paper:** the surface `Top` is the paper's unit/empty
   type ε; surface `;` is the paper's parallel merge and `;;` its dependent
-  merge; `?` is the paper's environment query.
+  merge; `?` is the paper's environment query; `sig A end` is the paper's
+  signature type Sig A (the type of a `struct`) and `A => B` its functor type.
 - **Elided primitives:** `Bool`, `String`, comparison and arithmetic
   operators (`&&`, `mod`, `/`, …) are implementation primitives layered on
   the formalized calculus, which has only `Int` and ε as base types.

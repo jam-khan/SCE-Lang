@@ -213,7 +213,7 @@ let () =
     (match compile "named.sce" named_src with Ok _ -> true | Error _ -> false);
   (* inline interface *)
   let inline_src =
-    "import Counter : { start : Int } & { bump : Int -> Int }\n\
+    "import Counter : sig { start : Int } & { bump : Int -> Int } end\n\
      let main : Int = Counter.bump Counter.start\n"
   in
   (match compile "inline.sce" inline_src with

@@ -1,5 +1,5 @@
 (* Peano numerals as an ADT — sugar over the iso-recursive union
-   mu a. Top | a (see examples/recursive.sce for the raw encoding). The
+   mu a. Top | a. The
    .scei this generates spells the type out structurally, so consumers need
    no shared nominal declaration. *)
 

@@ -9,7 +9,7 @@ let bd (s, e) name = { bd_name = name; bd_loc = { start_p = s; end_p = e } }
 %token <string> STRING
 %token <string> IDENT
 %token LET REC IN FUN IF THEN ELSE CASE OF INL INR END FOLD UNFOLD MU
-%token STRUCT SANDBOX FUNCTOR MODULE OPEN TYPE WITH LINK LINKALL BOX IMPORT
+%token STRUCT SIG SANDBOX FUNCTOR MODULE OPEN TYPE WITH LINK LINKALL BOX IMPORT
 %token MATCH MOD NOT TRUE FALSE
 %token TINT TBOOL TSTRING TTOP
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET
@@ -212,7 +212,7 @@ field:
 
 typ:
   | MU; a = IDENT; DOT; t = typ       { nd $loc (TMu (bd $loc(a) a, t)) }
-  | l = arrow_typ; DARROW; r = typ    { nd $loc (TSig (l, r)) }
+  | l = arrow_typ; DARROW; r = typ    { nd $loc (TMarr (l, r)) }
   | t = arrow_typ                     { t }
 
 arrow_typ:
@@ -235,6 +235,7 @@ atom_typ:
   | a = IDENT                         { nd $loc (TVar a) }
   | LBRACE; fs = separated_list(COMMA, typ_field); RBRACE
       { nd $loc (TRcd fs) }
+  | SIG; t = typ; END                 { nd $loc (TSig t) }
   | LPAREN; t = typ; RPAREN           { nd $loc t.it }
 
 typ_field:

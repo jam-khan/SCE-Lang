@@ -12,14 +12,12 @@ type typ =
   | TAnd of typ * typ
   | TOr  of typ * typ
   | TRcd of string * typ
-  | TSig of modtyp
+  (* module types: Sig A classifies structures, A => B functors *)
+  | TSig  of typ
+  | TMarr of typ * typ
   (* iso-recursive types: de Bruijn var 0 is bound by the nearest mu *)
   | TVar of int
   | TMu  of typ
-
-and modtyp =
-  | TyIntf of typ
-  | TyArrM of typ * modtyp
 
 (* subst_typ d s t replaces TVar d by s in t (s is closed, so no shifting) *)
 let rec subst_typ d s = function
@@ -31,13 +29,10 @@ let rec subst_typ d s = function
   | TAnd (a, b) -> TAnd (subst_typ d s a, subst_typ d s b)
   | TOr  (a, b) -> TOr  (subst_typ d s a, subst_typ d s b)
   | TRcd (l, a) -> TRcd (l, subst_typ d s a)
-  | TSig mt     -> TSig (subst_modtyp d s mt)
+  | TSig a      -> TSig (subst_typ d s a)
+  | TMarr (a, b) -> TMarr (subst_typ d s a, subst_typ d s b)
   | TVar n      -> if n = d then s else TVar n
   | TMu t       -> TMu (subst_typ (d + 1) s t)
-
-and subst_modtyp d s = function
-  | TyIntf t       -> TyIntf (subst_typ d s t)
-  | TyArrM (t, mt) -> TyArrM (subst_typ d s t, subst_modtyp d s mt)
 
 type sandbox =
   | Sandboxed
@@ -76,14 +71,14 @@ type 'v exp =
   | Binop     of binop * 'v exp * 'v exp
   | If        of 'v exp * 'v exp * 'v exp
   (* to be elaborated *)
-  | Mstruct   of sandbox * 'v exp
+  | Mstruct   of 'v exp
   | Mfunctor  of sandbox * binder * typ * 'v exp
   | Mclos     of 'v exp * typ * 'v exp
   | Mlink     of 'v exp * 'v exp
   | Mapp      of 'v exp * 'v exp
   (* more terms *)
   | Nmrg      of 'v exp * 'v exp                    (* binds nothing: see Frames.nmrg *)
-  | Letb      of binder * 'v exp * typ * 'v exp
+  | Letb      of binder * 'v exp * 'v exp
   | Openm     of binder * 'v exp * 'v exp
   (* n-ary linking: satisfy every labeled import of a functor at once *)
   | Mlinkn    of 'v exp * 'v exp
@@ -107,6 +102,7 @@ let rec is_value : 'v. 'v exp -> bool = function
   | Lit _ | Unit       -> true
   | Clos  (v, _, _)    -> is_value v
   | Mclos (v, _, _)    -> is_value v
+  | Mstruct v          -> is_value v
   | Mrg   (_, v1, v2)  -> is_value v1 && is_value v2
   | Lrec  (_, v)       -> is_value v
   | Inl (_, v) | Inr (_, v) -> is_value v

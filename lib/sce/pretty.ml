@@ -19,10 +19,8 @@ let rec typ_prec p t =
   | TAnd (a, b) ->
     paren (p > 2) (Printf.sprintf "%s & %s" (typ_prec 2 a) (typ_prec 3 b))
   | TMu a -> paren (p > 0) (Printf.sprintf "mu. %s" (typ_prec 0 a))
-  | TSig mt -> paren (p > 0) (modtyp_prec mt)
-
-and modtyp_prec = function
-  | TyIntf t -> typ_prec 1 t
-  | TyArrM (t, mt) -> Printf.sprintf "%s => %s" (typ_prec 1 t) (modtyp_prec mt)
+  | TSig a -> Printf.sprintf "sig %s end" (typ_prec 0 a)
+  | TMarr (a, b) ->
+    paren (p > 0) (Printf.sprintf "%s => %s" (typ_prec 1 a) (typ_prec 0 b))
 
 let typ_to_string t = typ_prec 0 t

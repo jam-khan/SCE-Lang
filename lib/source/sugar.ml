@@ -78,9 +78,8 @@ let rec conv_typ env (t : typ) : S.typ =
   | TArr (a, b) -> S.TArr (conv a, conv b)
   | TAnd (a, b) -> S.TAnd (conv a, conv b)
   | TOr (a, b) -> S.TOr (conv a, conv b)
-  (* `A => B => C` curries: Mfunctor's result is an interface that is itself a
-     signature, never a nested TyArrM. *)
-  | TSig (a, b) -> S.TSig (S.TyArrM (conv a, S.TyIntf (conv b)))
+  | TSig a -> S.TSig (conv a)
+  | TMarr (a, b) -> S.TMarr (conv a, conv b)
   | TMu (b, body) -> S.TMu (conv_typ { env with mus = b.bd_name :: env.mus } body)
   | TRcd fs ->
     check_unique "record type" (List.map (fun (l, _) -> (l, t.loc)) fs);
@@ -120,6 +119,11 @@ let bfalse = S.Lit (S.Bool false)
 
 (* The label an `open` subject is wrapped in, so Openm sees a record. *)
 let open_label = "%open"
+
+(* `(e : A)` is the identity redex `(fun (_ : A) -> ?.0) e`, so Elab's App rule
+   is what compares A against e: Sugar reports types, it does not check them. *)
+let checked (ty : S.typ) (c : S.named) : S.named =
+  S.App (S.Lam (S.anon, ty, S.Proj (S.Query, 0)), c)
 
 (* ---------------- expressions ---------------- *)
 
@@ -174,7 +178,7 @@ let rec desugar env (e : exp) : S.typ * S.named =
     let tf, cf = desugar env f in
     match tf with
     | S.TArr (_, cod) -> (cod, S.App (cf, only a))
-    | S.TSig (S.TyArrM (_, S.TyIntf cod)) -> (cod, S.Mapp (cf, only a))
+    | S.TMarr (_, cod) -> (cod, S.Mapp (cf, only a))
     | _ ->
       err f.loc "this is applied to an argument but has type %s"
         (P.typ_to_string tf))
@@ -206,7 +210,7 @@ let rec desugar env (e : exp) : S.typ * S.named =
     let x = b.b_bind.bd_name in
     let vt, cv = binding env b in
     let bt, cb = desugar (bind F.letb x vt env) body in
-    (bt, S.Letb (x, cv, vt, cb))
+    (bt, S.Letb (x, cv, cb))
   | EOpen (m, body) ->
     let subj, x, env = opening env m in
     let bt, cb = desugar env body in
@@ -225,9 +229,13 @@ let rec desugar env (e : exp) : S.typ * S.named =
       (t1, S.Case (cs, x.bd_name, c1, y.bd_name, snd (branch y b e2)))
     | ts, _ ->
       err scrut.loc "`case` expects a union type, got %s" (P.typ_to_string ts))
-  | EStruct (sb, ds) ->
-    let t, c = structure (match sb with Sandboxed -> reset env | Open -> env) ds in
-    (t, S.Mstruct (conv_sandbox sb, c))
+  (* `sandbox struct` is a struct boxed under the empty environment. *)
+  | EStruct (Open, ds) ->
+    let t, c = structure env ds in
+    (S.TSig t, S.Mstruct c)
+  | EStruct (Sandboxed, ds) ->
+    let t, c = structure (reset env) ds in
+    (S.TSig t, S.Box (S.Unit, S.Mstruct c))
   | EFunctor (sb, ps, body) -> functors env sb ps body
   | ELink (k, m, f) -> link env e.loc k m f
   | EMatch _ -> err e.loc "internal: `match` survived Adt.expand"
@@ -255,7 +263,7 @@ and opening env (m : exp) =
   (S.Lrec (open_label, cm), x, env)
 
 (* Ascription has no core counterpart: it supplies the types Inl, Inr and Fold
-   cannot infer, and hands Elab something to check the term against. *)
+   cannot infer; anywhere else it is `checked`. *)
 and ascribe env loc (inner : exp) (ty : S.typ) =
   let payload a node = (ty, node (snd (desugar env a))) in
   match (inner.it, ty) with
@@ -268,7 +276,7 @@ and ascribe env loc (inner : exp) (ty : S.typ) =
   | EFold _, _ ->
     err loc "`fold` must be ascribed a recursive type, got %s"
       (P.typ_to_string ty)
-  | _ -> (ty, snd (desugar env inner))
+  | _ -> (ty, checked ty (snd (desugar env inner)))
 
 (* Only the outermost functor carries the sandbox flag; the curried ones inside
    it inherit an already-sandboxed context. *)
@@ -280,26 +288,28 @@ and functors env sb ps body =
     let x = p.p_bind.bd_name in
     let a = conv_typ outer p.p_typ in
     let bt, cb = functors (bind F.lam x a outer) Open rest body in
-    (S.TSig (S.TyArrM (a, S.TyIntf bt)), S.Mfunctor (conv_sandbox sb, x, a, cb))
+    (S.TMarr (a, bt), S.Mfunctor (conv_sandbox sb, x, a, cb))
 
 and link env loc k m f =
   let mt, cm = desugar env m in
   match desugar env f with
-  | S.TSig (S.TyArrM (_, S.TyIntf result)), cf ->
+  | S.TMarr (_, result), cf ->
     ( S.TAnd (mt, result),
       match k with LOne -> S.Mlink (cm, cf) | LAll -> S.Mlinkn (cm, cf) )
   | ft, _ ->
     err loc "the target of `link` must be a functor, but has type %s"
       (P.typ_to_string ft)
 
-(* An annotation is reported rather than checked, so Elab's Letb rule is what
-   compares it against the bound term. *)
+(* An annotated binding is ascribed at its whole type, parameters included. *)
 and binding env (b : binding) : S.typ * S.named =
   if b.b_rec then recursive_binding env b
   else
-    params env b.b_params (fun env ->
-      let bt, cb = desugar env b.b_exp in
-      ((match b.b_ann with Some t -> conv_typ env t | None -> bt), cb))
+    let vt, cv =
+      params env b.b_params (fun env ->
+        let bt, cb = desugar env b.b_exp in
+        ((match b.b_ann with Some t -> conv_typ env t | None -> bt), cb))
+    in
+    (vt, if b.b_ann = None then cv else checked vt cv)
 
 (* Flam types its body under `(ctx & (A -> B)) & A`, so the recursive name sits
    below the parameters; extra parameters become plain lambdas inside it. *)
@@ -394,7 +404,7 @@ let desugar_program (p : Ast.program) : S.typ * S.named =
       | DLet _ | DModule _ ->
         let x, (vt, cv) = declared env d in
         let bt, cb = go (bind F.letb x vt env) rest in
-        (bt, S.Letb (x, cv, vt, cb))
+        (bt, S.Letb (x, cv, cb))
       | DOpen m ->
         let subj, o, inner = opening env m in
         let bt, cb = go inner rest in

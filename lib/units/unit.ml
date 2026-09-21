@@ -69,5 +69,5 @@ let wrapper (imports : (Ast.binder * Ast.typ) list) (p : Ast.program) :
 (* Split the synthesized unit type into interface halves. *)
 let info (t : S.typ) : S.typ option * S.typ =
   match t with
-  | S.TSig (S.TyArrM (i, S.TyIntf e)) -> (Some i, e)
+  | S.TMarr (i, e) -> (Some i, e)
   | t -> (None, t)

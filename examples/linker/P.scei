@@ -1,1 +1,1 @@
-{Seed : {start : Int}}
+sig {Seed : sig {start : Int} end} end

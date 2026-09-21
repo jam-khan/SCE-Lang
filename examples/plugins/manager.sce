@@ -5,12 +5,12 @@
 
 import Sys
 import Loader : { load : String ->
-  (({Cap : {log : String -> Top}} => {run : String -> String}) | {err : String}) }
+  (({Cap : {log : String -> Top}} => sig {run : String -> String} end) | {err : String}) }
 
 (* A local view on the loader's union: constructor names are surface-only, so
    an ADT with the same payloads matches the host's result type exactly. *)
 type loaded =
-  | Plugin of (({Cap : {log : String -> Top}}) => {run : String -> String})
+  | Plugin of (({Cap : {log : String -> Top}}) => sig {run : String -> String} end)
   | Failed of {err : String}
 
 module Caps = struct

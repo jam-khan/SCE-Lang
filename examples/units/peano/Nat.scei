@@ -1,1 +1,1 @@
-{zero : mu a. Top | a} & {succ : (mu a. Top | a) -> (mu a. Top | a)} & {add : (mu a. Top | a) -> (mu a. Top | a) -> (mu a. Top | a)} & {mul : (mu a. Top | a) -> (mu a. Top | a) -> (mu a. Top | a)} & {toint : (mu a. Top | a) -> Int}
+sig {zero : mu a. Top | a} & {succ : (mu a. Top | a) -> (mu a. Top | a)} & {add : (mu a. Top | a) -> (mu a. Top | a) -> (mu a. Top | a)} & {mul : (mu a. Top | a) -> (mu a. Top | a) -> (mu a. Top | a)} & {toint : (mu a. Top | a) -> Int} end

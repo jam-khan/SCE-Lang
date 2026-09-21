@@ -4,7 +4,7 @@
    denial. Try it:
 
      $ main -c evil.sce -o evil.sceo
-     3:29: scope error: unbound variable 'Sys'
+     12:21: desugar error: unbound variable 'Sys'
 
    (Kept as a negative fixture; the test suite asserts the rejection.) *)
 

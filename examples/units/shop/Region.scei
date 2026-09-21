@@ -1,0 +1,1 @@
+sig {rate : Int} & {ship : Int} end

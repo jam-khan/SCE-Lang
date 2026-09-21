@@ -4,10 +4,10 @@
    from out here do not resolve. *)
 
 import Loader : { load : String ->
-  (({Theme : {decorate : String -> String}}) | {err : String}) }
+  ((sig {Theme : sig {decorate : String -> String} end} end) | {err : String}) }
 
 type loaded =
-  | World of {Theme : {decorate : String -> String}}
+  | World of sig {Theme : sig {decorate : String -> String} end} end
   | NoWorld of {err : String}
 
 module Base = struct let decorate (s : String) : String = s end

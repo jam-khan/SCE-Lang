@@ -1,8 +1,7 @@
 # peano
 
 Recursive data crossing unit boundaries. `nat.sce` declares
-`type nat = | Z | S of nat` — sugar over `mu a. Top | a` (see
-[examples/recursive.sce](../../recursive.sce) for the raw encoding) — and
+`type nat = | Z | S of nat` — sugar over `mu a. Top | a` — and
 `arith.sce` declares its *own* ADT with its own constructor names
 (`Zero`/`Next`). Structural equality is what makes them compatible: neither
 the type nor the constructors have to be shared between separately compiled

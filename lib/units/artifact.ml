@@ -20,11 +20,11 @@ type t = {
 let slot_typ (u : t) : S.typ =
   match u.a_imports with
   | None -> u.a_exports
-  | Some d -> S.TSig (S.TyArrM (d, S.TyIntf u.a_exports))
+  | Some d -> S.TMarr (d, u.a_exports)
 
 (* Bump the trailing digits whenever the artifact shape or the ASTs change:
    Marshal gives no compatibility, so the magic is the only guard. *)
-let magic = "SCEOBJ02"
+let magic = "SCEOBJ03"
 
 let save (path : string) (a : t) : unit =
   let oc = open_out_bin path in
@@ -67,13 +67,11 @@ let print_typ (t : S.typ) : string =
     | S.TMu body ->
       let n = mu_name (List.length env) in
       paren (lvl > 0) ("mu " ^ n ^ ". " ^ pt (n :: env) 0 body)
-    | S.TSig m -> paren (lvl > 0) (pm env m)
+    | S.TSig a -> "sig " ^ pt env 0 a ^ " end"
+    | S.TMarr (a, b) -> paren (lvl > 0) (pt env 1 a ^ " => " ^ pt env 0 b)
     | S.TArr (a, b) -> paren (lvl > 1) (pt env 2 a ^ " -> " ^ pt env 1 b)
     | S.TOr (a, b) -> paren (lvl > 2) (pt env 2 a ^ " | " ^ pt env 3 b)
     | S.TAnd (a, b) -> paren (lvl > 3) (pt env 3 a ^ " & " ^ pt env 4 b)
-  and pm env = function
-    | S.TyIntf t -> pt env 0 t
-    | S.TyArrM (a, m) -> pt env 1 a ^ " => " ^ pm env m
   in
   pt [] 0 t
 
@@ -94,7 +92,8 @@ let rec subst_tname (name : string) (body : Ast.typ) (t : Ast.typ) : Ast.typ =
   | Ast.TArr (a, b) -> nd (Ast.TArr (s a, s b))
   | Ast.TAnd (a, b) -> nd (Ast.TAnd (s a, s b))
   | Ast.TOr (a, b) -> nd (Ast.TOr (s a, s b))
-  | Ast.TSig (a, b) -> nd (Ast.TSig (s a, s b))
+  | Ast.TSig a -> nd (Ast.TSig (s a))
+  | Ast.TMarr (a, b) -> nd (Ast.TMarr (s a, s b))
   | Ast.TRcd fs -> nd (Ast.TRcd (List.map (fun (l, ft) -> (l, s ft)) fs))
   | Ast.TMu (b, t') ->
     if String.equal b.Ast.bd_name name then t else nd (Ast.TMu (b, s t'))

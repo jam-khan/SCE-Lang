@@ -6,11 +6,11 @@
 import App
 import Loader : { load : String ->
   (({Old : {motto : String, owner : String}}
-      => {banner : String, owner : String}) | {err : String}) }
+      => sig {banner : String, owner : String} end) | {err : String}) }
 
 type fetched =
   | Upgrade of (({Old : {motto : String, owner : String}})
-                  => {banner : String, owner : String})
+                  => sig {banner : String, owner : String} end)
   | NoUpgrade of {err : String}
 
 let main : String =

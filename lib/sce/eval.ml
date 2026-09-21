@@ -4,7 +4,7 @@ open Ast
 (* LookupV: index 0 is the *right-most* component of a merge. *)
 let rec lookup (v : nameless) (i : int) : nameless =
   match v with
-  | Mrg (_, v1, v2) | Nmrg (v1, v2) ->
+  | Mrg (_, v1, v2) ->
     if i = 0 then v2 else lookup v1 (i - 1)
   | _ -> failwith ("Error: no component at index " ^ string_of_int i)
 
@@ -12,10 +12,11 @@ let rec lookup (v : nameless) (i : int) : nameless =
 let rec sel_opt (v : nameless) (l : string) : nameless option =
   match v with
   | Lrec (l', v') when String.equal l l' -> Some v'
-  | Mrg (_, v1, v2) | Nmrg (v1, v2) ->
+  | Mrg (_, v1, v2) ->
     (match sel_opt v2 l with
      | Some _ as r -> r
      | None -> sel_opt v1 l)
+  | Mstruct v' -> sel_opt v' l
   | _ -> None
 
 (* Sel: label `l` selection in `v` *)
@@ -105,7 +106,7 @@ let rec eval (env : nameless) (e : nameless) : nameless =
     let v2 = eval env e2 in
     prim_exp op v1 v2
   | If (e1, e2, e3) -> eval env (branch (eval env e1) e2 e3)
-  | Letb (x, e1, _ty, e2) ->
+  | Letb (x, e1, e2) ->
     let v1 = eval env e1 in
     eval (Mrg (x, env, v1)) e2
   | Openm (x, e1, e2) ->
@@ -113,8 +114,7 @@ let rec eval (env : nameless) (e : nameless) : nameless =
       | Lrec (_l, v') -> eval (Mrg (x, env, v')) e2
       | _ -> failwith "Error: Open must have a labelled record as its subject."
     end
-  | Mstruct (Sandboxed, body) -> eval Unit body
-  | Mstruct (Open, body) -> eval env body
+  | Mstruct body -> Mstruct (eval env body)
   | Mfunctor (Sandboxed, _, ty, body) -> Mclos (Unit, ty, body)
   | Mfunctor (Open, _, ty, body) -> Mclos (env, ty, body)
   | Mlink (e1, e2) ->
@@ -196,19 +196,16 @@ let rec step (env : nameless) (e : nameless) : nameless =
     else prim_exp op e1 e2
   | If (e1, e2, e3) ->
     if is_value e1 then branch e1 e2 e3 else If (step env e1, e2, e3)
-  | Letb (x, e1, ty, e2) ->
+  | Letb (x, e1, e2) ->
     if is_value e1 then Box (Mrg (x, env, e1), e2)
-    else Letb (x, step env e1, ty, e2)
+    else Letb (x, step env e1, e2)
   | Openm (x, e1, e2) ->
     if not (is_value e1) then Openm (x, step env e1, e2)
     else begin match e1 with
       | Lrec (_l, v') -> Box (Mrg (x, env, v'), e2)
       | _ -> failwith "Error: Open must have a labelled record as its subject."
     end
-  | Mstruct (Sandboxed, e1) ->
-    if is_value e1 then e1 else Mstruct (Sandboxed, step Unit e1)
-  | Mstruct (Open, e1) ->
-    if is_value e1 then e1 else Mstruct (Open, step env e1)
+  | Mstruct e1 -> Mstruct (step env e1)
   | Mlink (e1, e2) ->
     if not (is_value e1) then Mlink (step env e1, e2)
     else if not (is_value e2) then Mlink (e1, step env e2)
