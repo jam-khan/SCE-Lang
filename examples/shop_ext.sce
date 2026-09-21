@@ -4,17 +4,36 @@ module Checkout = sandbox functor (I : { rate : Int }) -> struct
   let total (p : Int) : Int = p + p * I.rate / 100
 end
 
-(* -- unions: one client, providers with *different* interfaces. There is no
-   common supertype to abstract over; each branch re-checks the same link
-   against its own provider. *)
+(* A second client with two imports, wired by label. The provider's order and
+   its extra fields are irrelevant; the package follows the client. *)
+module Invoice = sandbox functor (I : { total : Int -> Int, ship : Int }) -> struct
+  let bill (p : Int) : Int = I.total p + I.ship
+end
+
+(* -- unions x n-ary linking: one client, providers with *different*
+   interfaces. There is no common supertype to abstract over; each branch
+   re-checks the same link against its own provider. The Full branch links a
+   second client against the first result: `total` comes from Checkout and
+   `ship` from the provider the inner link kept. *)
 type region =
   | Flat of sig { rate : Int } end
-  | Full of sig { ship : Int, rate : Int, vat : Int } end
+  | Full of sig { ship : Int, rate : Int } end
 
 let quote (r : region) (p : Int) : Int =
   match r with
   | Flat w -> (link w with Checkout).total p
-  | Full w -> (link w with Checkout).total p + w.ship
+  | Full w -> (linkall (link w with Checkout) with Invoice).bill p
+  end
+
+(* -- recursive types x recursive functions: modules inside data. A route is
+   a list of providers, and `cost` links the one compiled client against each
+   of them as it recurses. *)
+type route = | Stop | Leg of region * route
+
+let rec cost (rs : route) (p : Int) : Int =
+  match rs with
+  | Stop -> 0
+  | Leg (r, rest) -> quote r p + cost rest p
   end
 
 (* -- recursive types x linking: a live provider. Each generation is a module
@@ -49,13 +68,9 @@ let rec redeem (c : campaign) (p : Int) : Int =
 module TenOff  = sandbox functor (I : { price : Int }) -> struct let price : Int = I.price - 10 end
 module HalfOff = sandbox functor (I : { price : Int }) -> struct let price : Int = I.price / 2 end
 
-(* -- n-ary linking: several imports, wired by label. The provider's order
-   and its extra fields are irrelevant; the package follows the client. *)
-module Invoice = sandbox functor (I : { total : Int -> Int, ship : Int }) -> struct
-  let bill (p : Int) : Int = I.total p + I.ship
-end
-(* x first-class environments: `?` is a provider like any other, so a module
-   can link a client against everything it has declared so far. The result
+(* -- n-ary linking x first-class environments: `?` is a provider like any
+   other, so a module can link a client against everything it has declared so
+   far. The result
    keeps that environment, so the next client links against the first. *)
 module Shop = struct
   let rate : Int = 20
@@ -70,21 +85,34 @@ module World = struct
   let total (p : Int) : Int = p + 1
 end
 
-(* -- recursive linking: a module whose import is its own export. Before the
-   knot is tied the import is just a parameter, so one step of the recursion
-   can be tested against a stub; tying it is an ordinary let rec. *)
-module Parity = functor (X : { even : Int -> Bool }) -> struct
-  let odd  (n : Int) : Bool = if n = 0 then false else X.even (n - 1)
-  let even (n : Int) : Bool = if n = 0 then true  else odd (n - 1)
-end
-let stubbed : Bool = (Parity({ even = fun (n : Int) -> true })).odd 7
-let rec even (n : Int) : Bool = (Parity({ even = even })).even n
+(* -- recursive linking x sandboxing: a cycle between two closed clients.
+   Items imports what Packs exports and the reverse; neither names the other,
+   so each can be compiled alone. A third party closes the cycle: given
+   `price`, Packs provides the `pack` that Items is linked against, and the
+   knot over `price` is an ordinary let rec. *)
+type item = | One of Int | Pack of item * item
 
-let main = { flat    = quote (Flat (struct let rate : Int = 8 end)) 100
-           , full    = quote (Full (struct let ship : Int = 5 let rate : Int = 20 let vat : Int = 0 end)) 100
+module Items = sandbox functor (X : { pack : item -> item -> Int }) -> struct
+  let price (i : item) : Int =
+    match i with | One p -> p | Pack (a, b) -> X.pack a b end
+end
+
+module Packs = sandbox functor (X : { price : item -> Int }) -> struct
+  let pack (a : item) (b : item) : Int = (X.price a + X.price b) * 9 / 10
+end
+
+module Pricing = functor (X : { price : item -> Int }) -> link Packs(X) with Items
+
+let rec price (i : item) : Int = (Pricing({ price = price })).price i
+
+let flat = Flat (struct let rate : Int = 8 end)
+let full = Full (struct let ship : Int = 5 let rate : Int = 20 end)
+
+let main = { flat    = quote flat 100
+           , full    = quote full 100
+           , trip    = cost (Leg (flat, Leg (full, Stop))) 100
            , redeem  = redeem (Then (TenOff, Then (HalfOff, Done))) 100
            , audit   = audit (evolve 10) 3
            , bill    = (linkall World with Invoice).bill 100
            , desk    = Shop.Desk.bill 100
-           , stubbed = stubbed
-           , even10  = even 10 }
+           , nested  = price (Pack (One 100, Pack (One 50, One 50))) }
