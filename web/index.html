@@ -22,6 +22,10 @@
       --syn-number: #0550ae;
       --syn-operator: #cf5c16;
       --syn-bracket: #57606a;
+      --syn-keyword: #8250df;
+      --syn-string: #0a3069;
+      --syn-comment: #6e7781;
+      --syn-type: #116329;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -153,6 +157,10 @@
     .syn-number   { color: var(--syn-number); }
     .syn-operator { color: var(--syn-operator); }
     .syn-bracket  { color: var(--syn-bracket); }
+    .syn-keyword  { color: var(--syn-keyword); font-weight: 600; }
+    .syn-string   { color: var(--syn-string); }
+    .syn-comment  { color: var(--syn-comment); font-style: italic; }
+    .syn-type     { color: var(--syn-type); }
 
     /* ── Output ────────────────────────────────────────── */
     .output-panel {
@@ -249,7 +257,7 @@
       <div class="editor-container">
         <div id="highlight-layer" aria-hidden="true"></div>
         <textarea id="editor" spellcheck="false" autofocus
-                  placeholder="Enter an arithmetic expression"></textarea>
+                  placeholder="Write an SCE program: let main = ..."></textarea>
       </div>
     </section>
 
@@ -258,14 +266,14 @@
         <span class="panel-label">Output</span>
       </div>
       <div class="output-content" id="output">
-        <div class="empty-state">Type an expression — it is parsed live.</div>
+        <div class="empty-state">Type a program — it is checked and run as you type.</div>
       </div>
       <div class="status-bar">
         <div class="status-indicator">
           <span class="status-dot loading" id="statusDot"></span>
           <span id="statusText">Loading WASM…</span>
         </div>
-        <span>SCE v0.1</span>
+        <span>λSCE</span>
       </div>
     </section>
   </main>
@@ -273,9 +281,11 @@
 <script src="playground.bc.wasm.js"></script>
 <script>
   const examples = [
-    { id: "e1", label: "Addition",      code: "1 + 1" },
-    { id: "e2", label: "Precedence",    code: "1 + 2 * 3" },
-    { id: "e3", label: "Parentheses",   code: "(1 + 2) * (10 - 4) / 2" },
+    { id: "basics", label: "Basics", code: "let double (n : Int) : Int = n * 2\nlet main = { sum = 1 + 2 * 3, twice = double 21, hello = \"hi\" ^ \"!\" }" },
+    { id: "modules", label: "Modules, functors, linking", code: "(* Structures, functors, sandboxing and linking.\n\n   A `struct` is a dependent merge chain, so a declaration can use the ones\n   before it; its type is a signature, `sig ... end`. A `sandbox struct` is a\n   struct boxed under the empty environment, so nothing from outside is\n   reachable inside it. *)\n\nmodule Counter = struct\n  let start : Int = 10\n  let bump (n : Int) : Int = n + 1\n  let started : Int = bump start\nend\n\nmodule Secret = sandbox struct\n  let key : Int = 42\nend\n\n(* A functor's parameter is its import interface; `X.start` resolves through\n   the signature written right here. *)\nmodule Doubler (X : { start : Int }) = struct\n  let doubled : Int = X.start * 2\nend\n\n(* There is no subtyping: `Doubler(Counter)` would be rejected, because\n   Counter's type is a signature, and wider than `{ start : Int }` besides.\n   Direct application needs an argument of exactly the import type. *)\nmodule Applied = Doubler({ start = Counter.start })\n\n(* Linking is the mechanism that does cope with a wider module: it looks the\n   imported labels up in it and keeps both halves in the result. *)\nmodule Linked =\n  link Counter with functor (X : { start : Int }) -> struct\n    let next : Int = X.start + 1\n  end\n\n(* `open` brings a module's fields into scope for what follows. *)\nopen Counter\n\nlet main = { started = started\n   , doubled = Applied.doubled\n   , next    = Linked.next\n   , secret  = Secret.key\n   }\n" },
+    { id: "shop", label: "Shop: the paper's running example", code: "(* Section 2.3: one shop, told in five beats. *)\n\n(* a provider exports more than any one client needs *)\nmodule EU = struct\n  let rate : Int = 20\n  let ship : Int = 5\nend\n\nlet secret : Int = 42\n\n(* beat 1 -- a sandboxed client: `rate` is its only dependency. Mentioning\n   `secret` or `EU` in the body is a scope error, so the functor is closed and\n   can be compiled on its own. *)\nmodule Checkout = sandbox functor (I : { rate : Int }) -> struct\n  let total (p : Int) : Int = p + p * I.rate / 100\nend\n\n(* beat 2 -- application needs exactly the import; linking finds it.\n   `Checkout(EU)` is ill typed: there is no subtyping. *)\nmodule Applied = Checkout({ rate = EU.rate })\nmodule Linked  = link EU with Checkout\n\n(* beat 3 -- the link keeps the provider, so links chain like `ld a.o b.o c.o`:\n   Invoice needs `ship` from EU *and* `total` from Checkout. *)\nmodule Invoice = sandbox functor (I : { total : Int -> Int, ship : Int }) -> struct\n  let bill (p : Int) : Int = I.total p + I.ship\nend\nmodule Shop = linkall Linked with Invoice\n\n(* beat 4 -- linking is an expression: the provider is a run-time argument,\n   the import check happened when `open_shop` was compiled. *)\nlet open_shop (w : sig { rate : Int, ship : Int } end) (p : Int) : Int =\n  (linkall (link w with Checkout) with Invoice).bill p\n\nmodule UK = struct\n  let rate : Int = 10\n  let ship : Int = 7\nend\n\nlet main = { applied = Applied.total 100\n           , linked  = Linked.total 100\n           , kept    = Linked.ship\n           , shop    = Shop.bill 100\n           , eu      = open_shop EU 100\n           , uk      = open_shop UK 100 }\n" },
+    { id: "ext", label: "Extensions: unions, mu, linkall, recursion", code: "(* Section 5.1: what each extension unlocks, on the shop of Section 2.3. *)\n\nmodule Checkout = sandbox functor (I : { rate : Int }) -> struct\n  let total (p : Int) : Int = p + p * I.rate / 100\nend\n\n(* A second client with two imports, wired by label. The provider's order and\n   its extra fields are irrelevant; the package follows the client. *)\nmodule Invoice = sandbox functor (I : { total : Int -> Int, ship : Int }) -> struct\n  let bill (p : Int) : Int = I.total p + I.ship\nend\n\n(* -- unions x n-ary linking: one client, providers with *different*\n   interfaces. There is no common supertype to abstract over; each branch\n   re-checks the same link against its own provider. The Full branch links a\n   second client against the first result: `total` comes from Checkout and\n   `ship` from the provider the inner link kept. *)\ntype region =\n  | Flat of sig { rate : Int } end\n  | Full of sig { ship : Int, rate : Int } end\n\nlet quote (r : region) (p : Int) : Int =\n  match r with\n  | Flat w -> (link w with Checkout).total p\n  | Full w -> (linkall (link w with Checkout) with Invoice).bill p\n  end\n\n(* -- recursive types x recursive functions: modules inside data. A route is\n   a list of providers, and `cost` links the one compiled client against each\n   of them as it recurses. *)\ntype route = | Stop | Leg of region * route\n\nlet rec cost (rs : route) (p : Int) : Int =\n  match rs with\n  | Stop -> 0\n  | Leg (r, rest) -> quote r p + cost rest p\n  end\n\n(* -- recursive types x linking: a live provider. Each generation is a module\n   that carries the next one; the client is compiled once and re-linked\n   against every generation as the program runs. *)\ntype gen = mu a. sig { rate : Int, next : Top -> a } end\n\nlet rec evolve (r : Int) : gen =\n  (fold (struct\n     let rate : Int = r\n     let next (u : Top) : gen = evolve (r + 5)\n   end) : gen)\n\nlet rec audit (g : gen) (k : Int) : Int =\n  if k = 0 then 0\n  else (link (unfold g) with Checkout).total 100 + audit ((unfold g).next ()) (k - 1)\n\n(* -- recursive types x sandboxing: modules inside data. A coupon is a\n   sandboxed functor; a campaign is a list of them, run by an ordinary fold.\n   No coupon can see the shop or the other coupons -- only the price it is\n   handed. *)\ntype campaign =\n  | Done\n  | Then of ({ price : Int } => sig { price : Int } end) * campaign\n\nlet rec redeem (c : campaign) (p : Int) : Int =\n  match c with\n  | Done -> p\n  | Then (coupon, rest) -> redeem rest (coupon({ price = p })).price\n  end\n\nmodule TenOff  = sandbox functor (I : { price : Int }) -> struct let price : Int = I.price - 10 end\nmodule HalfOff = sandbox functor (I : { price : Int }) -> struct let price : Int = I.price / 2 end\n\n(* -- n-ary linking x first-class environments: `?` is a provider like any\n   other, so a module can link a client against everything it has declared so\n   far. The result\n   keeps that environment, so the next client links against the first. *)\nmodule Shop = struct\n  let rate : Int = 20\n  let ship : Int = 5\n  module Till = link ? with Checkout\n  module Desk = linkall Till with Invoice\nend\n\nmodule World = struct\n  let vat  : Int = 0\n  let ship : Int = 5\n  let total (p : Int) : Int = p + 1\nend\n\n(* -- recursive linking x sandboxing: a cycle between two closed clients.\n   Items imports what Packs exports and the reverse; neither names the other,\n   so each can be compiled alone. A third party closes the cycle: given\n   `price`, Packs provides the `pack` that Items is linked against, and the\n   knot over `price` is an ordinary let rec. *)\ntype item = | One of Int | Pack of item * item\n\nmodule Items = sandbox functor (X : { pack : item -> item -> Int }) -> struct\n  let price (i : item) : Int =\n    match i with | One p -> p | Pack (a, b) -> X.pack a b end\nend\n\nmodule Packs = sandbox functor (X : { price : item -> Int }) -> struct\n  let pack (a : item) (b : item) : Int = (X.price a + X.price b) * 9 / 10\nend\n\nmodule Pricing = functor (X : { price : item -> Int }) -> link Packs(X) with Items\n\nlet rec price (i : item) : Int = (Pricing({ price = price })).price i\n\nlet flat = Flat (struct let rate : Int = 8 end)\nlet full = Full (struct let ship : Int = 5 let rate : Int = 20 end)\n\nlet main = { flat    = quote flat 100\n           , full    = quote full 100\n           , trip    = cost (Leg (flat, Leg (full, Stop))) 100\n           , redeem  = redeem (Then (TenOff, Then (HalfOff, Done))) 100\n           , audit   = audit (evolve 10) 3\n           , bill    = (linkall World with Invoice).bill 100\n           , desk    = Shop.Desk.bill 100\n           , nested  = price (Pack (One 100, Pack (One 50, One 50))) }\n" },
+    { id: "parity", label: "Recursive linking", code: "(* Recursive linking as a derived form: a functor whose import is satisfied by\n   its own export, tied with an ordinary let rec. This is the mechanization's\n   derived recursive linking (`mrec_elab`, RecLinking.lean) written in surface\n   syntax \u2014 no new primitive. Note the reading is generative: each recursive\n   call re-applies the functor, so construction work repeats per call. *)\n\nmodule Parity = functor (X : { even : Int -> Bool }) -> struct\n  let odd (n : Int) : Bool = if n = 0 then false else X.even (n - 1)\n  let even (n : Int) : Bool = if n = 0 then true else odd (n - 1)\nend\n\n(* The knot: the import each application receives is the function being\n   defined, so the module's own export flows back in as its import. *)\n\nlet rec even (n : Int) : Bool = \n   let m = Parity({ even = even }) in \n   m.even n\n\nlet odd (n : Int) : Bool = \n   let m = Parity({ even = even }) in \n   m.odd n\n\nlet main = { even10 = even 10, odd10 = odd 10, even7 = even 7 }\n" },
   ];
 
   const editor = document.getElementById('editor');
@@ -288,14 +298,24 @@
       c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;');
   }
 
+  const keywords = new Set(("let rec in fun if then else case of inl inr end fold unfold mu " +
+    "struct sig sandbox functor module open type with import match link linkall box " +
+    "mod not true false").split(" "));
+  const types = new Set(["Int", "Bool", "String", "Top"]);
+
   // Single pass: each token is classified once, so the markup injected for
   // one token is never rescanned by a later rule.
   function highlightSrc(code) {
-    return code.replace(/[&<>]|\d+|[+\-*/]|[()]/g, m => {
-      if (m === '&' || m === '<' || m === '>') return escapeHtml(m);
+    const tok = /\(\*[\s\S]*?\*\)|"(?:[^"\\]|\\.)*"|[A-Za-z_][A-Za-z0-9_']*|\d+|[&<>]|[+\-*\/^=;:.,|?]|[(){}\[\]]/g;
+    return code.replace(tok, m => {
+      if (m.startsWith('(*')) return `<span class="syn-comment">${escapeHtml(m)}</span>`;
+      if (m.startsWith('"')) return `<span class="syn-string">${escapeHtml(m)}</span>`;
+      if (keywords.has(m)) return `<span class="syn-keyword">${m}</span>`;
+      if (types.has(m)) return `<span class="syn-type">${m}</span>`;
+      if (/^[A-Za-z_]/.test(m)) return m;
       if (/^\d/.test(m)) return `<span class="syn-number">${m}</span>`;
-      if (m === '(' || m === ')') return `<span class="syn-bracket">${m}</span>`;
-      return `<span class="syn-operator">${m}</span>`;
+      if (/^[(){}\[\]]$/.test(m)) return `<span class="syn-bracket">${m}</span>`;
+      return `<span class="syn-operator">${escapeHtml(m)}</span>`;
     });
   }
 
@@ -317,14 +337,16 @@
     if (!window.sce) return;
     const src = editor.value;
     if (src.trim() === "") {
-      output.innerHTML = '<div class="empty-state">Type an expression — it is parsed live.</div>';
+      output.innerHTML = '<div class="empty-state">Type a program — it is checked and run as you type.</div>';
       return;
     }
     const r = window.sce.run(src);
     let html = "";
-    if (r.ast) html += entry("AST", r.ast, "");
-    if (r.ok) html += entry("Result", r.value, "success");
-    else html += entry("Error", r.error, "error");
+    if (r.ok) {
+      html += entry("Type", r.typ, "success");
+      html += entry("Value", r.value, "success");
+      html += entry("Core (λE)", r.core, "");
+    } else html += entry("Error", r.error, "error");
     output.innerHTML = html;
   }
 
@@ -360,8 +382,8 @@
     if (window.sce) {
       dot.className = 'status-dot ready';
       txt.textContent = 'Ready';
-      editor.value = examples[1].code;
-      select.value = examples[1].id;
+      editor.value = examples[0].code;
+      select.value = examples[0].id;
       refresh();
     } else {
       setTimeout(ready, 30);
