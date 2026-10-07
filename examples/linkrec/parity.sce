@@ -1,23 +1,19 @@
-(* Recursive linking as a derived form: a functor whose import is satisfied by
-   its own export, tied with an ordinary let rec. This is the mechanization's
-   derived recursive linking (`mrec_elab`, RecLinking.lean) written in surface
-   syntax — no new primitive. Note the reading is generative: each recursive
-   call re-applies the functor, so construction work repeats per call. *)
+(* Recursive linking: `linkrec F` closes a functor whose import is satisfied by
+   its own export. It is the mechanization's derived form (`mrec_elab`,
+   RecLinking.lean), expanded by the desugarer into
+
+     let F' = F in
+     let rec w (n : Int) : Bool = ((F' { even = w }).even) n in
+     F' { even = w }
+
+   so it adds no primitive. The reading is generative: each call through w
+   re-applies the functor, so construction work repeats per call. *)
 
 module Parity = functor (X : { even : Int -> Bool }) -> struct
   let odd (n : Int) : Bool = if n = 0 then false else X.even (n - 1)
   let even (n : Int) : Bool = if n = 0 then true else odd (n - 1)
 end
 
-(* The knot: the import each application receives is the function being
-   defined, so the module's own export flows back in as its import. *)
+module P = linkrec Parity
 
-let rec even (n : Int) : Bool = 
-   let m = Parity({ even = even }) in 
-   m.even n
-
-let odd (n : Int) : Bool = 
-   let m = Parity({ even = even }) in 
-   m.odd n
-
-let main = { even10 = even 10, odd10 = odd 10, even7 = even 7 }
+let main = { even10 = P.even 10, odd10 = P.odd 10, even7 = P.even 7 }

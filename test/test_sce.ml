@@ -75,5 +75,20 @@ let () =
   core "Elab-Let" "let main = let x = 1 in x" "((1 ; ?.[0]).[0] ; ?.[0]).[0]";
   core "Elab-NMrg" "let main = { a = 1 } ; { b = 2 }"
     "((? ; ((box ?.[0] in { a = 1 }) ; (box ?.[1] in { b = 2 }))).[0] ; ?.[0]).[0]";
+  (* linkrec: the derived recursive link *)
+  ok "linkrec: a functor's export satisfies its own import"
+    "module Parity = functor (X : { even : Int -> Bool }) -> struct\n\
+     \  let odd (n : Int) : Bool = if n = 0 then false else X.even (n - 1)\n\
+     \  let even (n : Int) : Bool = if n = 0 then true else odd (n - 1)\n\
+     end\n\
+     module P = linkrec Parity\n\
+     let main = { e = P.even 10, o = P.odd 7 }"
+    "{e : Bool} & {o : Bool}" "{ e = true, o = true }";
+  rejected "linkrec: the import must be exported at the same type"
+    "module F = functor (X : { f : Int -> Int }) -> struct let g (n : Int) : Int = X.f n end\n\
+     let main = linkrec F" "exports its import 'f'";
+  rejected "linkrec: the import must be one function-typed field"
+    "module G = functor (X : { f : Int }) -> struct let f : Int = X.f end\n\
+     let main = linkrec G" "one function-typed field";
   if !failures = 0 then print_endline "all tests passed"
   else (Printf.printf "%d test(s) failed\n" !failures; exit 1)

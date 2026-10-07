@@ -200,6 +200,7 @@ let rec walk env (e : exp) : exp =
   | EFunctor (sb, ps, body) ->
     nd (EFunctor (sb, ps, walk (shadow_params env ps) body))
   | ELink (k, m, f) -> nd (ELink (k, walk env m, walk env f))
+  | ELinkRec f -> nd (ELinkRec (walk env f))
 
 and walk_binding env (b : binding) =
   let inner = shadow_params env b.b_params in
