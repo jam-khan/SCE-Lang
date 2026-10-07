@@ -9,7 +9,7 @@ let bd (s, e) name = { bd_name = name; bd_loc = { start_p = s; end_p = e } }
 %token <string> STRING
 %token <string> IDENT
 %token LET REC IN FUN IF THEN ELSE CASE OF INL INR END FOLD UNFOLD MU
-%token STRUCT SIG SANDBOX FUNCTOR MODULE OPEN TYPE WITH LINK LINKALL BOX IMPORT
+%token STRUCT SIG SANDBOX FUNCTOR MODULE OPEN TYPE WITH LINK LINKALL LINKREC BOX IMPORT
 %token MATCH MOD NOT TRUE FALSE
 %token TINT TBOOL TSTRING TTOP
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET
@@ -105,6 +105,8 @@ exp:
       { nd $loc (ELink (LOne, m, f)) }
   | LINKALL; m = merge_exp; WITH; f = exp
       { nd $loc (ELink (LAll, m, f)) }
+  | LINKREC; f = exp
+      { nd $loc (ELinkRec f) }
   | e = merge_exp
       { e }
 

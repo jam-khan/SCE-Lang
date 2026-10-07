@@ -101,6 +101,7 @@ and exp_desc =
   | EStruct  of sandbox * decl list
   | EFunctor of sandbox * param list * exp
   | ELink    of link_kind * exp * exp
+  | ELinkRec of exp                            (* linkrec e *)
   (* ADT sugar, eliminated by Adt.expand before resolution:
      match e with | C x -> e | C (x, y) -> e | _ -> e end *)
   | EMatch   of exp * (binder * binder list * exp) list

@@ -22,7 +22,7 @@ let keywords = [
   "unfold", UNFOLD; "mu", MU;
   "struct", STRUCT; "sig", SIG; "sandbox", SANDBOX; "functor", FUNCTOR; "module", MODULE;
   "open", OPEN; "type", TYPE; "with", WITH; "import", IMPORT; "match", MATCH;
-  "link", LINK; "linkall", LINKALL; "box", BOX;
+  "link", LINK; "linkall", LINKALL; "linkrec", LINKREC; "box", BOX;
   "mod", MOD; "not", NOT; "true", TRUE; "false", FALSE;
   "Int", TINT; "Bool", TBOOL; "String", TSTRING; "Top", TTOP;
 ]
