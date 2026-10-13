@@ -301,11 +301,13 @@ and link env loc k m f =
     err loc "the target of `link` must be a functor, but has type %s"
       (P.typ_to_string ft)
 
-(* `linkrec e` is the derived recursive link (`mrec_elab`, RecLinking.lean):
+(* `linkrec e` is the derived recursive link (`mrecExp`, RecLinking.lean):
    e : { l : A1 -> A2 } => I with l : A1 -> A2 in I becomes
-     let F = e in let rec w (a : A1) : A2 = ((F { l = w }).l) a in F { l = w }
-   The functor is evaluated once and re-applied on every call through w.
-   Generated names start with `%`, so they cannot capture a surface name. *)
+     let F = e in F { l = fix w (a : A1) : A2. ((F { l = w }).l) a }
+   term for term, so the wrapper reads F, w, a at ?.2, ?.1, ?.0 as in
+   `recWrap`. The functor is evaluated once and re-applied on every call
+   through w. Generated names start with `%`, so they cannot capture a
+   surface name. *)
 and linkrec env loc f =
   match desugar env f with
   | S.TMarr (S.TRcd (l, (S.TArr (a1, a2) as la)), result), cf ->
@@ -314,9 +316,9 @@ and linkrec env loc f =
         "`linkrec` needs a functor that exports its import '%s' at the same \
          type %s" l (P.typ_to_string la);
     let fn = "%linkrec" and w = "%knot" and a = "%arg" in
-    let inst = S.Mapp (S.Var fn, S.Lrec (l, S.Var w)) in
-    let knot = S.Flam (w, a, a1, a2, S.App (S.Rproj (inst, l), S.Var a)) in
-    (result, S.Letb (fn, cf, S.Letb (w, knot, inst)))
+    let apply pkg = S.Mapp (S.Var fn, S.Lrec (l, pkg)) in
+    let wrap = S.Flam (w, a, a1, a2, S.App (S.Rproj (apply (S.Var w), l), S.Var a)) in
+    (result, S.Letb (fn, cf, apply wrap))
   | ft, _ ->
     err loc
       "`linkrec` needs a functor whose import is one function-typed field, \

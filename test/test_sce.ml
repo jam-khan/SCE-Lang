@@ -42,6 +42,8 @@ let () =
   ok "arithmetic" "let main = 1 + 2 * 3 - 4" "Int" "3";
   ok "let" "let main = let x = 1 in x + 1" "Int" "2";
   ok "application" "let f (x : Int) : Int = x * 2 let main = f 21" "Int" "42";
+  ok "Unit and Top annotations are interchangeable"
+    "let f (u : Unit) : Top = u let main : Unit = f ()" "Top" "()";
   ok "let rec"
     "let main = let rec fact (n : Int) : Int = if n <= 1 then 1 else n * fact (n - 1) \
      in fact 5" "Int" "120";

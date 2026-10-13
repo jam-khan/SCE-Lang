@@ -227,6 +227,19 @@ let () =
      check "import via inline type" false;
      check "inline import links and runs" false)
 
+let () =
+  let ping = compile_exn "ping.sce"
+    "module Ping = struct let ping (u : Top) : Top = u end\n"
+  in
+  write "Ping.scei" "sig { ping : Unit -> Unit } end\n";
+  let client = compile_exn "ping_client.sce"
+    "import Ping\nlet main : Unit = Ping.ping ()\n"
+  in
+  check "Unit interface and annotations link against a Top provider"
+    (match Sce.Pipeline.link_artifacts [ ping; client ] with
+     | Ok linked -> Sce.Pipeline.run_artifact linked = Ok ("Top", "()")
+     | Error _ -> false)
+
 let () = print_endline "\n-- rejected --"
 
 let contains hay needle =

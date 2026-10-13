@@ -13,6 +13,9 @@ Separate compilation (`-c`, `--link`, `--run`) and the host capabilities
 (`sys`, `str`, `loader`) are walked through example by example in
 [examples/README.md](examples/README.md).
 
+`Unit` is an alternative spelling of `Top`, the type of `()`, in source
+annotations and interface files. Generated interfaces still use `Top`.
+
 ## WebAssembly backend
 
 The same programs compile to WasmGC and run under node; the backend lives in

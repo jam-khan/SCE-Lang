@@ -3,8 +3,7 @@
    RecLinking.lean), expanded by the desugarer into
 
      let F' = F in
-     let rec w (n : Int) : Bool = ((F' { even = w }).even) n in
-     F' { even = w }
+     F' { even = fix w (n : Int) : Bool. ((F' { even = w }).even) n }
 
    so it adds no primitive. The reading is generative: each call through w
    re-applies the functor, so construction work repeats per call. *)

@@ -8,8 +8,7 @@ desugarer expands the construct into the mechanization's derived form
 
 ```
 let F' = F in
-let rec w (a : A1) : A2 = ((F' { l = w }).l) a in
-F' { l = w }
+F' { l = fix w (a : A1) : A2. ((F' { l = w }).l) a }
 ```
 
 It therefore inherits progress, preservation, correctness of elaboration, and

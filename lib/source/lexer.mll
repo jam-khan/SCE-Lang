@@ -24,7 +24,7 @@ let keywords = [
   "open", OPEN; "type", TYPE; "with", WITH; "import", IMPORT; "match", MATCH;
   "link", LINK; "linkall", LINKALL; "linkrec", LINKREC; "box", BOX;
   "mod", MOD; "not", NOT; "true", TRUE; "false", FALSE;
-  "Int", TINT; "Bool", TBOOL; "String", TSTRING; "Top", TTOP;
+  "Int", TINT; "Bool", TBOOL; "String", TSTRING; "Top", TTOP; "Unit", TTOP;
 ]
 
 let ident_or_keyword s =
