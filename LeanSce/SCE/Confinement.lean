@@ -58,3 +58,70 @@ theorem sandboxed_functor_confinement
           -- Close via big-step determinism.
           exact bigstep_deterministic_gen hbody_elab henv_elab henv_val
             hbody₁ hbody₂
+
+/-- **Link Confinement.**
+
+    Two terminating links produce the same client result when their clients
+    evaluate only to the same sandboxed closure and their providers supply
+    the same import value. The retained provider values may differ.
+
+    The client expressions need not be literal functors: they may, for
+    example, look up a previously constructed sandboxed closure. -/
+theorem sandboxed_link_confinement
+    {A B : Typ} {l : String}
+    {body a e₁ e₂ c₁ c₂ p₁ p₂ w₁ w₂ ρ₁ ρ₂ : Exp}
+    {ec_body ec_a : Core.Exp}
+    (ha : Value a)
+    (hbody_elab : elabExp (Typ.and Typ.top (Typ.rcd l A)) body B ec_body)
+    (ha_elab : elabExp Typ.top a A ec_a)
+    (hclient₁ : ∀ {v}, BStep ρ₁ c₁ v →
+      v = Exp.mclos Exp.unit (Typ.rcd l A) body)
+    (hclient₂ : ∀ {v}, BStep ρ₂ c₂ v →
+      v = Exp.mclos Exp.unit (Typ.rcd l A) body)
+    (himport₁ : ∀ {p v}, BStep ρ₁ e₁ p → Sel p l v → v = a)
+    (himport₂ : ∀ {p v}, BStep ρ₂ e₂ p → Sel p l v → v = a)
+    (h₁ : BStep ρ₁ (Exp.mlink e₁ c₁) (Exp.mrg p₁ w₁))
+    (h₂ : BStep ρ₂ (Exp.mlink e₂ c₂) (Exp.mrg p₂ w₂))
+    : w₁ = w₂ := by
+  cases h₁ with
+  | mlink _ hp₁ hc₁ hs₁ hb₁ =>
+    cases h₂ with
+    | mlink _ hp₂ hc₂ hs₂ hb₂ =>
+      -- The client hypotheses fix both closure environments and import labels.
+      cases hclient₁ hc₁
+      cases hclient₂ hc₂
+      -- The provider hypotheses fix the selected values, not the whole providers.
+      cases himport₁ hp₁ hs₁
+      cases himport₂ hp₂ hs₂
+      have ha_weak : elabExp (Typ.and Typ.top Typ.top) a A ec_a :=
+        elab_value_weaken ha_elab ha _
+      have henv_elab :
+          elabExp Typ.top (Exp.mrg Exp.unit (Exp.lrec l a))
+            (Typ.and Typ.top (Typ.rcd l A))
+            (Core.Exp.mrg Core.Exp.unit (Core.Exp.lrec l ec_a)) :=
+        elabExp.edmrg _ _ _ _ _ _ _ (elabExp.eunit _)
+          (elabExp.elrec _ _ _ _ _ ha_weak)
+      exact bigstep_deterministic_gen hbody_elab henv_elab
+        (Value.vmrg Value.vunit (Value.vlrec ha)) hb₁ hb₂
+
+/-- Literal sandboxed functors satisfy the client premise of link confinement
+    independently of their call-site environments. -/
+theorem sandboxed_functor_link_confinement
+    {A B : Typ} {l : String}
+    {body a e₁ e₂ p₁ p₂ w₁ w₂ ρ₁ ρ₂ : Exp}
+    {ec_body ec_a : Core.Exp}
+    (ha : Value a)
+    (hbody_elab : elabExp (Typ.and Typ.top (Typ.rcd l A)) body B ec_body)
+    (ha_elab : elabExp Typ.top a A ec_a)
+    (himport₁ : ∀ {p v}, BStep ρ₁ e₁ p → Sel p l v → v = a)
+    (himport₂ : ∀ {p v}, BStep ρ₂ e₂ p → Sel p l v → v = a)
+    (h₁ : BStep ρ₁
+      (Exp.mlink e₁ (Exp.mfunctor Sandbox.sandboxed (Typ.rcd l A) body))
+      (Exp.mrg p₁ w₁))
+    (h₂ : BStep ρ₂
+      (Exp.mlink e₂ (Exp.mfunctor Sandbox.sandboxed (Typ.rcd l A) body))
+      (Exp.mrg p₂ w₂))
+    : w₁ = w₂ := by
+  apply sandboxed_link_confinement ha hbody_elab ha_elab
+      (fun h => by cases h; rfl) (fun h => by cases h; rfl)
+      himport₁ himport₂ h₁ h₂
