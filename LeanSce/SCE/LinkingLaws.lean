@@ -9,6 +9,7 @@
 import LeanSce.SCE.Semantics.BigStep
 import LeanSce.SCE.Semantics.Determinism
 import LeanSce.SCE.Preservation
+import LeanSce.SCE.Semantics.Equivalence
 
 open SCE
 
@@ -58,8 +59,8 @@ theorem link_interface_determined
 
 /-- **Interface abstraction, import-label form.**  Two providers that agree on
 the client's import label (the only label the link selects) drive the client
-to the same exports.  This is the form stated in the paper: the providers need
-not agree on any other label. -/
+to the same exports.  The providers need not agree on any other label.  The
+paper's statement, over typed provider values, is `interface_abstraction`. -/
 theorem link_respects_import
     {ρ P₁ P₂ C v₁ v₁' w : Exp}
     (hlink : BStep ρ (.mlink P₁ C) (.mrg v₁ w))
@@ -101,5 +102,43 @@ theorem sel_merge_disjoint
     | dmrg_left h'  => exact h'
     | dmrg_right h' => exact (elab_notin_sel_false h' hv₂ hnotin helab₂).elim
   · exact Sel.dmrg_left
+
+/-- One direction of `interface_abstraction`.  The client's closure imports
+exactly `l` (by semantic preservation), and selection of `l` from the first
+provider is unique, so the second provider supplies the same import. -/
+private theorem interface_abstraction_dir
+    {Γ A B P₁ : Typ} {l : String} {ρ e p₁ p₂ vl w : Exp}
+    {ec ρc pc₁ : Core.Exp}
+    (he : elabExp Γ e (.marr (.rcd l A) B) ec)
+    (hρ : elabExp Typ.top ρ Γ ρc) (hρv : Value ρ)
+    (hp₁v : Value p₁) (hp₂v : Value p₂)
+    (hp₁ : elabExp Typ.top p₁ P₁ pc₁)
+    (hl₁ : SRLookup P₁ l A)
+    (hs₁ : Sel p₁ l vl) (hs₂ : Sel p₂ l vl)
+    (h : BStep ρ (.mlink p₁ e) (.mrg p₁ w))
+    : BStep ρ (.mlink p₂ e) (.mrg p₂ w) := by
+  refine link_respects_import h (sbig_value_refl hp₂v hρv) ?_
+  intro v₂ l' A' body vl' hC hsel
+  obtain ⟨_, _, hclos⟩ := semantic_preservation he hC hρ hρv
+  cases hclos
+  have heq := sel_deterministic hp₁v hp₁ hl₁ hs₁ hsel
+  subst heq
+  exact hs₂
+
+/-- **Interface abstraction** (the paper's Theorem `thm:interface-abstraction`).
+Two well-typed provider values that select the same value at the client's
+import label `l` drive the client to the same exports. -/
+theorem interface_abstraction
+    {Γ A B P₁ P₂ : Typ} {l : String} {ρ e p₁ p₂ vl w : Exp}
+    {ec ρc pc₁ pc₂ : Core.Exp}
+    (he : elabExp Γ e (.marr (.rcd l A) B) ec)
+    (hρ : elabExp Typ.top ρ Γ ρc) (hρv : Value ρ)
+    (hp₁v : Value p₁) (hp₂v : Value p₂)
+    (hp₁ : elabExp Typ.top p₁ P₁ pc₁) (hp₂ : elabExp Typ.top p₂ P₂ pc₂)
+    (hl₁ : SRLookup P₁ l A) (hl₂ : SRLookup P₂ l A)
+    (hs₁ : Sel p₁ l vl) (hs₂ : Sel p₂ l vl)
+    : BStep ρ (.mlink p₁ e) (.mrg p₁ w) ↔ BStep ρ (.mlink p₂ e) (.mrg p₂ w) :=
+  ⟨interface_abstraction_dir he hρ hρv hp₁v hp₂v hp₁ hl₁ hs₁ hs₂,
+   interface_abstraction_dir he hρ hρv hp₂v hp₁v hp₂ hl₂ hs₂ hs₁⟩
 
 end S_Sem

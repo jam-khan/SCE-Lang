@@ -30,7 +30,7 @@ private theorem lookupV_deterministic
   | nmrg_zero => cases h₂ with | nmrg_zero => rfl
   | nmrg_succ _ ih => cases h₂ with | nmrg_succ h₂' => exact ih h₂'
 
-private theorem sel_deterministic
+theorem sel_deterministic
     {v v₁ v₂ : SCE.Exp} {vc : Core.Exp} {A B : SCE.Typ} {l : String}
     (hval : SCE.Value v)
     (helab : elabExp SCE.Typ.top v A vc)
