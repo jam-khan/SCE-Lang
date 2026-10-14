@@ -55,7 +55,6 @@ linking is a term.
 
 | example | the claim it carries |
 |---|---|
-| [linkrec/](linkrec/) | recursive linking as a *derived form*: a functor whose import is satisfied by its own export, knot tied by ordinary `let rec` — exactly the shape the mechanization proves sound, inheriting all metatheory. The toolchain linker stays acyclic on purpose; recursion through linking exists precisely where the theory covers it |
 | [linker/](linker/) | the link step, written in the language it links: the hand-written dependent merge `P ;; f({ Seed = P.Seed })` is checked at run time against the builtin `link P with f` — the *same* functor `f`, arrived from disk, compared field by field on both halves. There is no linker formalism to trust, because the linker's composition term is an ordinary term |
 | [worlds/](worlds/) | environments as values, both directions: a loaded artifact is *entered* as the current environment (`box w in ?.Theme.decorate "hello"` — dynamic linking is literally "run code under an environment that arrived at run time"), and a snapshot `let snap = ?` is re-entered when a load fails — rollback by evaluating under a value you kept |
 
@@ -97,5 +96,5 @@ wasm module.
 ## Reading order
 
 `modules` → `units/peano` → `effects` → `plugins` → `versions` → `upgrade` →
-`worlds` → `linker` → `linkrec` → `lambda`. Every directory README ends with
+`worlds` → `linker` → `lambda`. Every directory README ends with
 the exact CLI session and expected output.

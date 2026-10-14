@@ -238,7 +238,6 @@ let rec desugar env (e : exp) : S.typ * S.named =
     (S.TSig t, S.Box (S.Unit, S.Mstruct c))
   | EFunctor (sb, ps, body) -> functors env sb ps body
   | ELink (k, m, f) -> link env e.loc k m f
-  | ELinkRec f -> linkrec env e.loc f
   | EMatch _ -> err e.loc "internal: `match` survived Adt.expand"
 
 (* Curried parameters extend the context left to right; the term nests to
@@ -300,29 +299,6 @@ and link env loc k m f =
   | ft, _ ->
     err loc "the target of `link` must be a functor, but has type %s"
       (P.typ_to_string ft)
-
-(* `linkrec e` is the derived recursive link (`mrecExp`, RecLinking.lean):
-   e : { l : A1 -> A2 } => I with l : A1 -> A2 in I becomes
-     let F = e in F { l = fix w (a : A1) : A2. ((F { l = w }).l) a }
-   term for term, so the wrapper reads F, w, a at ?.2, ?.1, ?.0 as in
-   `recWrap`. The functor is evaluated once and re-applied on every call
-   through w. Generated names start with `%`, so they cannot capture a
-   surface name. *)
-and linkrec env loc f =
-  match desugar env f with
-  | S.TMarr (S.TRcd (l, (S.TArr (a1, a2) as la)), result), cf ->
-    if E.srlookup_opt result l <> Some la then
-      err loc
-        "`linkrec` needs a functor that exports its import '%s' at the same \
-         type %s" l (P.typ_to_string la);
-    let fn = "%linkrec" and w = "%knot" and a = "%arg" in
-    let apply pkg = S.Mapp (S.Var fn, S.Lrec (l, pkg)) in
-    let wrap = S.Flam (w, a, a1, a2, S.App (S.Rproj (apply (S.Var w), l), S.Var a)) in
-    (result, S.Letb (fn, cf, apply wrap))
-  | ft, _ ->
-    err loc
-      "`linkrec` needs a functor whose import is one function-typed field, \
-       but this has type %s" (P.typ_to_string ft)
 
 (* An annotated binding is ascribed at its whole type, parameters included. *)
 and binding env (b : binding) : S.typ * S.named =

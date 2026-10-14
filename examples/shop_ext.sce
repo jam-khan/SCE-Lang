@@ -85,26 +85,6 @@ module World = struct
   let total (p : Int) : Int = p + 1
 end
 
-(* -- recursive linking x sandboxing: a cycle between two closed clients.
-   Items imports what Packs exports and the reverse; neither names the other,
-   so each can be compiled alone. A third party closes the cycle: given
-   `price`, Packs provides the `pack` that Items is linked against, and the
-   knot over `price` is an ordinary let rec. *)
-type item = | One of Int | Pack of item * item
-
-module Items = sandbox functor (X : { pack : item -> item -> Int }) -> struct
-  let price (i : item) : Int =
-    match i with | One p -> p | Pack (a, b) -> X.pack a b end
-end
-
-module Packs = sandbox functor (X : { price : item -> Int }) -> struct
-  let pack (a : item) (b : item) : Int = (X.price a + X.price b) * 9 / 10
-end
-
-module Pricing = functor (X : { price : item -> Int }) -> link Packs(X) with Items
-
-let rec price (i : item) : Int = (Pricing({ price = price })).price i
-
 let flat = Flat (struct let rate : Int = 8 end)
 let full = Full (struct let ship : Int = 5 let rate : Int = 20 end)
 
@@ -114,5 +94,4 @@ let main = { flat    = quote flat 100
            , redeem  = redeem (Then (TenOff, Then (HalfOff, Done))) 100
            , audit   = audit (evolve 10) 3
            , bill    = (linkall World with Invoice).bill 100
-           , desk    = Shop.Desk.bill 100
-           , nested  = price (Pack (One 100, Pack (One 50, One 50))) }
+           , desk    = Shop.Desk.bill 100 }
