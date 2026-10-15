@@ -26,3 +26,4 @@ import LeanSce.SCE.LinkingLaws
 import LeanSce.Core.Semantics.Determinism
 import LeanSce.SCE.Simulation
 import LeanSce.SCE.Divergence
+import LeanSce.SCE.BehaviourLaws
