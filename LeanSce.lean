@@ -23,3 +23,6 @@ import LeanSce.SCE.Progress
 import LeanSce.SCE.Semantics.Equivalence
 import LeanSce.SCE.Confinement
 import LeanSce.SCE.LinkingLaws
+import LeanSce.Core.Semantics.Determinism
+import LeanSce.SCE.Simulation
+import LeanSce.SCE.Divergence
