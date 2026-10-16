@@ -2,7 +2,7 @@
 # `dune build` generates the lexer (ocamllex) and parser (menhir) and
 # compiles everything; the targets below are thin wrappers around it.
 
-.PHONY: all build test run web wasm sepcomp clean setup
+.PHONY: all build test docs run web wasm sepcomp clean setup
 
 all: build
 
@@ -13,6 +13,11 @@ build:
 # Build and run the test suite.
 test:
 	dune test --force
+
+# Generate the OCaml API reference and its compiler overview.
+docs:
+	dune build @doc
+	@echo 'API docs: _build/default/_doc/_html/sce/index.html'
 
 # Start the REPL.
 run:
@@ -53,7 +58,7 @@ web:
 # One-time environment setup: install the OCaml dependencies.
 # (binaryen comes from your system package manager, e.g. `brew install binaryen`)
 setup:
-	opam install --yes dune menhir js_of_ocaml js_of_ocaml-ppx wasm_of_ocaml-compiler
+	opam install --yes dune menhir js_of_ocaml js_of_ocaml-ppx wasm_of_ocaml-compiler odoc
 	@command -v node >/dev/null || echo 'note: install node for the wasm backend (brew install node)'
 
 clean:

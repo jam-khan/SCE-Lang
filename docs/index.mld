@@ -1,0 +1,55 @@
+{0 SCE-Lang OCaml API}
+
+SCE-Lang elaborates source programs into the explicit-environment core
+calculus λE, then interprets them or compiles them to WebAssembly-GC.
+This reference documents the OCaml implementation; the Lean proofs live in
+the repository's [mechanization/] directory.
+
+{1 Entry points}
+
+Start with {!Sce.Pipeline} to compile or run source text:
+{ul
+ {- {!Sce.Pipeline.run} compiles, typechecks, and evaluates a whole program.}
+ {- {!Sce.Pipeline.run_to_core} returns a checked core term without evaluating it.}
+ {- {!Sce.Pipeline.compile_unit} compiles a file against its import interfaces.}
+ {- {!Sce.Pipeline.link_artifacts} combines units in dependency order;
+    {!Sce.Pipeline.run_artifact} evaluates the result.}
+}
+
+Pass a core term to {!Wasm_backend.Compile.to_binary} to produce a WasmGC
+module. {!Wasm_backend.Compile.link_binary} compiles a linking term that
+uses separately compiled Wasm modules.
+
+{1 Compiler stages}
+
+{2 Surface language}
+{!Driver} parses located syntax ({!Ast}). {!Sugar} expands surface forms,
+including the algebraic data types handled by {!Adt}, into named SCE terms.
+{!Err} provides located diagnostics.
+
+{2 Source calculus}
+{!Sce_core.Debruijn} resolves names to environment projections.
+{!Sce_core.Elab} typechecks and elaborates these terms into the core calculus.
+{!Sce_core.Ast} defines the syntax; {!Sce_core.Eval} provides direct source
+interpreters and {!Sce_core.Pretty} formats source types. {!Sce_core.Frames}
+shares scope rules between desugaring and name resolution.
+
+{2 Core calculus}
+{!Core_lambdae.Ast} defines core terms and runtime values.
+{!Core_lambdae.Check} independently checks elaborated terms;
+{!Core_lambdae.Eval} evaluates them. {!Core_lambdae.Pretty} formats terms,
+values, and types for diagnostics.
+
+{2 Separate compilation and host capabilities}
+{!Units.Unit} wraps a source file as a closed structure or sandboxed functor.
+{!Units.Artifact} stores its interfaces and compiled term.
+{!Units.Linker} checks imports and constructs core linking terms without
+evaluating them. {!Units.Host} supplies printing, file reads, string operations,
+and runtime loading as capability units.
+
+{2 WebAssembly backend}
+{!Wasm_backend.Compile} translates core terms into {!Wasm_backend.Ir}.
+{!Wasm_backend.Abi} defines the shared value layout and indices;
+{!Wasm_backend.Runtime} supplies runtime functions in that IR.
+{!Wasm_backend.Emit} encodes binary modules using {!Wasm_backend.Encode}.
+{!Wasm_backend.Wat} produces diagnostic text.

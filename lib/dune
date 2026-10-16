@@ -1,3 +1,4 @@
 (library
  (name sce)
+ (package sce)
  (libraries units source sce_core core_lambdae))

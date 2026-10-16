@@ -1,3 +1,4 @@
 (library
  (name wasm_backend)
+ (package sce)
  (libraries core_lambdae))

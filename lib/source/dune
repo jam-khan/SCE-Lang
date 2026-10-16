@@ -3,6 +3,7 @@
 ; Parser depend on the library's own main module, which dune rejects.
 (library
  (name source)
+ (package sce)
  (wrapped false)
  (libraries menhirLib sce_core))
 
