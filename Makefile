@@ -2,7 +2,7 @@
 # `dune build` generates the lexer (ocamllex) and parser (menhir) and
 # compiles everything; the targets below are thin wrappers around it.
 
-.PHONY: all build test docs site run web wasm sepcomp clean setup
+.PHONY: all build test docs docs-lean site run web wasm sepcomp clean setup
 
 all: build
 
@@ -18,6 +18,18 @@ test:
 docs:
 	dune build @doc
 	@echo 'API docs: _build/default/_doc/_html/sce/index.html'
+
+# Generate the mechanization reference with the separately pinned doc-gen4.
+docs-lean:
+	# doc-gen4 does not track HEAD in source links; refresh project pages and index.
+	rm -rf mechanization/docbuild/.lake/build/doc/LeanSce
+	rm -f mechanization/docbuild/.lake/build/doc/LeanSce.html* \
+		mechanization/docbuild/.lake/build/doc/declarations/declaration-data.bmp* \
+		mechanization/docbuild/.lake/build/doc-data/declaration-data-LeanSce*.bmp \
+		mechanization/docbuild/.lake/build/doc-data/backrefs-LeanSce*.json \
+		mechanization/docbuild/.lake/build/doc-data/tactics-LeanSce*.json
+	cd mechanization/docbuild && lake build LeanSce:docs
+	@echo 'Lean docs: mechanization/docbuild/.lake/build/doc/LeanSce.html (serve over HTTP)'
 
 # Start the REPL.
 run:
@@ -50,14 +62,15 @@ sepcomp:
 	dune exec --no-build bin/main.exe -- --link-wasm $(SEP)/linked.wasm $(SEP)/nat.sceo $(SEP)/arith.sceo $(SEP)/demo.sceo
 	node lib/wasm/run.js $(SEP)/linked.wasm $(SEP)/nat.wasm $(SEP)/arith.wasm $(SEP)/demo.wasm
 
-# Assemble the playground and API docs for local serving or GitHub Pages.
-site:
+# Assemble the playground, OCaml API, and Lean docs for local serving or Pages.
+site: docs-lean
 	dune build web @doc
 	rm -rf _build/site
 	mkdir -p _build/site
 	cp _build/default/web/index.html _build/default/web/playground.bc.wasm.js _build/site/
 	cp -R _build/default/web/playground.bc.wasm.assets _build/site/
 	cp -R _build/default/_doc/_html _build/site/docs
+	cp -R mechanization/docbuild/.lake/build/doc _build/site/mechanization
 	rm -f _build/site/playground.bc.wasm.assets/*.map
 
 # Serve the same site that GitHub Pages publishes.

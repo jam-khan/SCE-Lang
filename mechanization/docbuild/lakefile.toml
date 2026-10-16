@@ -1,0 +1,12 @@
+name = "docbuild"
+version = "0.1.0"
+reservoir = false
+
+[[require]]
+name = "lean-sce"
+path = ".."
+
+[[require]]
+name = "doc-gen4"
+git = "https://github.com/leanprover/doc-gen4.git"
+rev = "v4.28.0"

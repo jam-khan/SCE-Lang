@@ -33,7 +33,23 @@ jobs:
       - name: Install dependencies
         run: opam install --yes dune menhir js_of_ocaml js_of_ocaml-ppx wasm_of_ocaml-compiler odoc
 
-      - name: Build playground and API docs
+      - name: Install elan
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://elan.lean-lang.org/elan-init.sh | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+
+      - name: Cache Lean documentation builds
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.elan
+            mechanization/.lake
+            mechanization/docbuild/.lake
+          key: lean-docs-${{ runner.os }}-${{ hashFiles('mechanization/lean-toolchain', 'mechanization/docbuild/lean-toolchain', 'mechanization/docbuild/lakefile.toml', 'mechanization/docbuild/lake-manifest.json') }}-${{ github.sha }}
+          restore-keys: |
+            lean-docs-${{ runner.os }}-${{ hashFiles('mechanization/lean-toolchain', 'mechanization/docbuild/lean-toolchain', 'mechanization/docbuild/lakefile.toml', 'mechanization/docbuild/lake-manifest.json') }}-
+
+      - name: Build playground and documentation
         run: opam exec -- make site
 
       - uses: actions/upload-pages-artifact@v3

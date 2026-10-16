@@ -31,13 +31,16 @@ with a blank line.
 | `make test` | Run the interpreter, separate compilation, and Wasm differential suites. |
 | `make wasm SRC=examples/modules.sce` | Compile a source file to WasmGC and run it under Node.js. |
 | `make sepcomp` | Run separately compiled Peano units through core and Wasm linking. |
-| `make web` | Build and serve the playground and docs at <http://127.0.0.1:8000>. |
+| `make web` | Build and serve the playground and both references at <http://127.0.0.1:8000>. |
 | `make docs` | Generate the OCaml API reference. |
-| `make site` | Assemble the playground and API docs in `_build/site/` for hosting. |
+| `make docs-lean` | Generate the Lean reference. |
+| `make site` | Assemble the playground and both references in `_build/site/` for hosting. |
 
 Open `_build/default/_doc/_html/sce/index.html` after `make docs`.
-The playground's **Docs** link opens this reference in a new tab. GitHub Pages
-publishes the same site built by `make site` on pushes to `main`.
+The playground's **Docs** and **Mechanization** links open the references in
+new tabs. `make docs-lean`, `make site`, and `make web` also require `elan`
+and a C compiler; the first Lean documentation build downloads its pinned
+dependencies. GitHub Pages publishes the same site on pushes to `main`.
 
 Wasm execution checks are skipped when Node.js is unavailable; Binaryen
 validation is skipped when `wasm-opt` is unavailable.
@@ -88,3 +91,4 @@ toolchain:
 The [Lean development](mechanization/LeanSce.lean) covers type safety,
 elaboration, separate compilation, and linking properties of the calculi.
 It does not verify the OCaml implementation or the WebAssembly backend.
+The [theorem map](mechanization/THEOREMS.md) links paper results to their proofs.
