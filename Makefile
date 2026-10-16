@@ -2,7 +2,7 @@
 # `dune build` generates the lexer (ocamllex) and parser (menhir) and
 # compiles everything; the targets below are thin wrappers around it.
 
-.PHONY: all build test docs run web wasm sepcomp clean setup
+.PHONY: all build test docs site run web wasm sepcomp clean setup
 
 all: build
 
@@ -50,9 +50,18 @@ sepcomp:
 	dune exec --no-build bin/main.exe -- --link-wasm $(SEP)/linked.wasm $(SEP)/nat.sceo $(SEP)/arith.sceo $(SEP)/demo.sceo
 	node lib/wasm/run.js $(SEP)/linked.wasm $(SEP)/nat.wasm $(SEP)/arith.wasm $(SEP)/demo.wasm
 
-# Build the wasm playground and serve it at http://127.0.0.1:8000.
-web:
-	dune build web
+# Assemble the playground and API docs for local serving or GitHub Pages.
+site:
+	dune build web @doc
+	rm -rf _build/site
+	mkdir -p _build/site
+	cp _build/default/web/index.html _build/default/web/playground.bc.wasm.js _build/site/
+	cp -R _build/default/web/playground.bc.wasm.assets _build/site/
+	cp -R _build/default/_doc/_html _build/site/docs
+	rm -f _build/site/playground.bc.wasm.assets/*.map
+
+# Serve the same site that GitHub Pages publishes.
+web: site
 	python3 web/serve.py
 
 # One-time environment setup: install the OCaml dependencies.
