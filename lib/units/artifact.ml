@@ -108,12 +108,6 @@ let expand_aliases (i : Ast.intf) : Ast.typ =
        [] i.Ast.i_aliases)
 
 (* Parse a type in surface syntax back to S.typ (aliases allowed first). *)
-let parse_typ_exn ~what (src : string) : S.typ =
-  match Driver.parse_intf src with
-  | Error e -> err "%s:%d:%d: %s" what e.line e.col e.message
-  | Ok intf -> Sugar.conv_typ_closed (expand_aliases intf)
-
-(* Parse a type in surface syntax back to S.typ (aliases allowed first). *)
 let parse_typ ~what (src : string) : S.typ =
   match Driver.parse_intf src with
   | Error e -> err "%s:%d:%d: %s" what e.line e.col e.message
