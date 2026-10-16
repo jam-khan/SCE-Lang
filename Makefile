@@ -29,7 +29,7 @@ docs-lean:
 		mechanization/docbuild/.lake/build/doc-data/backrefs-LeanSce*.json \
 		mechanization/docbuild/.lake/build/doc-data/tactics-LeanSce*.json
 	cd mechanization/docbuild && lake build LeanSce:docs
-	@echo 'Lean docs: mechanization/docbuild/.lake/build/doc/LeanSce.html (serve over HTTP)'
+	@echo 'Lean docs: mechanization/docbuild/.lake/build/doc/index.html (serve over HTTP)'
 
 # Start the REPL.
 run:

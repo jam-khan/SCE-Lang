@@ -1,5 +1,7 @@
 # SCE-Lang
 
+Try it out: https://jam-khan.github.io/SCE-Lang/
+
 SCE-Lang is an OCaml implementation of a source language based on λSCE, with
 structures, functors, sandboxing, and linking as language expressions. It
 includes an interpreter, separate compilation, a WebAssembly-GC backend, and
